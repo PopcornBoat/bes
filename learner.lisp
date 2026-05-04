@@ -7,10 +7,10 @@
   (program (make-program))
   (action (make-action)))
 
-(defun serialize-learner (learner)
+(defun serialize-learner (learner seen)
   `(:id ,(learner-id learner)
     :program ,(serialize-program (learner-program learner))
-    :action ,(serialize-action (learner-action learner))))
+    :action ,(serialize-action (learner-action learner) seen)))
 
 (defun deserialize-learner (data registry)
   (make-learner :id (format nil "LEARNER-~A-~A" (who-am-i) (funcall *learner-id-generator*))

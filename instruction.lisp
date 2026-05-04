@@ -15,8 +15,8 @@
     (:obs (random-observation))))
 
 (defun random-constant ()
-  "Returns a random constant in the range of [-10.0, 10.0]"
-  (random-range -10.0 10.0))
+  "Returns a random constant in the range of [-5.0, 5.0]"
+  (random-range -5.0 5.0))
 
 (defun random-argument-or-constant ()
   "Returns either a random register, a random observation, or a random constant."
@@ -28,8 +28,8 @@
 (defun opcode-arity (opcode)
   "Returns the arity of a given OPCODE."
   (ecase opcode
-    ((:ADD :SUB :MUL :DIV) 2)
-    ((:NEG :ABS :LOG :SIN :COS) 1)))
+    ((:ADD :SUB :MUL :DIV :MOD :MAX) 2)
+    ((:SIN :COS :TAN :EXP :LOG) 1)))
 
 (defun decode-symbol (sym)
   "Convert symbols like registers (RXX) or observations (OBSYY) into types and indices."
@@ -49,7 +49,7 @@
             (:constructor make-instruction
              (&aux
               ;; 1. Generate the opcode and arity
-              (op (random-choice '(:ADD :SUB :MUL )))
+              (op (random-choice '(:ADD :SUB :MUL :DIV :MAX :EXP :LOG :SIN :COS :TAN :MOD)))
               (arity (opcode-arity op))
               ;; 2. Generate destination index directly
               (dest (truncate (nth-value 1 (decode-symbol (random-register)))))

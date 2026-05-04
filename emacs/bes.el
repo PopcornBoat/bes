@@ -98,6 +98,10 @@
 			 (transient-arg-value "*p-mut-constant=" args)))
 	(p-mut-constant-sign (string-to-number
 			      (transient-arg-value "*p-mut-constant-sign=" args)))
+	(migration-interval (string-to-number
+			     (transient-arg-value "*migration-interval=" args)))
+	(batch-size (string-to-number
+		     (transient-arg-value "*batch-size=" args)))
 	(seed (let ((seed-arg (transient-arg-value "*seed=" args)))
 		(cond
 		 ((string= seed-arg "random")
@@ -126,6 +130,8 @@
       :p-swap-instrs ,p-swap-instrs
       :p-mut-constant ,p-mut-constant
       :p-mut-constant-sign ,p-mut-constant-sign
+      :migration-interval ,migration-interval
+      :batch-size ,batch-size
       :seed ,seed)))
 
 (transient-define-suffix start-search ()
@@ -209,6 +215,8 @@
 	   "*population-size=160"
 	   "*init-num-learners=3"
 	   "*max-num-learners=inf"
+	   "*migration-interval=50"
+	   "*batch-size=1000"
 	   "*seed=random")
   ["Island"
     ("-I" "Island" "--island="
@@ -217,13 +225,15 @@
    ("-M" "Evaluation Mode" "--mode="
     :choices ("online" "offline"))
    ("-G" "Gymnasium Environment Name" "*env="
-    :choices ("none" "Hopper-v5" "Walker2d-v5" "HalfCheetah-v5"))
+    :choices ("none" "Hopper-v5" "Walker2d-v5" "HalfCheetah-v5" "Acrobot-v1" "LunarLander-v3" "MountainCar-v0" "CartPole-v1"))
    ("-F" "Dataset Name" "*dataset=")]
   ["Key Settings"
    ("-Z" "Number of Observations" "*num-observations=")
    ("-X" "Number of Actions" "*num-actions=")
    ("-P" "Population Size" "*population-size=")
    ("-g" "Gap" "*gap=")
+   ("-n" "Migration Interval" "*migration-interval=") 
+   ("-b" "Batch Size" "*batch-size=")
    ("-s" "Seed" "*seed=")]
   [:description "Team Constraints"
    ("-l" "Initial Number of Learners" "*init-num-learners=")
@@ -279,6 +289,10 @@
   (setq bes-refresh-timer
 	(run-at-time 0 1
 		     (lambda ()
+		       (let ((buf (get-buffer "*bes-log*")))
+			 (when (buffer-live-p buf)
+			   (with-current-buffer buf
+			     (goto-char (point-max)))))
 		       (let ((buf (get-buffer "*bes*")))
 			 (when (buffer-live-p buf)
 			   (with-current-buffer buf

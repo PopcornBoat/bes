@@ -1,6 +1,6 @@
 (in-package :bes)
 
-(defconstant +num-threads+ 160
+(defconstant *num-threads* 140
   "The number of CPU cores available for multi-threading.")
 
 (defconstant +num-registers+ 8
@@ -97,4 +97,7 @@
    online or offline.")
 
 (defparameter *migration-interval* 50
+  "The number of generations to wait between sending migrants.")
+
+(defparameter *batch-size* 1000
   "The number of generations to wait between sending migrants.")

@@ -4,12 +4,12 @@
   (type :atomic)
   (action (random *num-actions*)))
 
-(defun serialize-action (action)
+(defun serialize-action (action seen)
   `(:type ,(action-type action)
     :action ,(let ((action (action-action action)))
 	      (etypecase action
 		(number action)
-		(team (serialize-team action))))))
+		(team (serialize-team action seen))))))
 
 (defun deserialize-action (data registry)
   (make-action :type (getf data :type)

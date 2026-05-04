@@ -12,7 +12,7 @@
 (defparameter *telemetry-ip* "129.173.22.24"
   "IP address of the emacs client receiving telemetry.")
 
-(defparameter *heartbeat-interval* 30
+(defparameter *heartbeat-interval* 300
   "The amount of time to wait between sending heartbeats (in seconds).")
 
 (defparameter *islands*
@@ -69,44 +69,6 @@
 		    :ts ,(get-universal-time)))))
     (notify-telemetry payload)))
 
-(defun get-cpu-usage (&optional (interval 1))
-  "Returns a single float representing the total CPU utilization (0.0 to 100.0)."
-  (flet ((get-raw-cpu ()
-	   (with-open-file (s "/proc/stat")
-	     (let* ((line (read-line s))
-		    (parts (remove-if (lambda (x) (string= x ""))
-				      (uiop:split-string line)))
-		    (stats (mapcar #'parse-integer (rest parts))))
-	       (values (reduce #'+ stats) (fourth stats))))))
-    (multiple-value-bind (total1 idle1) (get-raw-cpu)
-      (sleep interval)
-      (multiple-value-bind (total2 idle2) (get-raw-cpu)
-	(let ((total-delta (- total2 total1))
-	      (idle-delta (- idle2 idle1)))
-	  (if (zerop total-delta)
-	      0.0
-	      (* 100.0 (- 1 (/ idle-delta total-delta)))))))))
-  
-(defun get-memory-usage ()
-  "Returns the percentage of RAM currently in use (0.0 to 100.0)."
-  (with-open-file (s "/proc/meminfo")
-    (let (total free buffers cached)
-      (loop for line = (read-line s nil)
-	    while (and line (or (not total) (not free) (not buffers) (not cached)))
-	    do (let* ((parts (remove-if (lambda (x) (string= x ""))
-					(uiop:split-string line)))
-		      (key (car parts))
-		      (val (parse-integer (second parts))))
-		 (cond
-		   ((string= key "MemTotal:") (setf total val))
-		   ((string= key "MemFree:") (setf free val))
-		   ((string= key "Buffers:") (setf buffers val))
-		   ((string= key "Cached:") (setf cached val)))))
-      (if (and total free buffers cached)
-	  (let ((used (- total (+ free buffers cached))))
-	    (* 100.0 (/ used (float total))))
-	  0.0))))
-
 (defun emit-heartbeat ()
   "On a regular interval *heartbeat-interval*, send a heartbeat message
    to the telemetry client and additionally send CPU and memory usage."
@@ -160,20 +122,25 @@
 (defun send-migrant-over-socket (island-id root-team)
   "Sends a TEAM to island ISLAND-ID through a TCP socket.
    Notifies the telemetry client that a migrant was sent over UDP."
-  (let ((receiver-ip-address (lookup-island-ip-by-id island-id)))
-    (handler-case
-	(progn
-	  (usocket:with-client-socket (socket stream receiver-ip-address 8080)
-	    (prin1 `(:type :migrant
-		     :from ,(who-am-i)
-		     :ts ,(get-universal-time)
-		     :team ,(serialize-team root-team))
-		   stream)
-	    (finish-output stream))
-	  ;; Notify the telemetry client over UDP that a migrant was sent.
-	  (emit-message (format nil "Migrant was sent to island ~A.~%" island-id)))
-      (error (e)
-	(emit-error (format nil "Failed to send migrant to ~A: ~A~%" island-id e))))))
+  (let ((receiver-ip-address (lookup-island-ip-by-id island-id))
+	(sender-id (who-am-i))
+	(serialized-team (serialize-team root-team)))
+    (bt:make-thread
+     (lambda ()
+       (handler-case
+	   (progn
+	     (usocket:with-client-socket (socket stream receiver-ip-address 8080 :timeout 30)
+	       (prin1 `(:type :migrant
+			:from ,sender-id
+			:ts ,(get-universal-time)
+			:team ,serialized-team)
+		      stream)
+	       (finish-output stream))
+	     ;; Notify the telemetry client over UDP that a migrant was sent.
+	     (emit-message (format nil "Migrant was sent to island ~A.~%" island-id)))
+	 (error (e)
+	   (emit-error (format nil "Failed to send migrant to ~A: ~A~%" island-id e)))))
+     :name (format nil "migrant-sender-to~A" island-id))))
 
 (defun receive-migrant-over-socket (msg)
   (when *running*
@@ -207,7 +174,8 @@
 			      p-add p-del p-mut p-act p-swap
 			      gap init-program-size max-program-size
 			      p-add-instr p-del-instr p-swap-instrs
-			      p-mut-constant p-mut-constant-sign)
+			      p-mut-constant p-mut-constant-sign
+			      migration-interval batch-size)
   "Set the hyperparameters according to the TCP request."
   (setf *population-size* population-size)
   (setf *num-observations* num-observations)
@@ -230,7 +198,10 @@
   (setf *p-del-instr* p-del-instr)
   (setf *p-swap-instrs* p-swap-instrs)
   (setf *p-mut-constant* p-mut-constant)
-  (setf *p-mut-constant-sign* p-mut-constant-sign))
+  (setf *p-mut-constant-sign* p-mut-constant-sign)
+
+  (setf *migration-interval* migration-interval)
+  (setf *batch-size* batch-size))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
 				  num-observations num-actions
@@ -240,7 +211,7 @@
 				  gap init-program-size max-program-size
 				  p-add-instr p-del-instr p-swap-instrs
 				  p-mut-constant p-mut-constant-sign
-				  seed)
+				  migration-interval batch-size seed)
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check that mode is either :online or :offline
   (and (or (eq mode :online)
@@ -287,6 +258,8 @@
 	(p-swap-instrs (getf msg :p-swap-instrs))
 	(p-mut-constant (getf msg :p-mut-constant))
 	(p-mut-constant-sign (getf msg :p-mut-constant-sign))
+	(migration-interval (getf msg :migration-interval))
+	(batch-size (getf msg :batch-size))
 	(seed (getf msg :seed)))
     (format t "~S~%" msg)
     (if (valid-search-parameters-p mode gym-environment-name dataset-name
@@ -295,7 +268,8 @@
 				   p-add p-del p-mut p-act p-swap gap
 				   init-program-size max-program-size
 				   p-add-instr p-del-instr p-swap-instrs
-				   p-mut-constant p-mut-constant-sign seed)
+				   p-mut-constant p-mut-constant-sign
+				   migration-interval batch-size seed)
 	(progn
 	  (set-global-parameters
 	    population-size
@@ -305,9 +279,28 @@
 	    p-swap gap init-program-size
 	    max-program-size p-add-instr
 	    p-del-instr p-swap-instrs
-	    p-mut-constant p-mut-constant-sign)
-	  (emit-message (format nil "Search started on island ~A~%" (who-am-i)))
-	  (run-search mode gym-environment-name dataset-name seed))
+	    p-mut-constant p-mut-constant-sign
+	    migration-interval
+	    batch-size)
+	  (setf *running* t)
+
+	  (push 
+	   (bt:make-thread
+	    (lambda ()
+	      (unwind-protect 
+		   (handler-case
+		       (progn
+			 (emit-message (format nil "Search started on island ~A~%" (who-am-i)))
+			 ;; enable multi-threading
+			 (setf lparallel:*kernel* (make-kernel *num-threads*))
+			 (run-search mode gym-environment-name dataset-name seed))
+		     (error (c)
+		       (setf *running* nil)
+		       (emit-error (format nil "Search crashed: ~A" c))))
+		(setf *running* nil)
+		(lparallel:end-kernel)))
+	    :name "search-thread")
+	   *server-threads*))
 	(emit-error "The search parameters provided are invalid."))))
 
 (defun handle-stop-search ()

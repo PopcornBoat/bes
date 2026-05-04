@@ -71,12 +71,12 @@
    :truncations (subseq (truncations dataset) start end)
    :size (- end start)))
 
-(defun sample (dataset num-transitions)
+(defun sample (dataset)
   (let ((len (dataset-size dataset)))
-    (if (>= num-transitions len)
+    (if (>= *batch-size* len)
 	dataset
-	(let ((start (random (- len num-transitions))))
-	  (batch dataset start (+ start num-transitions))))))
+	(let ((start (random (- len *batch-size*))))
+	  (batch dataset start (+ start *batch-size*))))))
 
 (defun load-dataset (name &key path)
   "Load a dataset from a path on the filesystem.

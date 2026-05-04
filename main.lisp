@@ -12,7 +12,6 @@
   (setf *teams* (loop repeat *population-size*
 			   collect (make-team))))
 
-
 (defun accuracy (team dataset)
   (let ((predictions (execute-team-on-dataset team dataset))
 	(actuals (actions dataset)))
@@ -23,7 +22,10 @@
 	  
 (defun make-fitness-function (&key gym-environment-name dataset-name)
   (cond
-    (gym-environment-name (error "Online evaluation is not implemented yet."))
+    (gym-environment-name
+     (setf *fitness-fn*
+	   (lambda (team)
+	     (bes-gym:rollout team gym-environment-name (random 9999999)))))
     (dataset-name
      (let ((dataset (load-dataset dataset-name)))
        (setf *fitness-fn* 
@@ -111,36 +113,21 @@
   "Search the solution space with a tangled program graph."
   (let* ((seed (seed-or-random-seed seed))
 	 (captured-state (sb-ext:seed-random-state seed)))
-    
     (setf *random-state* captured-state)
 
-    (when *running*
-      (emit-error "A search is already running on this node.")
-      (return-from run-search))
-
     (setf *teams* nil)
-    (setf *running* t)
     (setf *generation* 1)
-    
-    ;; enable multi-threading
-    (setf lparallel:*kernel* (make-kernel +num-threads+))
     
     ;; make the initial population
     (make-initial-population)
 
     (ecase mode
+      (:online (make-fitness-function :gym-environment-name gym-environment-name))
       (:offline (make-fitness-function :dataset-name dataset-name)))
 
-    (push (bt:make-thread
-	   (lambda ()
-	     (let ((*random-state* (make-random-state captured-state)))
-	       (unwind-protect
-		    (loop while *running*
-			  do (evolve)
-			  do (incf *generation*))
-		 (lparallel:end-kernel))))
-	   :name "search-thread")
-	  *server-threads*)))
+    (loop while *running*
+	  do (evolve)
+	  do (incf *generation*))))
 
 		   
 					     

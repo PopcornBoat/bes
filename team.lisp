@@ -9,10 +9,16 @@
   (learners (loop repeat *init-num-learners*
 		  collect (make-learner))))
 
-(defun serialize-team (team)
-  `(:id ,(team-id team)
-    :type ,(team-type team)
-    :learners ,(mapcar #'serialize-learner (team-learners team))))
+(defun serialize-team (team &optional (seen (make-hash-table)))
+  (let ((id (team-id team)))
+    (if (gethash id seen)
+	`(:id ,id :type :already-serialized)
+	(progn
+	  (setf (gethash id seen) t)
+	  `(:id ,id
+	    :type ,(team-type team)
+	    :learners ,(mapcar (lambda (l) (serialize-learner l seen))
+			       (team-learners team)))))))
 
 (defun deserialize-team (data registry &optional (is-root t))
   (let* ((id (getf data :id))

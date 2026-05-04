@@ -3,7 +3,7 @@
   :version "0.4"
   :author "Bryce MacInnis"
   :license "GPL-3"
-  :depends-on ("usocket" "alexandria" "bordeaux-threads" "lparallel")
+  :depends-on ("usocket" "alexandria" "bordeaux-threads" "lparallel" "py4cl2")
   :components ((:file "package")
 	       (:file "helpers")
 	       (:file "globals")
@@ -16,4 +16,5 @@
 	       (:file "dataset")
 	       (:file "migration")
                (:file "networking")
+	       (:file "gym")
 	       (:file "main")))
