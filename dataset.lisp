@@ -1,4 +1,4 @@
-(in-package :bes)
+(in-package :cl-tpg)
 
 (defstruct (dataset (:constructor %make-dataset))
   (observations (make-array 0) :type (simple-array (simple-array double-float (*)) (*)))

@@ -1,4 +1,4 @@
-(in-package :bes-gym)
+(in-package :cl-gym)
 
 (defun obs->array (obs)
   "Coerces an observation OBS from list to simple double-float array.
@@ -41,7 +41,7 @@
 	 (observation (reset env seed)))
     (unwind-protect
 	 (loop for timestep from 0
-	       do (let ((action (bes:execute-team root-team observation)))
+	       do (let ((action (cl-tpg:execute-team root-team observation)))
 		    (multiple-value-bind (obs rew term trunc info)
 			(step env action)
 		      (declare (ignore info))

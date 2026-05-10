@@ -191,7 +191,7 @@
     :choices ("all" "0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15"))]
   ["Actions"
    ("D" "STOP Search" stop-search)
-   ("q" "Back to Main" bes-menu)])
+   ("q" "Back to Main" tpg-menu)])
 
 (transient-define-prefix start-search-menu ()
   "Menu for configuring TPG hyperparameters before starting a run."
@@ -258,13 +258,13 @@
 
   ["Actions"
    ("S" "START Search" start-search)
-   ("q" "Back to Main" bes-menu)])
+   ("q" "Back to Main" tpg-menu)])
 
-(transient-define-prefix bes-menu ()
-  "Control Center for BES."
+(transient-define-prefix tpg-menu ()
+  "Control Center for TPG."
   ["Dashboard Controls"
-   ("r" "Start Auto-Refresh" bes-start-auto-refresh)
-   ("s" "Stop Auto-Refresh" bes-stop-auto-refresh)
+   ("r" "Start Auto-Refresh" tpg-start-auto-refresh)
+   ("s" "Stop Auto-Refresh" tpg-stop-auto-refresh)
    ("g" "Force Refresh" revert-buffer)]
 
   ["Runs"
@@ -274,37 +274,37 @@
   ["Navigation"
    ("q" "Quit Menu" transient-quit-one)])
 
-(defvar bes-data (make-hash-table :test 'equal))
+(defvar tpg-data (make-hash-table :test 'equal))
 
-(defvar bes-refresh-timer nil
-  "Timer for auto-refreshing the BES dashboard.")
+(defvar tpg-refresh-timer nil
+  "Timer for auto-refreshing the TPG dashboard.")
 
-(defun bes-start-auto-refresh ()
-  "Start a timer to refresh the *bes* buffer every 2 seconds."
+(defun tpg-start-auto-refresh ()
+  "Start a timer to refresh the *tpg* buffer every 2 seconds."
   (interactive)
   ;; Cancel existing timer if it exists
-  (when bes-refresh-timer
-    (cancel-timer bes-refresh-timer))
+  (when tpg-refresh-timer
+    (cancel-timer tpg-refresh-timer))
 
-  (setq bes-refresh-timer
+  (setq tpg-refresh-timer
 	(run-at-time 0 1
 		     (lambda ()
-		       (let ((buf (get-buffer "*bes-log*")))
+		       (let ((buf (get-buffer "*tpg-log*")))
 			 (when (buffer-live-p buf)
 			   (with-current-buffer buf
 			     (goto-char (point-max)))))
-		       (let ((buf (get-buffer "*bes*")))
+		       (let ((buf (get-buffer "*tpg*")))
 			 (when (buffer-live-p buf)
 			   (with-current-buffer buf
 			     (revert-buffer t t))))))))
 
-(defun bes-stop-auto-refresh ()
-  "Stop the BES refresh timer."
+(defun tpg-stop-auto-refresh ()
+  "Stop the TPG refresh timer."
   (interactive)
-  (cancel-timer bes-refresh-timer)
-  (setq bes-refresh-timer nil))
+  (cancel-timer tpg-refresh-timer)
+  (setq tpg-refresh-timer nil))
 
-(define-derived-mode bes-mode tabulated-list-mode "BES-Islands"
+(define-derived-mode tpg-mode tabulated-list-mode "TPG-Islands"
   "Major mode for displaying Island fitness data."
   (setq tabulated-list-format [("Island" 15 t) 
                                ("Fitness" 15 t)
@@ -312,10 +312,10 @@
 			       ("CPU" 15 t)
 			       ("Mem" 15 t)])
   (setq tabulated-list-padding 2)
-  (add-hook 'tabulated-list-revert-hook #'bes--refresh-data nil t)
+  (add-hook 'tabulated-list-revert-hook #'tpg--refresh-data nil t)
   (tabulated-list-init-header))
 
-(defun bes--refresh-data ()
+(defun tpg--refresh-data ()
   "Translate hash table data into tabulated-list format."
   (interactive)
   (let (entries)
@@ -331,46 +331,46 @@
 				 (format "%.1f" (or cpu 0.0))
 				 (format "%.1f" (or memory 0.0))))
 		       entries)))
-	     bes-data)
+	     tpg-data)
     (setq tabulated-list-entries entries)))
 
-(defun bes-telemetry-handler (_proc string)
+(defun tpg-telemetry-handler (_proc string)
   "Receive telemetry information from the island nodes."
   (ignore-errors
     (let* ((msg (read string))
 	   (type (plist-get msg :TYPE))
 	   (from-id (plist-get msg :FROM))
 	   ;; Get existing data for this island, or an empty list if new.
-	   (current-data (gethash from-id bes-data '())))
+	   (current-data (gethash from-id tpg-data '())))
       (cond
        ((eq type :FITNESS)
 	(let ((fitness (plist-get msg :FITNESS))
 	      (generation (plist-get msg :GENERATION)))
 	  (puthash from-id
 		   (plist-put (plist-put current-data :fitness fitness) :generation generation)
-		   bes-data)))
+		   tpg-data)))
 
        ((eq type :MESSAGE)
 	(let ((message (plist-get msg :MSG)))
-	  (bes--log-event (format "[ISLAND %s] Message: %s"
+	  (tpg--log-event (format "[ISLAND %s] Message: %s"
 				  from-id message))))
        ((eq type :HEARTBEAT)
 	(let ((cpu (plist-get msg :CPU))
 	      (memory (plist-get msg :MEMORY)))
 	  (puthash from-id
 		   (plist-put (plist-put current-data :cpu cpu) :memory memory)
-		   bes-data)
-	  (bes--log-event (format "[ISLAND %s] Heartbeat received."
+		   tpg-data)
+	  (tpg--log-event (format "[ISLAND %s] Heartbeat received."
 				  from-id cpu memory))))
        ((eq type :ERROR)
 	(let ((error-message (plist-get msg :MSG)))
-	  (bes--log-event (propertize (format "ISLAND %s ENCOUNTERED AN ERROR: %s"
+	  (tpg--log-event (propertize (format "ISLAND %s ENCOUNTERED AN ERROR: %s"
 					      from-id error-message)
 				      'font-lock-face 'error))))))))
 	   
-(defun bes--log-event (message)
-  "Appends MESSAGE to the *bes-log* buffer and caps it at 1000 lines."
-  (let ((log-buf (get-buffer-create "*bes-log*"))
+(defun tpg--log-event (message)
+  "Appends MESSAGE to the *tpg-log* buffer and caps it at 1000 lines."
+  (let ((log-buf (get-buffer-create "*tpg-log*"))
         (max-lines 1000))
     (with-current-buffer log-buf
       (let ((inhibit-read-only t))
@@ -389,21 +389,21 @@
               (forward-line (- line-count max-lines))
               (delete-region (point-min) (point)))))))))
 
-(defun bes ()
-  "Start BES dashboard and log."
+(defun tpg ()
+  "Start TPG dashboard and log."
   (interactive)
   ;; Ensure server is running
-  (unless (process-live-p (get-process "bes"))
+  (unless (process-live-p (get-process "tpg"))
     (make-network-process
-     :name "bes" :family 'ipv4 :service 8080 :type 'datagram
-     :host "0.0.0.0" :server t :filter #'bes-telemetry-handler))
+     :name "tpg" :family 'ipv4 :service 8080 :type 'datagram
+     :host "0.0.0.0" :server t :filter #'tpg-telemetry-handler))
   
   ;; Setup Dashboard
-  (let ((db-buf (get-buffer-create "*bes*"))
-        (log-buf (get-buffer-create "*bes-log*")))
+  (let ((db-buf (get-buffer-create "*tpg*"))
+        (log-buf (get-buffer-create "*tpg-log*")))
     
     (with-current-buffer db-buf
-      (bes-mode)
+      (tpg-mode)
       (revert-buffer))
 
     ;; Display logic: Dashboard on top, Log on bottom
@@ -412,5 +412,5 @@
     (set-window-buffer (split-window-vertically -30) log-buf)))
 
 ;; Bind the transient menu to C-c C-c
-(define-key bes-mode-map (kbd "C-c C-c") 'bes-menu)
+(define-key tpg-mode-map (kbd "C-c C-c") 'tpg-menu)
 

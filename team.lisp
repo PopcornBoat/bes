@@ -1,4 +1,4 @@
-(in-package :bes)
+(in-package :cl-tpg)
 
 (defparameter *team-id-generator* (make-counter))
 

@@ -1,4 +1,4 @@
-(in-package :bes)
+(in-package :cl-tpg)
 
 (defconstant *num-threads* 140
   "The number of CPU cores available for multi-threading.")
