@@ -1,4 +1,4 @@
-(in-package :bes)
+(in-package :cl-tpg)
 
 (defun seed-or-random-seed (seed)
   "The start-search TCP packet will either contain :random or an integer seed.
@@ -25,7 +25,7 @@
     (gym-environment-name
      (setf *fitness-fn*
 	   (lambda (team)
-	     (bes-gym:rollout team gym-environment-name (random 9999999)))))
+	     (cl-gym:rollout team gym-environment-name (random 9999999)))))
     (dataset-name
      (let ((dataset (load-dataset dataset-name)))
        (setf *fitness-fn* 

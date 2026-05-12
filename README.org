@@ -1,4 +1,4 @@
-* Welcome to BES! (Better Evolution System (than before))
+* Welcome to CL-TPG!
 
 ** Getting started with Common Lisp and Emacs.
 
@@ -29,7 +29,7 @@ Once you have that, you have all the essential dependencies to run this reposito
 Genetic programming is ``embarrasingly parallel.'' As such, this repository has recently been re-vamped to assume a distributed computing paradigm
 (TPG runs on multiple computers/nodes in a cluster at once.) This means that everything is asynchronous and networked by design. Including the starting and stopping of searches and the setting of hyperparameters.
 
-*** Giving /bes/ to Quicklisp so you can load it as a module.
+*** Giving /cl-tpg/ to Quicklisp so you can load it as a module.
 
 Rather than loading this repo by /eval-buffer/ing every file in the correct order, the more convenient way to load the code is to use Quicklisp.
 Quicklisp looks for repositories in the folder ~/quicklisp/local-projects.
@@ -37,7 +37,7 @@ Quicklisp looks for repositories in the folder ~/quicklisp/local-projects.
 You can make a symlink from your repository to this location with the following:
 
 #+BEGIN_SRC sh
-  ln -s /fully/expanded/path/to/your/repos/bes /fully/expanded/path/to/your/quicklisp/local-projects/
+  ln -s /fully/expanded/path/to/your/repos/cl-tpg /fully/expanded/path/to/your/quicklisp/local-projects/
 #+END_SRC
 
 *** Setting up Python and Gymnasium environments.
@@ -77,9 +77,9 @@ can actually take longer than the fitness evaluation itself.
 ** File Structure
 
 | File             | Purpose                                                                                                                |
-| emacs/bes.el     | Everything related to the Emacs package is here including the transient menu for starting searches, stopping searches. |
+| emacs/tpg.el     | Everything related to the Emacs package is here including the transient menu for starting searches, stopping searches. |
 | action.lisp      | Defines what an action is: either an atomic action or a reference to another team.                                     |
-| bes.asd          | ASDF package definition i.e. telling Quicklisp what dependencies are needed to load BES.                               |
+| cl-tpg.asd       | ASDF package definition i.e. telling Quicklisp what dependencies are needed to load CL-TPG.                            |
 | dataset.lisp     | Everything related to datasets including how to load and use them efficiently.                                         |
 | globals.lisp     | Key global variables all in one place. Dynamically set by the Emacs client through the search menu                     |
 | helpers.lisp     | Useful utility functions                                                                                               |
@@ -88,7 +88,7 @@ can actually take longer than the fitness evaluation itself.
 | main.lisp        | Everything to do with the actual evolution/generational loop.                                                          |
 | migration.lisp   | When teams are received over TCP, they are added to and processed from thread-safe queues defined here.                |
 | mutation.lisp    | All the mutation of teams and learners are defined here.                                                               |
-| networking.lisp  | All socket-based communication from Emacs to BES or from BES node to BES node is implemented here.                     |
+| networking.lisp  | All socket-based communication from Emacs to CL-TPG or from CL-TPG node to CL-TPG node is implemented here.  |
 | package.lisp     | Defines what functions are public/private and the order in which to load files during (ql:quickload)                   |
 | program.lisp     | The very fast execution engine for running programs on data                                                            |
 | team.lisp        | A team is a candidate solution or part of a candidate solution to the task.                                            |
@@ -97,7 +97,7 @@ can actually take longer than the fitness evaluation itself.
 
 1.)
 
-In order for Emacs and the BES servers to communicate, you first need to set the IP address of the Emacs client.
+In order for Emacs and the CL-TPG servers to communicate, you first need to set the IP address of the Emacs client.
 In /networking.lisp/ change
 
 #+BEGIN_SRC lisp
@@ -142,39 +142,39 @@ so the compiler can optimize-to-death the execution of programs.
 In Sly /(M-x sly)/, you can now load the package with the following:
 
 #+BEGIN_SRC lisp
-    (ql:quickload :bes)
+    (ql:quickload :cl-tpg)
 #+END_SRC
 
 After you've loaded the package, you can now start the server.
 
 #+BEGIN_SRC lisp
-  (bes:start-server)
+  (cl-tpg:start-server)
 #+END_SRC
 
-Once you've done this, great! Now your /BES/ is listening to your Emacs.
+Once you've done this, great! Now your /CL-TPG/ is listening to your Emacs.
 
 If you need to stop the server, there is also:
 
 #+BEGIN_SRC lisp
-  (bes:stop-server)
+  (cl-tpg:stop-server)
 #+END_SRC
 
-* Enabling the *bes* package in Emacs.
+* Enabling the *tpg* package in Emacs.
 
 #+BEGIN_SRC sh
-      C-x C-f ./emacs/bes.el
+      C-x C-f ./emacs/tpg.el
       M-x eval-buffer
-      M-x bes
+      M-x tpg
 #+END_SRC
 
-The above code opens the /bes.el/ file from the working directory. /eval-buffer/ executes each expression in the file sequentially. /bes/ opens two buffers (windows) within emacs.
-The first buffer is *bes* which is the main control panel for interacting wih the TPG nodes/servers. *bes* shows things like fitness and generation for the connected nodes. The second buffer is *bes-log* which receives messages, warnings, and errors from the nodes.
+The above code opens the /tpg.el/ file from the working directory. /eval-buffer/ executes each expression in the file sequentially. /tpg/ opens two buffers (windows) within emacs.
+The first buffer is *tpg* which is the main control panel for interacting wih the TPG nodes/servers. *tpg* shows things like fitness and generation for the connected nodes. The second buffer is *tpg-log* which receives messages, warnings, and errors from the nodes.
 
-[[./figures/*bes*.png]]
+[[./figures/*tpg*.png]]
 
 * Starting searches in TPG
 
-When you're in the *bes* buffer, you can press
+When you're in the *tpg* buffer, you can press
 
 #+BEGIN_SRC sh
   C-c C-c
@@ -182,7 +182,7 @@ When you're in the *bes* buffer, you can press
 
 to bring up a /transient/ menu.
 
-The first thing you should do is enable auto-refreshing of the *bes* panel when new fitness scores or system information arrives.
+The first thing you should do is enable auto-refreshing of the *tpg* panel when new fitness scores or system information arrives.
 
 After you have done this you can start/stop searches of individual nodes/islands or start/stop searches of all nodes/islands.
 
@@ -194,9 +194,9 @@ After you have done this you can start/stop searches of individual nodes/islands
 
 | Parameter                  | Key Press | Role                                                                                                                                                                             |
 | Island                     | -I        | The island ID you want to run this against. Select --all for this to be a global search across all nodes.                                                                        |
-| Evaluation Mode            | -M        | BES supports both offline learning (learning from a dataset with no task interaction) and online learning (interacting with a simulator.) This parameter sets which mode to use. |
-| Gymnasium Environment Name | -G        | This tells BES which Gymnasium environment to load, e.g. "HalfCheetah-v5"                                                                                                        |
-| Dataset Name               | -F        | The name of the dataset to load. BES looks for datasets in ~/.datasets/.                                                                                                         |
+| Evaluation Mode            | -M        | CL-TPG supports both offline learning (learning from a dataset with no task interaction) and online learning (interacting with a simulator.) This parameter sets which mode to use. |
+| Gymnasium Environment Name | -G        | This tells CL-TPG which Gymnasium environment to load, e.g. "HalfCheetah-v5"                                                                                                  |
+| Dataset Name               | -F        | The name of the dataset to load. CL-TPG looks for datasets in ~/.datasets/.                                                                                                   |
 | Number of Observations     | -Z        | How many observations are there in the state space or how many features are there in the dataset?                                                                                |
 | Number of Actions          | -X        | How many actions are there in the action space or how many classes are there in the dataset?                                                                                     |
 | Population Size            | -P        | The size of the population (number of root teams).                                                                                                                               |

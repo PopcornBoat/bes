@@ -1,4 +1,4 @@
-(defpackage :bes
+(defpackage :cl-tpg
 	    (:use :cl)
 	    (:import-from :lparallel
 			  #:*kernel*
@@ -7,11 +7,11 @@
 			  #:end-kernel)
 	    (:export :start-server :stop-server :execute-team))
 
-(defpackage :bes-gym
-  (:use :cl :bes)
+(defpackage :cl-gym
+  (:use :cl :cl-tpg)
   (:shadow #:step)
   (:export #:rollout)
-  (:documentation "A Gymnasium wrapper for BES."))
+  (:documentation "A Gymnasium wrapper for CL-TPG."))
 
-(in-package :bes)
+(in-package :cl-tpg)
        

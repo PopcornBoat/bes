@@ -1,4 +1,4 @@
-(in-package :bes)
+(in-package :cl-tpg)
 
 (defvar *server-threads* nil
   "List of threads spawned by START-SERVER.")

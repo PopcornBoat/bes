@@ -1,5 +1,5 @@
-(asdf:defsystem "bes"
-  :description "Better Evolution System"
+(asdf:defsystem "cl-tpg"
+  :description "A Common Lisp implementation of Tangled Program Graphs"
   :version "0.4"
   :author "Bryce MacInnis"
   :license "GPL-3"

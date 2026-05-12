@@ -1,4 +1,4 @@
-(in-package :bes)
+(in-package :cl-tpg)
 
 (defparameter *learner-id-generator* (make-counter))
 
