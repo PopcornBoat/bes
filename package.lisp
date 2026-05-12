@@ -10,7 +10,7 @@
 (defpackage :cl-gym
   (:use :cl :cl-tpg)
   (:shadow #:step)
-  (:export #:rollout)
+  (:export #:rollout #:obs->array #:make #:reset #:step)
   (:documentation "A Gymnasium wrapper for CL-TPG."))
 
 (in-package :cl-tpg)

@@ -43,7 +43,7 @@
 
 (defun evaluate ()
   "Returns a list of (team . fitness), skipping and deleting bad teams."
-  (let* ((results (lparallel:pmapcar #'safe-evaluate-team
+  (let* ((results (mapcar #'safe-evaluate-team
                                      (root-teams)))
          (bad-teams (loop for (team . fitness) in results
                           when (eq fitness :bad)
