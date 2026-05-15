@@ -59,14 +59,16 @@
 	 (usocket:socket-send socket msg (length msg))
       (usocket:socket-close socket))))
 			 
-(defun emit-fitness-scores (island-id fitness generation)
+(defun emit-fitness-scores (island-id fitness generation &key mean total-eps)
   "Sends the island's fitness score to the telemetry client."
   (let ((payload (prin1-to-string
-		  `(:type :fitness
-		    :fitness ,(format nil "~,4F" fitness)
-		    :from ,island-id
-		    :generation ,generation
-		    :ts ,(get-universal-time)))))
+                  `(:type :fitness
+                    :fitness ,(format nil "~,4F" fitness)
+                    :mean ,(when mean (format nil "~,4F" mean))
+                    :total-eps ,total-eps
+                    :from ,island-id
+                    :generation ,generation
+                    :ts ,(get-universal-time)))))
     (notify-telemetry payload)))
 
 (defun emit-heartbeat ()

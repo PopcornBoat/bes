@@ -19,7 +19,29 @@
 	  for predicted in predictions
 	     count (= actual predicted))
        (length actuals))))
-	  
+
+(defparameter *fitness-window-size* 1000)
+(defparameter *fitness-window* '())
+(defparameter *fitness-window-sum* 0.0d0)
+
+(defun reset-fitness-window ()
+  (setf *fitness-window* '()
+        *fitness-window-sum* 0.0d0))
+
+(defun record-fitness-and-mean (fitness)
+  (let ((f (coerce fitness 'double-float)))
+    (push f *fitness-window*)
+    (incf *fitness-window-sum* f)
+
+    (when (> (length *fitness-window*) *fitness-window-size*)
+      (let ((oldest (car (last *fitness-window*))))
+        (setf *fitness-window* (butlast *fitness-window*))
+        (decf *fitness-window-sum* oldest)))
+
+    (values (/ *fitness-window-sum*
+               (length *fitness-window*))
+            (length *fitness-window*))))
+            	  
 (defun make-fitness-function (&key gym-environment-name dataset-name)
   (cond
     (gym-environment-name
@@ -57,10 +79,20 @@
 (defun select (scores)
   "Remove GAP percent of the population by removing the worst teams."
   (let* ((sorted (sort (copy-list scores) #'> :key #'cdr))
-	 (n-remove (floor (* *gap* (length scores))))
-	 (worst (last sorted n-remove))
-	 (best-fitness (cdr (first sorted))))
-    (emit-fitness-scores (who-am-i) best-fitness *generation*)
+         (n-remove (floor (* *gap* (length scores))))
+         (worst (last sorted n-remove))
+         (best-entry (first sorted))
+         (best-fitness (and best-entry (cdr best-entry))))
+
+    (when best-fitness
+      (multiple-value-bind (rolling-mean total-eps)
+          (record-fitness-and-mean best-fitness)
+        (emit-fitness-scores (who-am-i)
+                             best-fitness
+                             *generation*
+                             :mean rolling-mean
+                             :total-eps total-eps)))
+
     (dolist (entry worst)
       (delete-team (car entry)))))
 

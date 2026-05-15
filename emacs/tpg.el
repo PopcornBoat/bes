@@ -225,7 +225,18 @@
    ("-M" "Evaluation Mode" "--mode="
     :choices ("online" "offline"))
    ("-G" "Gymnasium Environment Name" "*env="
-    :choices ("none" "Hopper-v5" "Walker2d-v5" "HalfCheetah-v5" "Acrobot-v1" "LunarLander-v3" "MountainCar-v0" "CartPole-v1"))
+    :choices ("none" 
+              "Cage2-v0"
+              "Cage2-b_line-30-v0"
+              "Cage2-b_line-50-v0"
+              "Cage2-b_line-100-v0"
+              "Cage2-meander-30-v0"
+              "Cage2-meander-50-v0"
+              "Cage2-meander-100-v0"
+              "Cage2-sleep-30-v0"
+              "Cage2-sleep-50-v0"
+              "Cage2-sleep-100-v0"  
+              "Hopper-v5" "Walker2d-v5" "HalfCheetah-v5" "Acrobot-v1" "LunarLander-v3" "MountainCar-v0" "CartPole-v1"))
    ("-F" "Dataset Name" "*dataset=")]
   ["Key Settings"
    ("-Z" "Number of Observations" "*num-observations=")
@@ -306,11 +317,12 @@
 
 (define-derived-mode tpg-mode tabulated-list-mode "TPG-Islands"
   "Major mode for displaying Island fitness data."
-  (setq tabulated-list-format [("Island" 15 t) 
-                               ("Fitness" 15 t)
-			       ("Generation" 15 t)
-			       ("CPU" 15 t)
-			       ("Mem" 15 t)])
+  (setq tabulated-list-format [("Island" 10 t)
+                             ("Reward" 15 t)
+                             ("Mean" 25 t)
+                             ("Generation" 15 t)
+                             ("CPU" 10 t)
+                             ("Mem" 10 t)])
   (setq tabulated-list-padding 2)
   (add-hook 'tabulated-list-revert-hook #'tpg--refresh-data nil t)
   (tabulated-list-init-header))
@@ -325,11 +337,14 @@
 		     (cpu (plist-get data :cpu))
 		     (memory (plist-get data :memory)))
 		 (push (list id (vector
-				 (format "%s" id)
-				 (format "%s" (or fitness "-"))
-				 (format "%s" (or gen "-"))
-				 (format "%.1f" (or cpu 0.0))
-				 (format "%.1f" (or memory 0.0))))
+                      (format "%s" id)
+                      (format "%s" (or fitness "-"))
+                      (format "%s (%s eps)"
+                              (or (plist-get data :mean) "-")
+                              (or (plist-get data :total-eps) "-"))
+                      (format "%s" (or gen "-"))
+                      (format "%.1f" (or cpu 0.0))
+                      (format "%.1f" (or memory 0.0))))
 		       entries)))
 	     tpg-data)
     (setq tabulated-list-entries entries)))
@@ -345,10 +360,18 @@
       (cond
        ((eq type :FITNESS)
 	(let ((fitness (plist-get msg :FITNESS))
-	      (generation (plist-get msg :GENERATION)))
-	  (puthash from-id
-		   (plist-put (plist-put current-data :fitness fitness) :generation generation)
-		   tpg-data)))
+      (mean (plist-get msg :MEAN))
+      (total-eps (plist-get msg :TOTAL-EPS))
+      (generation (plist-get msg :GENERATION)))
+  (puthash from-id
+           (plist-put
+            (plist-put
+             (plist-put
+              (plist-put current-data :fitness fitness)
+              :mean mean)
+             :total-eps total-eps)
+            :generation generation)
+           tpg-data)))
 
        ((eq type :MESSAGE)
 	(let ((message (plist-get msg :MSG)))
