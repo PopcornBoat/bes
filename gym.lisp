@@ -36,7 +36,8 @@
    using ROOT-TEAM as the policy. Specify a SEED to control for the starting state.
    Specify a filename for video-path if you want to record a video of the agent."
   (py4cl2:pyexec "import gymnasium as gym")
-  (py4cl2:pyexec "import cage2_bridge")
+  (when (search "Cage2" environment-name)
+    (py4cl2:pyexec "import cage2_bridge"))
   (let* ((env (make environment-name :video-path video-path))
 	 (episode-reward 0.0)
 	 (observation (reset env seed)))

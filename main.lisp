@@ -54,15 +54,36 @@
 	     (lambda (team)
 	       (accuracy team dataset)))))))
   
+;; (defun safe-evaluate-team (team)
+;;   (cons team
+;;         (handler-case
+;;             (funcall *fitness-fn* team)
+;;           (floating-point-overflow () :bad)
+;;           (floating-point-invalid-operation () :bad)
+;;           (division-by-zero () :bad)
+;;           (error () :bad))))
 (defun safe-evaluate-team (team)
   (cons team
         (handler-case
             (funcall *fitness-fn* team)
-          (floating-point-overflow () :bad)
-          (floating-point-invalid-operation () :bad)
-          (division-by-zero () :bad)
-          (error () :bad))))
 
+          (floating-point-overflow (e)
+            (format t "~&[safe-evaluate-team] floating-point-overflow: ~A~%" e)
+            :bad)
+
+          (floating-point-invalid-operation (e)
+            (format t "~&[safe-evaluate-team] floating-point-invalid-operation: ~A~%" e)
+            :bad)
+
+          (division-by-zero (e)
+            (format t "~&[safe-evaluate-team] division-by-zero: ~A~%" e)
+            :bad)
+
+          (error (e)
+            (format t "~&[safe-evaluate-team] ERROR: ~A~%" e)
+            #+sbcl (sb-debug:print-backtrace :stream *standard-output*)
+            :bad))))
+            
 (defun evaluate ()
   "Returns a list of (team . fitness), skipping and deleting bad teams."
   (let* ((results (mapcar #'safe-evaluate-team

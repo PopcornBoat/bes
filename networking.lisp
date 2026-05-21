@@ -9,14 +9,14 @@
 (defvar *server-running* nil
   "When NIL, server loops will exit.")
 
-(defparameter *telemetry-ip* "172.20.96.153"
+(defparameter *telemetry-ip* "172.20.23.255"
   "IP address of the emacs client receiving telemetry.")
 
-(defparameter *heartbeat-interval* 300
+(defparameter *heartbeat-interval* 100
   "The amount of time to wait between sending heartbeats (in seconds).")
 
 (defparameter *islands*
-  '(("172.20.96.153" . 0) ;; ds-login2
+  '(("172.20.23.255" . 0) ;; ds-login2
     ("10.100.202.42" . 1) ;; ds-cmlm-02
     ("10.100.202.43" . 2) ;; ds-cmlm-03
     ("10.100.202.44" . 3) ;; ds-cmlm-04
