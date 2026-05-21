@@ -67,17 +67,9 @@
         (handler-case
             (funcall *fitness-fn* team)
 
-          (floating-point-overflow (e)
-            (format t "~&[safe-evaluate-team] floating-point-overflow: ~A~%" e)
-            :bad)
-
-          (floating-point-invalid-operation (e)
-            (format t "~&[safe-evaluate-team] floating-point-invalid-operation: ~A~%" e)
-            :bad)
-
-          (division-by-zero (e)
-            (format t "~&[safe-evaluate-team] division-by-zero: ~A~%" e)
-            :bad)
+          (floating-point-overflow (e) :bad)
+          (floating-point-invalid-operation (e) :bad)
+          (division-by-zero (e) :bad)
 
           (error (e)
             (format t "~&[safe-evaluate-team] ERROR: ~A~%" e)
