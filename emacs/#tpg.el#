@@ -1,9 +1,9 @@
-; -*- lexical-binding: t; -*-
+;; -*- lexical-binding: t; -*-
 (require 'transient)
 (require 'cl-lib)
 
 (defvar *islands*
-  '(("172.20.23.255" . 0) ;; ds-login2
+  '(("172.20.96.153" . 0) ;; ds-login2
     ("10.100.202.42" . 1) ;; ds-cmlm-02
     ("10.100.202.43" . 2) ;; ds-cmlm-03
     ("10.100.202.44" . 3) ;; ds-cmlm-04
@@ -235,7 +235,8 @@
               "Cage2-meander-100-v0"
               "Cage2-sleep-30-v0"
               "Cage2-sleep-50-v0"
-              "Cage2-sleep-100-v0"  
+              "Cage2-sleep-100-v0"
+              "Cage3SharedPolicy-v0"  
               "Hopper-v5" "Walker2d-v5" "HalfCheetah-v5" "Acrobot-v1" "LunarLander-v3" "MountainCar-v0" "CartPole-v1"))
    ("-F" "Dataset Name" "*dataset=")]
   ["Key Settings"
@@ -283,7 +284,13 @@
    ("D" "Stop a search" stop-search-menu)]
 
   ["Navigation"
-   ("q" "Quit Menu" transient-quit-one)])
+   ("q" "Quit Menu" transient-quit-one)]
+   
+  ["Checkpoints"
+    ("k" "Save Best Individual" tpg-save-best-checkpoint)
+    ("K" "Save Population" tpg-save-population-checkpoint)
+    ("I" "Save Image & Exit" tpg-save-image-checkpoint)])
+   
 
 (defvar tpg-data (make-hash-table :test 'equal))
 
@@ -437,3 +444,23 @@
 ;; Bind the transient menu to C-c C-c
 (define-key tpg-mode-map (kbd "C-c C-c") 'tpg-menu)
 
+(defun tpg-save-best-checkpoint ()
+  "Save best individual checkpoint."
+  (interactive)
+  (let ((dir (read-directory-name "Best checkpoint directory: ")))
+    (sly-eval `(cl-tpg::save-best-checkpoint ,dir))
+    (message "Best checkpoint saved to %s" dir)))
+
+(defun tpg-save-population-checkpoint ()
+  "Save full population checkpoint."
+  (interactive)
+  (let ((dir (read-directory-name "Population checkpoint directory: ")))
+    (sly-eval `(cl-tpg::save-population-checkpoint ,dir))
+    (message "Population checkpoint saved to %s" dir)))
+
+(defun tpg-save-image-checkpoint ()
+  "Save full SBCL image checkpoint and exit."
+  (interactive)
+  (let ((path (read-file-name "Core image path: " nil "cl-tpg.core")))
+    (sly-eval `(cl-tpg::save-lisp-image-checkpoint ,path))
+    (message "Saving image and exiting SBCL...")))

@@ -3,7 +3,7 @@
 (require 'cl-lib)
 
 (defvar *islands*
-  '(("172.20.23.255" . 0) ;; ds-login2
+  '(("172.20.96.153" . 0) ;; ds-login2
     ("10.100.202.42" . 1) ;; ds-cmlm-02
     ("10.100.202.43" . 2) ;; ds-cmlm-03
     ("10.100.202.44" . 3) ;; ds-cmlm-04
@@ -444,22 +444,23 @@
 ;; Bind the transient menu to C-c C-c
 (define-key tpg-mode-map (kbd "C-c C-c") 'tpg-menu)
 
-(defun tpg-save-checkpoint ()
-  "Save cl-tpg checkpoint."
+(defun tpg-save-best-checkpoint ()
+  "Save best individual checkpoint."
   (interactive)
-  (let* ((kind (completing-read
-                "Checkpoint type: "
-                '("best" "population" "image-and-exit")
-                nil t))
-         (dir (read-directory-name "Checkpoint directory: ")))
-    (pcase kind
-      ("best"
-       (sly-eval `(cl-tpg::save-best-checkpoint ,dir))
-       (message "Best checkpoint saved to %s" dir))
-      ("population"
-       (sly-eval `(cl-tpg::save-population-checkpoint ,dir))
-       (message "Population checkpoint saved to %s" dir))
-      ("image-and-exit"
-       (let ((path (read-file-name "Core image path: " dir "cl-tpg.core")))
-         (sly-eval `(cl-tpg::save-lisp-image-checkpoint ,path))
-         (message "Saving image and exiting SBCL..."))))))
+  (let ((dir (read-directory-name "Best checkpoint directory: ")))
+    (sly-eval `(cl-tpg::save-best-checkpoint ,dir))
+    (message "Best checkpoint saved to %s" dir)))
+
+(defun tpg-save-population-checkpoint ()
+  "Save full population checkpoint."
+  (interactive)
+  (let ((dir (read-directory-name "Population checkpoint directory: ")))
+    (sly-eval `(cl-tpg::save-population-checkpoint ,dir))
+    (message "Population checkpoint saved to %s" dir)))
+
+(defun tpg-save-image-checkpoint ()
+  "Save full SBCL image checkpoint and exit."
+  (interactive)
+  (let ((path (read-file-name "Core image path: " nil "cl-tpg.core")))
+    (sly-eval `(cl-tpg::save-lisp-image-checkpoint ,path))
+    (message "Saving image and exiting SBCL...")))
