@@ -284,7 +284,13 @@
    ("D" "Stop a search" stop-search-menu)]
 
   ["Navigation"
-   ("q" "Quit Menu" transient-quit-one)])
+   ("q" "Quit Menu" transient-quit-one)]
+   
+  ["Checkpoints"
+    ("k" "Save Best Individual" tpg-save-best-checkpoint)
+    ("K" "Save Population" tpg-save-population-checkpoint)
+    ("I" "Save Image & Exit" tpg-save-image-checkpoint)])
+   
 
 (defvar tpg-data (make-hash-table :test 'equal))
 
@@ -438,3 +444,22 @@
 ;; Bind the transient menu to C-c C-c
 (define-key tpg-mode-map (kbd "C-c C-c") 'tpg-menu)
 
+(defun tpg-save-checkpoint ()
+  "Save cl-tpg checkpoint."
+  (interactive)
+  (let* ((kind (completing-read
+                "Checkpoint type: "
+                '("best" "population" "image-and-exit")
+                nil t))
+         (dir (read-directory-name "Checkpoint directory: ")))
+    (pcase kind
+      ("best"
+       (sly-eval `(cl-tpg::save-best-checkpoint ,dir))
+       (message "Best checkpoint saved to %s" dir))
+      ("population"
+       (sly-eval `(cl-tpg::save-population-checkpoint ,dir))
+       (message "Population checkpoint saved to %s" dir))
+      ("image-and-exit"
+       (let ((path (read-file-name "Core image path: " dir "cl-tpg.core")))
+         (sly-eval `(cl-tpg::save-lisp-image-checkpoint ,path))
+         (message "Saving image and exiting SBCL..."))))))
