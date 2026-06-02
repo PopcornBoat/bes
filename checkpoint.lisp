@@ -1,10 +1,12 @@
 (in-package :cl-tpg)
 
 (defun checkpoint-path (directory filename)
+  "Return pathname for FILENAME under DIRECTORY."
   (merge-pathnames filename
                    (uiop:ensure-directory-pathname directory)))
 
 (defun checkpoint-timestamp ()
+  "Return timestamp string for checkpoint naming."
   (multiple-value-bind (sec min hour day month year)
       (decode-universal-time (get-universal-time))
     (format nil "~4,'0D~2,'0D~2,'0D_~2,'0D~2,'0D~2,'0D"
@@ -18,6 +20,7 @@
   (error "Only SBCL supports save-lisp-and-die."))
 
 (defun serialize-population-checkpoint ()
+  "Serialize current population and training metadata."
   `(:generation ,*generation*
     :population-size ,*population-size*
     :num-observations ,*num-observations*
@@ -43,20 +46,20 @@
               (*print-readably* t)
               (*print-pretty* t))
           (write (serialize-population-checkpoint) :stream out))))
-    path))
+    (namestring path)))
 
 (defun best-evaluated-team ()
   "Evaluate current root teams and return best team and best fitness.
-    Does not mutate or select."
+Does not mutate or select."
   (unless *teams*
     (error "Cannot find best team: *TEAMS* is NIL."))
+
   (let* ((scores (evaluate))
          (sorted (sort (copy-list scores) #'> :key #'cdr))
          (best-entry (first sorted)))
     (unless best-entry
       (error "Cannot find best team: no valid evaluated scores."))
     (values (car best-entry) (cdr best-entry))))
-
 
 (defun save-best-checkpoint (&optional (directory "best-checkpoint/"))
   "Save best individual and metadata without exiting."
@@ -95,7 +98,7 @@
                :batch-size ,*batch-size*)
              :stream out))))
 
-      directory)))
+      (namestring dir))))
 
 (defun load-solution (path)
   "Load serialized team solution."
@@ -113,3 +116,27 @@
     (/ (loop repeat episodes
              sum (cl-gym:rollout team environment-name (random 9999999)))
        episodes)))
+
+(defun load-population-checkpoint (path)
+  "Load a saved population checkpoint."
+
+  (with-open-file (in path :direction :input)
+    (let* ((data (read in))
+           (registry (make-hash-table :test #'equal)))
+
+      ;; restore metadata
+      (setf *generation*      (getf data :generation)
+            *population-size* (getf data :population-size)
+            *num-observations* (getf data :num-observations)
+            *num-actions*      (getf data :num-actions)
+            *gap*              (getf data :gap)
+            *batch-size*       (getf data :batch-size))
+
+      ;; restore teams
+      (setf *teams*
+            (mapcar
+             (lambda (team-data)
+               (deserialize-team team-data registry))
+             (getf data :teams)))
+
+      *teams*)))
