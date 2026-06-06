@@ -1,6 +1,6 @@
 (in-package :cl-tpg)
 
-(defconstant *num-threads* 20
+(defconstant *num-threads* 1
   "The number of CPU cores available for multi-threading.")
 
 (defconstant +num-registers+ 8
@@ -102,3 +102,15 @@
 (defparameter *batch-size* 1000
   "The number of generations to wait between sending migrants.")
 
+(defvar *best-team* nil
+  "Best root team seen so far.")
+
+(defvar *best-fitness* nil
+  "Fitness of the best root team seen so far.")
+
+(defparameter *checkpoint-directory*
+  "~/Documents/Research/checkpoints/"
+  "Default directory for checkpoints.")
+
+(defparameter *checkpoint-interval* 50
+  "Save full checkpoint every N generations. 0 disables auto checkpoint.")

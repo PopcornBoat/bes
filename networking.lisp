@@ -177,7 +177,8 @@
 			      gap init-program-size max-program-size
 			      p-add-instr p-del-instr p-swap-instrs
 			      p-mut-constant p-mut-constant-sign
-			      migration-interval batch-size)
+			      migration-interval batch-size
+				  &key checkpoint-directory checkpoint-interval)
   "Set the hyperparameters according to the TCP request."
   (setf *population-size* population-size)
   (setf *num-observations* num-observations)
@@ -203,7 +204,9 @@
   (setf *p-mut-constant-sign* p-mut-constant-sign)
 
   (setf *migration-interval* migration-interval)
-  (setf *batch-size* batch-size))
+  (setf *batch-size* batch-size)
+  (setf *checkpoint-directory* checkpoint-directory)
+  (setf *checkpoint-interval* (or checkpoint-interval 50)))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
 				  num-observations num-actions
@@ -239,71 +242,139 @@
   (when *running*
     (emit-error "A search is already running on this node.")
     (return-from handle-start-search))
-  (let ((mode (getf msg :mode))
-	(gym-environment-name (getf msg :gym-environment-name))
-	(dataset-name (getf msg :dataset-name))
-	(num-observations (getf msg :num-observations))
-	(num-actions (getf msg :num-actions))
-	(population-size (getf msg :population-size))
-	(init-num-learners (getf msg :init-num-learners))
-	(max-num-learners (getf msg :max-num-learners))
-	(p-add (getf msg :p-add))
-	(p-del (getf msg :p-del))
-	(p-mut (getf msg :p-mut))
-	(p-act (getf msg :p-act))
-	(p-swap (getf msg :p-swap))
-	(gap (getf msg :gap))
-	(init-program-size (getf msg :init-program-size))
-	(max-program-size (getf msg :max-program-size))
-	(p-add-instr (getf msg :p-add-instr))
-	(p-del-instr (getf msg :p-del-instr))
-	(p-swap-instrs (getf msg :p-swap-instrs))
-	(p-mut-constant (getf msg :p-mut-constant))
-	(p-mut-constant-sign (getf msg :p-mut-constant-sign))
-	(migration-interval (getf msg :migration-interval))
-	(batch-size (getf msg :batch-size))
-	(seed (getf msg :seed)))
-    (format t "~S~%" msg)
-    (if (valid-search-parameters-p mode gym-environment-name dataset-name
-				   num-observations num-actions population-size
-				   init-num-learners max-num-learners
-				   p-add p-del p-mut p-act p-swap gap
-				   init-program-size max-program-size
-				   p-add-instr p-del-instr p-swap-instrs
-				   p-mut-constant p-mut-constant-sign
-				   migration-interval batch-size seed)
-	(progn
-	  (set-global-parameters
-	    population-size
-	    num-observations num-actions
-	    init-num-learners max-num-learners
-	    p-add p-del p-mut p-act
-	    p-swap gap init-program-size
-	    max-program-size p-add-instr
-	    p-del-instr p-swap-instrs
-	    p-mut-constant p-mut-constant-sign
-	    migration-interval
-	    batch-size)
-	  (setf *running* t)
 
-	  (push 
-	   (bt:make-thread
-	    (lambda ()
-	      (unwind-protect 
-		   (handler-case
-		       (progn
-			 (emit-message (format nil "Search started on island ~A~%" (who-am-i)))
-			 ;; enable multi-threading
-			 (setf lparallel:*kernel* (make-kernel *num-threads*))
-			 (run-search mode gym-environment-name dataset-name seed))
-		     (error (c)
-		       (setf *running* nil)
-		       (emit-error (format nil "Search crashed: ~A" c))))
-		(setf *running* nil)
-		(lparallel:end-kernel)))
-	    :name "search-thread")
-	   *server-threads*))
-	(emit-error "The search parameters provided are invalid."))))
+  (let ((mode (getf msg :mode))
+        (gym-environment-name (getf msg :gym-environment-name))
+        (checkpoint-directory (getf msg :checkpoint-directory))
+        (checkpoint-interval (or (getf msg :checkpoint-interval) 50))
+        (dataset-name (getf msg :dataset-name))
+        (num-observations (getf msg :num-observations))
+        (num-actions (getf msg :num-actions))
+        (population-size (getf msg :population-size))
+        (init-num-learners (getf msg :init-num-learners))
+        (max-num-learners (getf msg :max-num-learners))
+        (p-add (getf msg :p-add))
+        (p-del (getf msg :p-del))
+        (p-mut (getf msg :p-mut))
+        (p-act (getf msg :p-act))
+        (p-swap (getf msg :p-swap))
+        (gap (getf msg :gap))
+        (init-program-size (getf msg :init-program-size))
+        (max-program-size (getf msg :max-program-size))
+        (p-add-instr (getf msg :p-add-instr))
+        (p-del-instr (getf msg :p-del-instr))
+        (p-swap-instrs (getf msg :p-swap-instrs))
+        (p-mut-constant (getf msg :p-mut-constant))
+        (p-mut-constant-sign (getf msg :p-mut-constant-sign))
+        (migration-interval (getf msg :migration-interval))
+        (batch-size (getf msg :batch-size))
+        (seed (getf msg :seed)))
+
+    (format t "~S~%" msg)
+
+    (if (valid-search-parameters-p mode gym-environment-name dataset-name
+                                   num-observations num-actions population-size
+                                   init-num-learners max-num-learners
+                                   p-add p-del p-mut p-act p-swap gap
+                                   init-program-size max-program-size
+                                   p-add-instr p-del-instr p-swap-instrs
+                                   p-mut-constant p-mut-constant-sign
+                                   migration-interval batch-size seed)
+        (progn
+          (set-global-parameters
+           population-size
+           num-observations num-actions
+           init-num-learners max-num-learners
+           p-add p-del p-mut p-act
+           p-swap gap init-program-size
+           max-program-size p-add-instr
+           p-del-instr p-swap-instrs
+           p-mut-constant p-mut-constant-sign
+           migration-interval
+           batch-size
+           :checkpoint-directory checkpoint-directory
+           :checkpoint-interval checkpoint-interval)
+
+          (setf *running* t)
+
+          (push
+           (bt:make-thread
+            (lambda ()
+              (unwind-protect
+                   (handler-case
+                       (progn
+                         (emit-message
+                          (format nil "Search started on island ~A~%" (who-am-i)))
+
+                         (when *checkpoint-directory*
+                           (emit-message
+                            (format nil "Checkpoint directory: ~A, interval: ~A"
+                                    *checkpoint-directory*
+                                    *checkpoint-interval*)))
+
+                         ;; enable multi-threading
+                         (setf lparallel:*kernel*
+                               (make-kernel *num-threads*))
+
+                         (run-search mode gym-environment-name dataset-name seed))
+                     (error (c)
+                       (setf *running* nil)
+                       (emit-error (format nil "Search crashed: ~A" c))))
+                (setf *running* nil)
+                (when lparallel:*kernel*
+                  (lparallel:end-kernel))))
+            :name "search-thread")
+           *server-threads*))
+        (emit-error "The search parameters provided are invalid."))))
+
+
+(defun handle-resume-search (msg)
+  "Resume a search from a saved checkpoint directory."
+  (when *running*
+    (emit-error "A search is already running on this node.")
+    (return-from handle-resume-search))
+
+  (let ((mode (getf msg :mode))
+        (gym-environment-name (getf msg :gym-environment-name))
+        (dataset-name (getf msg :dataset-name))
+        (checkpoint-directory (getf msg :checkpoint-directory))
+        (seed (getf msg :seed)))
+
+    (unless checkpoint-directory
+      (emit-error "No checkpoint directory provided for resume-search.")
+      (return-from handle-resume-search))
+
+    (setf *running* t)
+
+    (push
+     (bt:make-thread
+      (lambda ()
+        (unwind-protect
+             (handler-case
+                 (progn
+                   (emit-message
+                    (format nil "Resume search started on island ~A from ~A"
+                            (who-am-i)
+                            checkpoint-directory))
+
+                   (setf lparallel:*kernel*
+                         (make-kernel *num-threads*))
+
+                   (run-resumed-search
+                    mode
+                    gym-environment-name
+                    dataset-name
+                    seed
+                    checkpoint-directory))
+               (error (c)
+                 (setf *running* nil)
+                 (emit-error
+                  (format nil "Resume search crashed: ~A" c))))
+          (setf *running* nil)
+          (when lparallel:*kernel*
+            (lparallel:end-kernel))))
+      :name "resume-search-thread")
+     *server-threads*)))
 
 (defun handle-stop-search ()
   "When a request is received to stop a running search, set *running* to NIL."
@@ -354,6 +425,7 @@
 			    (ecase (getf msg :type)
 			      (:migrant (receive-migrant-over-socket msg))
 			      (:start-search (handle-start-search msg))
+				  (:resume-search (handle-resume-search msg))
 			      (:stop-search (handle-stop-search)))))))
 		    :name (format nil "search-handler-~A" (get-universal-time)))))))
 	   :name "tcp-listener")
