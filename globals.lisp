@@ -1,6 +1,6 @@
 (in-package :cl-tpg)
 
-(defconstant *num-threads* 1
+(defconstant *num-threads* 20
   "The number of CPU cores available for multi-threading.")
 
 (defconstant +num-registers+ 8
