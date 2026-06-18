@@ -102,3 +102,15 @@
 (defparameter *batch-size* 1000
   "The number of generations to wait between sending migrants.")
 
+(defvar *best-team* nil
+  "Best root team seen so far.")
+
+(defvar *best-fitness* nil
+  "Fitness of the best root team seen so far.")
+
+(defparameter *checkpoint-directory*
+  "~/Documents/Research/checkpoints/"
+  "Default directory for checkpoints.")
+
+(defparameter *checkpoint-interval* 50
+  "Save full checkpoint every N generations. 0 disables auto checkpoint.")

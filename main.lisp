@@ -98,6 +98,12 @@
          (best-fitness (and best-entry (cdr best-entry))))
 
     (when best-fitness
+      ;; Maintain best individual seen so far.
+      (when (or (null *best-fitness*)
+                (> best-fitness *best-fitness*))
+        (setf *best-fitness* best-fitness
+              *best-team* (car best-entry)))
+
       (multiple-value-bind (rolling-mean total-eps)
           (record-fitness-and-mean best-fitness)
         (emit-fitness-scores (who-am-i)
@@ -152,7 +158,8 @@
 
     (select evaluation-scores)
     
-    (reproduce)))
+    (reproduce)
+    (maybe-save-checkpoint)))
 
 (defun run-search (mode gym-environment-name dataset-name seed)
   "Search the solution space with a tangled program graph."
@@ -163,6 +170,8 @@
     (setf *teams* nil)
     (setf *generation* 1)
     
+    (setf *best-team* nil)
+    (setf *best-fitness* nil)
     ;; make the initial population
     (make-initial-population)
 
@@ -176,3 +185,22 @@
 
 		   
 					     
+(defun run-resumed-search (mode gym-environment-name dataset-name seed checkpoint-directory)
+  "Resume search from a saved checkpoint directory."
+  (let* ((seed (seed-or-random-seed seed))
+         (captured-state (sb-ext:seed-random-state seed)))
+    (setf *random-state* captured-state)
+
+    ;; Restore *teams*, *generation*, *best-team*, *best-fitness*
+    (load-checkpoint checkpoint-directory)
+
+    ;; Rebuild fitness function for this runtime.
+    (ecase mode
+      (:online
+       (make-fitness-function :gym-environment-name gym-environment-name))
+      (:offline
+       (make-fitness-function :dataset-name dataset-name)))
+
+    (loop while *running*
+          do (evolve)
+          do (incf *generation*))))

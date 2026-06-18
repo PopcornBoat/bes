@@ -3,7 +3,7 @@
 (require 'cl-lib)
 
 (defvar *islands*
-  '(("172.20.23.255" . 0) ;; ds-login2
+  '(("172.20.96.153" . 0) ;; ds-login2
     ("10.100.202.42" . 1) ;; ds-cmlm-02
     ("10.100.202.43" . 2) ;; ds-cmlm-03
     ("10.100.202.44" . 3) ;; ds-cmlm-04
@@ -53,61 +53,89 @@
 (defun make-payload-from-transient-args (args)
   "Given a list of transient args, construct the TCP payload for starting searches."
   (let ((mode (pcase (transient-arg-value "--mode=" args)
-		("online" :online)
-		("offline" :offline)
-		(other (error "Invalid mode: %S" other))))
-	(gym-environment-name  (pcase (transient-arg-value "*env=" args)
-				 ("none" :none)
-				 (other other)))
-	(dataset-name (pcase (transient-arg-value "*dataset=" args)
-			("none" :none)
-			(other other)))
-	(num-observations (string-to-number
-			   (transient-arg-value "*num-observations=" args)))
-	(num-actions (string-to-number
-		      (transient-arg-value "*num-actions=" args)))
-        (population-size (string-to-number
-	 		  (transient-arg-value "*population-size=" args)))
-	(init-num-learners (string-to-number
-			    (transient-arg-value "*init-num-learners=" args)))
-	(max-num-learners (string-to-number-or-inf
-			   (transient-arg-value "*max-num-learners=" args)))
-	(p-add (string-to-number
-		(transient-arg-value "*p-add=" args)))
-	(p-del (string-to-number
-	 	(transient-arg-value "*p-del=" args)))
-	(p-mut (string-to-number
-		(transient-arg-value "*p-mut=" args)))
-	(p-act (string-to-number
-		(transient-arg-value "*p-act=" args)))
-	(p-swap (string-to-number
-	 	 (transient-arg-value "*p-swap=" args)))
-	(gap (string-to-number
-	      (transient-arg-value "*gap=" args)))
-        (init-program-size (string-to-number-or-inf
-	 		    (transient-arg-value "*init-program-size=" args)))
-	(max-program-size (string-to-number-or-inf
-	 		   (transient-arg-value "*max-program-size=" args)))
-	(p-add-instr (string-to-number
-		      (transient-arg-value "*p-add-instr=" args)))
-	(p-del-instr (string-to-number
-		      (transient-arg-value "*p-del-instr=" args)))
-	(p-swap-instrs (string-to-number
-			(transient-arg-value "*p-swap-instrs=" args)))
-	(p-mut-constant (string-to-number
-			 (transient-arg-value "*p-mut-constant=" args)))
-	(p-mut-constant-sign (string-to-number
-			      (transient-arg-value "*p-mut-constant-sign=" args)))
-	(migration-interval (string-to-number
-			     (transient-arg-value "*migration-interval=" args)))
-	(batch-size (string-to-number
-		     (transient-arg-value "*batch-size=" args)))
-	(seed (let ((seed-arg (transient-arg-value "*seed=" args)))
-		(cond
-		 ((string= seed-arg "random")
-		  :random)
-		 ((stringp seed-arg)
-		  (string-to-number seed-arg))))))
+                ("online" :online)
+                ("offline" :offline)
+                (other (error "Invalid mode: %S" other))))
+        (checkpoint-directory
+         (transient-arg-value "*checkpoint-directory=" args))
+        (checkpoint-interval
+         (string-to-number
+          (transient-arg-value "*checkpoint-interval=" args)))
+        (gym-environment-name
+         (pcase (transient-arg-value "*env=" args)
+           ("none" :none)
+           (other other)))
+        (dataset-name
+         (pcase (transient-arg-value "*dataset=" args)
+           ("none" :none)
+           (other other)))
+        (num-observations
+         (string-to-number
+          (transient-arg-value "*num-observations=" args)))
+        (num-actions
+         (string-to-number
+          (transient-arg-value "*num-actions=" args)))
+        (population-size
+         (string-to-number
+          (transient-arg-value "*population-size=" args)))
+        (init-num-learners
+         (string-to-number
+          (transient-arg-value "*init-num-learners=" args)))
+        (max-num-learners
+         (string-to-number-or-inf
+          (transient-arg-value "*max-num-learners=" args)))
+        (p-add
+         (string-to-number
+          (transient-arg-value "*p-add=" args)))
+        (p-del
+         (string-to-number
+          (transient-arg-value "*p-del=" args)))
+        (p-mut
+         (string-to-number
+          (transient-arg-value "*p-mut=" args)))
+        (p-act
+         (string-to-number
+          (transient-arg-value "*p-act=" args)))
+        (p-swap
+         (string-to-number
+          (transient-arg-value "*p-swap=" args)))
+        (gap
+         (string-to-number
+          (transient-arg-value "*gap=" args)))
+        (init-program-size
+         (string-to-number-or-inf
+          (transient-arg-value "*init-program-size=" args)))
+        (max-program-size
+         (string-to-number-or-inf
+          (transient-arg-value "*max-program-size=" args)))
+        (p-add-instr
+         (string-to-number
+          (transient-arg-value "*p-add-instr=" args)))
+        (p-del-instr
+         (string-to-number
+          (transient-arg-value "*p-del-instr=" args)))
+        (p-swap-instrs
+         (string-to-number
+          (transient-arg-value "*p-swap-instrs=" args)))
+        (p-mut-constant
+         (string-to-number
+          (transient-arg-value "*p-mut-constant=" args)))
+        (p-mut-constant-sign
+         (string-to-number
+          (transient-arg-value "*p-mut-constant-sign=" args)))
+        (migration-interval
+         (string-to-number
+          (transient-arg-value "*migration-interval=" args)))
+        (batch-size
+         (string-to-number
+          (transient-arg-value "*batch-size=" args)))
+        (seed
+         (let ((seed-arg (transient-arg-value "*seed=" args)))
+           (cond
+            ((string= seed-arg "random")
+             :random)
+            ((stringp seed-arg)
+             (string-to-number seed-arg))))))
     `(:type :start-search
       :mode ,mode
       :gym-environment-name ,gym-environment-name
@@ -132,6 +160,8 @@
       :p-mut-constant-sign ,p-mut-constant-sign
       :migration-interval ,migration-interval
       :batch-size ,batch-size
+      :checkpoint-directory ,checkpoint-directory
+      :checkpoint-interval ,checkpoint-interval
       :seed ,seed)))
 
 (transient-define-suffix start-search ()
@@ -197,27 +227,30 @@
   "Menu for configuring TPG hyperparameters before starting a run."
   :refresh-suffixes t
   ;; These are the default values for the entire prefix
-  :value '("*p-add=0.2" 
-           "*p-del=0.1"
-           "*p-mut=0.5" 
-           "*p-act=0.2"
-	   "*p-swap=0.1"
-           "*init-program-size=100"
-           "*max-program-size=inf"
-           "*gap=0.5"
-           "*p-add-instr=0.9"
-           "*p-del-instr=0.5"
-           "*p-swap-instrs=1.0"
-	   "*p-mut-constant=0.5"
-	   "*p-mut-constant-sign=0.1"
-	   "*env=none"
-	   "*dataset=none"
-	   "*population-size=160"
-	   "*init-num-learners=3"
-	   "*max-num-learners=inf"
-	   "*migration-interval=50"
-	   "*batch-size=1000"
-	   "*seed=random")
+    :value '("*p-add=0.2" 
+            "*p-del=0.1"
+            "*p-mut=0.5" 
+            "*p-act=0.2"
+            "*p-swap=0.1"
+            "*init-program-size=100"
+            "*max-program-size=inf"
+            "*gap=0.5"
+            "*p-add-instr=0.9"
+            "*p-del-instr=0.5"
+            "*p-swap-instrs=1.0"
+            "*p-mut-constant=0.5"
+            "*p-mut-constant-sign=0.1"
+            "*env=none"
+            "*dataset=none"
+            "*population-size=160"
+            "*init-num-learners=3"
+            "*max-num-learners=inf"
+            "*migration-interval=50"
+            "*batch-size=1000"
+            "*seed=random"
+            "--mode=online"
+            "*checkpoint-directory=~/Documents/Research/checkpoints/"
+            "*checkpoint-interval=50")
   ["Island"
     ("-I" "Island" "--island="
     :choices ("all" "0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15"))]
@@ -227,14 +260,8 @@
    ("-G" "Gymnasium Environment Name" "*env="
     :choices ("none" 
               "Cage2-v0"
-              "Cage2-b_line-30-v0"
-              "Cage2-b_line-50-v0"
               "Cage2-b_line-100-v0"
-              "Cage2-meander-30-v0"
-              "Cage2-meander-50-v0"
               "Cage2-meander-100-v0"
-              "Cage2-sleep-30-v0"
-              "Cage2-sleep-50-v0"
               "Cage2-sleep-100-v0"
               "Cage3SharedPolicy-v0"  
               "Hopper-v5" "Walker2d-v5" "HalfCheetah-v5" "Acrobot-v1" "LunarLander-v3" "MountainCar-v0" "CartPole-v1"))
@@ -270,7 +297,54 @@
 
   ["Actions"
    ("S" "START Search" start-search)
-   ("q" "Back to Main" tpg-menu)])
+   ("q" "Back to Main" tpg-menu)]
+   
+  ["checkpoint  settings"
+   ("-k" "Checkpoint Directory" "*checkpoint-directory=")
+   ("-K" "Checkpoint Interval (generations)" "*checkpoint-interval=")])
+
+(transient-define-suffix tpg-resume-search ()
+  "Resume search from checkpoint."
+  (interactive)
+  (let* ((island-id (string-to-number
+                     (read-string "Island id: " "0")))
+         (checkpoint-dir (read-directory-name
+                          "Checkpoint directory: "
+                          "~/Documents/Research/checkpoints/"))
+         (mode-str (completing-read
+                    "Evaluation mode: "
+                    '("online" "offline")
+                    nil t
+                    "online"))
+         (mode (if (string= mode-str "online") :online :offline))
+         (env (if (eq mode :online)
+                  (completing-read
+                   "Gymnasium environment: "
+                   '("Cage2-v0"                 
+                     "Cage2-b_line-100-v0"                   
+                     "Cage2-meander-100-v0"
+                     "Cage2-sleep-100-v0"
+                     "Cage3SharedPolicy-v0"
+                     "CartPole-v1")
+                   nil t)
+                :none))
+         (dataset (if (eq mode :offline)
+                      (read-string "Dataset name: ")
+                    :none))
+         (seed-str (read-string "Seed: " "random"))
+         (seed (if (string= seed-str "random")
+                   :random
+                 (string-to-number seed-str)))
+         (payload `(:type :resume-search
+                    :mode ,mode
+                    :gym-environment-name ,env
+                    :dataset-name ,dataset
+                    :checkpoint-directory ,checkpoint-dir
+                    :seed ,seed)))
+    (tpg-send-payload-to-island island-id payload
+                                "resume-search-client")
+    (message "[LOCAL] Requested resume search on island %s from %s"
+             island-id checkpoint-dir)))
 
 (transient-define-prefix tpg-menu ()
   "Control Center for TPG."
@@ -281,10 +355,17 @@
 
   ["Runs"
    ("S" "Configure & START" start-search-menu)
+   ("R" "Resume Search" tpg-resume-search)
    ("D" "Stop a search" stop-search-menu)]
 
   ["Navigation"
-   ("q" "Quit Menu" transient-quit-one)])
+   ("q" "Quit Menu" transient-quit-one)]
+   
+  ["Checkpoints"
+    ("b" "Save Best Team" tpg-save-best-team)
+    ("p" "Save Population" tpg-save-population)
+    ("k" "Save Checkpoint" tpg-save-checkpoint)])
+   
 
 (defvar tpg-data (make-hash-table :test 'equal))
 
@@ -438,3 +519,45 @@
 ;; Bind the transient menu to C-c C-c
 (define-key tpg-mode-map (kbd "C-c C-c") 'tpg-menu)
 
+(defun tpg-save-best-team ()
+  "Save the current best team."
+  (interactive)
+  (let ((dir (read-directory-name
+              "Best team directory: "
+              "~/Documents/Research/checkpoints/")))
+    (sly-eval `(cl-tpg::save-best-team ,dir))
+    (message "Best team saved to %s" dir)))
+
+(defun tpg-save-population ()
+  "Save the current population."
+  (interactive)
+  (let ((dir (read-directory-name
+              "Population directory: "
+              "~/Documents/Research/checkpoints/")))
+    (sly-eval `(cl-tpg::save-population-checkpoint ,dir))
+    (message "Population saved to %s" dir)))
+
+(defun tpg-save-checkpoint ()
+  "Save population and best team together."
+  (interactive)
+  (let ((dir (read-directory-name
+              "Checkpoint directory: "
+              "~/Documents/Research/checkpoints/")))
+    (sly-eval `(cl-tpg::save-checkpoint ,dir))
+    (message "Checkpoint saved to %s" dir)))
+
+(defun tpg-send-payload-to-island (island-id payload process-name)
+  "Send PAYLOAD to ISLAND-ID over TCP."
+  (let ((ip (lookup-ip-by-island-id island-id)))
+    (unless ip
+      (error "Unknown island id: %s" island-id))
+    (let ((proc (make-network-process
+                 :name process-name
+                 :host ip
+                 :service 8080
+                 :family 'ipv4
+                 :nowait nil
+                 :sentinel (lambda (_proc event)
+                             (message "TCP Event: %s" event)))))
+      (process-send-string proc (concat (plist-to-cl-sexp payload) "\n"))
+      (process-send-eof proc))))
