@@ -53,15 +53,15 @@
        (setf *fitness-fn* 
 	     (lambda (team)
 	       (accuracy team dataset)))))))
-  
-;; (defun safe-evaluate-team (team)
-;;   (cons team
-;;         (handler-case
-;;             (funcall *fitness-fn* team)
-;;           (floating-point-overflow () :bad)
-;;           (floating-point-invalid-operation () :bad)
-;;           (division-by-zero () :bad)
-;;           (error () :bad))))
+
+(defun configure-fitness-function (mode gym-environment-name dataset-name)
+  "Configure *FITNESS-FN* according to MODE."
+  (ecase mode
+    (:online
+     (make-fitness-function :gym-environment-name gym-environment-name))
+    (:offline
+     (make-fitness-function :dataset-name dataset-name))))
+
 (defun safe-evaluate-team (team)
   (cons team
         (handler-case
@@ -117,7 +117,8 @@
 
 (defun should-send-migrants-p ()
   "Returns T periodically when the generation matches the migration interval."
-  (= (mod *generation* *migration-interval*) 0))
+  (and (> *generation* 0)
+       (= (mod *generation* *migration-interval*) 0)))
 
 (defun send-migrants (evaluation-scores)
   "Periodically send the best individual from this island to another island."
@@ -159,48 +160,112 @@
     (select evaluation-scores)
     
     (reproduce)
-    (maybe-save-checkpoint)))
+    (maybe-save-best-team)))
 
 (defun run-search (mode gym-environment-name dataset-name seed)
   "Search the solution space with a tangled program graph."
   (let* ((seed (seed-or-random-seed seed))
-	 (captured-state (sb-ext:seed-random-state seed)))
+         (captured-state (sb-ext:seed-random-state seed)))
     (setf *random-state* captured-state)
 
     (setf *teams* nil)
     (setf *generation* 1)
-    
     (setf *best-team* nil)
     (setf *best-fitness* nil)
-    ;; make the initial population
-    (make-initial-population)
 
-    (ecase mode
-      (:online (make-fitness-function :gym-environment-name gym-environment-name))
-      (:offline (make-fitness-function :dataset-name dataset-name)))
+    (reset-fitness-window)
+
+    (make-initial-population)
+    (configure-fitness-function mode gym-environment-name dataset-name)
 
     (loop while *running*
-	  do (evolve)
-	  do (incf *generation*))))
+          do (evolve)
+          do (incf *generation*))))
 
-		   
+(defun inject-loaded-best-team-into-population (loaded-best-team)
+  "Replace the first root team in a freshly initialized population with LOADED-BEST-TEAM."
+  (unless loaded-best-team
+    (error "Cannot inject best team: LOADED-BEST-TEAM is NIL."))
+
+  ;; Ensure the loaded team is a root candidate before computing closure.
+  (setf (team-type loaded-best-team) :root
+        (team-references loaded-best-team) 0)
+
+  (let* ((loaded-closure (closure loaded-best-team))
+         (random-roots (root-teams)))
+
+    (unless random-roots
+      (error "Cannot inject best team: no root teams exist in the current population."))
+
+    ;; Fresh population contains only random root teams. Drop the first one and
+    ;; prepend the loaded best team's full closure.
+    (setf *teams*
+          (append loaded-closure
+                  (rest random-roots)))
+
+    loaded-best-team))
 					     
-(defun run-resumed-search (mode gym-environment-name dataset-name seed checkpoint-directory)
-  "Resume search from a saved checkpoint directory."
+(defun initialize-best-from-current-population (loaded-best-team)
+  "Evaluate the current root population and initialize *BEST-TEAM* and *BEST-FITNESS*.
+
+If LOADED-BEST-TEAM is still the best individual after evaluation, keep it as the
+global best. Otherwise use the best individual from the freshly initialized
+population."
+  (let* ((scores (evaluate))
+         (best-entry (and scores
+                          (first (sort (copy-list scores) #'> :key #'cdr)))))
+    (unless best-entry
+      (error "Warm-start evaluation failed: no valid teams after evaluation."))
+
+    (setf *best-team* (car best-entry)
+          *best-fitness* (cdr best-entry))
+
+    (if (eq *best-team* loaded-best-team)
+        (emit-message
+         (format nil
+                 "Warm-start: loaded best team remains best after initial evaluation. Fitness=~A"
+                 *best-fitness*))
+        (emit-message
+         (format nil
+                 "Warm-start: a newly initialized team outperformed loaded best. New best fitness=~A"
+                 *best-fitness*)))
+
+    scores))
+
+(defun run-search-from-best-team
+       (mode gym-environment-name dataset-name seed best-team-path)
+  "Warm-start search from a saved best team.
+
+This does not restore the old population. Each island creates a fresh random
+population, loads its own saved best team, replaces the first root team with it,
+evaluates the resulting population once, initializes *BEST-TEAM*, then continues
+normal evolution."
   (let* ((seed (seed-or-random-seed seed))
          (captured-state (sb-ext:seed-random-state seed)))
     (setf *random-state* captured-state)
 
-    ;; Restore *teams*, *generation*, *best-team*, *best-fitness*
-    (load-checkpoint checkpoint-directory)
+    ;; Fresh island-local state.
+    (setf *teams* nil)
+    (setf *generation* 1)
+    (setf *best-team* nil)
+    (setf *best-fitness* nil)
 
-    ;; Rebuild fitness function for this runtime.
-    (ecase mode
-      (:online
-       (make-fitness-function :gym-environment-name gym-environment-name))
-      (:offline
-       (make-fitness-function :dataset-name dataset-name)))
+    (reset-fitness-window)
 
+    ;; Build fresh random population for this island.
+    (make-initial-population)
+
+    ;; Fitness must exist before the initial evaluation.
+    (configure-fitness-function mode gym-environment-name dataset-name)
+
+    ;; Load and inject this island's best team.
+    (let ((loaded-best-team (load-best-team best-team-path)))
+      (inject-loaded-best-team-into-population loaded-best-team)
+
+      ;; Evaluate all root teams once and decide whether loaded best is still best.
+      (initialize-best-from-current-population loaded-best-team))
+
+    ;; Continue normal BES/TPG evolution.
     (loop while *running*
           do (evolve)
           do (incf *generation*))))

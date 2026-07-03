@@ -50,23 +50,31 @@
       :inf
     (string-to-number string)))
 
+(defun tpg-read-file-path (prompt &optional default)
+  "Read a file path with minibuffer completion."
+  (expand-file-name
+   (read-file-name prompt
+                   (or default default-directory)
+                   nil
+                   t)))
+
+(defun tpg-read-directory-path (prompt &optional default)
+  "Read a directory path with minibuffer completion."
+  (file-name-as-directory
+   (expand-file-name
+    (read-directory-name prompt
+                         (or default default-directory)
+                         nil
+                         t))))
+
 (defun make-payload-from-transient-args (args)
   "Given a list of transient args, construct the TCP payload for starting searches."
   (let ((mode (pcase (transient-arg-value "--mode=" args)
                 ("online" :online)
                 ("offline" :offline)
                 (other (error "Invalid mode: %S" other))))
-        (checkpoint-directory
-         (transient-arg-value "*checkpoint-directory=" args))
-        (checkpoint-interval
-         (string-to-number
-          (transient-arg-value "*checkpoint-interval=" args)))
         (gym-environment-name
          (pcase (transient-arg-value "*env=" args)
-           ("none" :none)
-           (other other)))
-        (dataset-name
-         (pcase (transient-arg-value "*dataset=" args)
            ("none" :none)
            (other other)))
         (num-observations
@@ -129,17 +137,18 @@
         (batch-size
          (string-to-number
           (transient-arg-value "*batch-size=" args)))
+        (checkpoint-interval
+         (string-to-number
+          (transient-arg-value "*checkpoint-interval=" args)))
         (seed
          (let ((seed-arg (transient-arg-value "*seed=" args)))
            (cond
-            ((string= seed-arg "random")
-             :random)
-            ((stringp seed-arg)
-             (string-to-number seed-arg))))))
+            ((string= seed-arg "random") :random)
+            ((stringp seed-arg) (string-to-number seed-arg))))))
     `(:type :start-search
       :mode ,mode
       :gym-environment-name ,gym-environment-name
-      :dataset-name ,dataset-name
+      :dataset-name :none
       :num-observations ,num-observations
       :num-actions ,num-actions
       :population-size ,population-size
@@ -160,7 +169,7 @@
       :p-mut-constant-sign ,p-mut-constant-sign
       :migration-interval ,migration-interval
       :batch-size ,batch-size
-      :checkpoint-directory ,checkpoint-directory
+      :checkpoint-directory :none
       :checkpoint-interval ,checkpoint-interval
       :seed ,seed)))
 
@@ -170,12 +179,30 @@
          (island-arg (transient-arg-value "--island=" args))
          (island-ids (if (string= island-arg "all")
                          '(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)
-                         (list (string-to-number island-arg))))
+                       (list (string-to-number island-arg))))
          (ip-addresses (mapcar #'lookup-ip-by-island-id island-ids))
-         (payload (make-payload-from-transient-args args)))
+         (payload (make-payload-from-transient-args args))
+         (mode (plist-get payload :mode))
+         (dataset-name
+          (if (eq mode :offline)
+              (tpg-read-file-path
+               "Dataset file: "
+               "~/.datasets/")
+            :none))
+         (checkpoint-directory
+          (tpg-read-directory-path
+           "Checkpoint directory: "
+           "~/Documents/Research/checkpoints/")))
+
+    (setq payload
+          (plist-put payload :dataset-name dataset-name))
+    (setq payload
+          (plist-put payload :checkpoint-directory checkpoint-directory))
+
     (message "[LOCAL] Sending start-search request to islands %s at IPs %s."
              island-ids ip-addresses)
     (message "%s" payload)
+
     (cl-loop for island-id in island-ids
              for ip-address in ip-addresses
              do
@@ -241,7 +268,7 @@
             "*p-mut-constant=0.5"
             "*p-mut-constant-sign=0.1"
             "*env=none"
-            "*dataset=none"
+           
             "*population-size=160"
             "*init-num-learners=3"
             "*max-num-learners=inf"
@@ -249,7 +276,7 @@
             "*batch-size=1000"
             "*seed=random"
             "--mode=online"
-            "*checkpoint-directory=~/Documents/Research/checkpoints/"
+            
             "*checkpoint-interval=50")
   ["Island"
     ("-I" "Island" "--island="
@@ -265,7 +292,8 @@
               "Cage2-sleep-100-v0"
               "Cage3SharedPolicy-v0"  
               "Hopper-v5" "Walker2d-v5" "HalfCheetah-v5" "Acrobot-v1" "LunarLander-v3" "MountainCar-v0" "CartPole-v1"))
-   ("-F" "Dataset Name" "*dataset=")]
+   ;;("-F" "Dataset Name" "*dataset=")
+   ]
   ["Key Settings"
    ("-Z" "Number of Observations" "*num-observations=")
    ("-X" "Number of Actions" "*num-actions=")
@@ -300,51 +328,82 @@
    ("q" "Back to Main" tpg-menu)]
    
   ["checkpoint  settings"
-   ("-k" "Checkpoint Directory" "*checkpoint-directory=")
-   ("-K" "Checkpoint Interval (generations)" "*checkpoint-interval=")])
+    ("-K" "Checkpoint Interval (generations)" "*checkpoint-interval=")]
 
 (transient-define-suffix tpg-resume-search ()
-  "Resume search from checkpoint."
+  "Warm-start search from a saved best-team file."
   (interactive)
   (let* ((island-id (string-to-number
-                     (read-string "Island id: " "0")))
-         (checkpoint-dir (read-directory-name
-                          "Checkpoint directory: "
-                          "~/Documents/Research/checkpoints/"))
-         (mode-str (completing-read
-                    "Evaluation mode: "
-                    '("online" "offline")
-                    nil t
-                    "online"))
+                     (completing-read
+                      "Island id: "
+                      '("0" "1" "2" "3" "4" "5" "6" "7"
+                        "8" "9" "10" "11" "12" "13" "14" "15")
+                      nil t "0")))
+         (best-team-path
+          (tpg-read-file-path
+           "Best team file: "
+           "~/Documents/Research/checkpoints/"))
+         (checkpoint-dir
+          (tpg-read-directory-path
+           "Checkpoint directory: "
+           (file-name-directory best-team-path)))
+         (mode-str
+          (completing-read
+           "Evaluation mode: "
+           '("online" "offline")
+           nil t
+           "offline"))
          (mode (if (string= mode-str "online") :online :offline))
-         (env (if (eq mode :online)
-                  (completing-read
-                   "Gymnasium environment: "
-                   '("Cage2-v0"                 
-                     "Cage2-b_line-100-v0"                   
-                     "Cage2-meander-100-v0"
-                     "Cage2-sleep-100-v0"
-                     "Cage3SharedPolicy-v0"
-                     "CartPole-v1")
-                   nil t)
-                :none))
-         (dataset (if (eq mode :offline)
-                      (read-string "Dataset name: ")
-                    :none))
-         (seed-str (read-string "Seed: " "random"))
-         (seed (if (string= seed-str "random")
-                   :random
-                 (string-to-number seed-str)))
-         (payload `(:type :resume-search
-                    :mode ,mode
-                    :gym-environment-name ,env
-                    :dataset-name ,dataset
-                    :checkpoint-directory ,checkpoint-dir
-                    :seed ,seed)))
-    (tpg-send-payload-to-island island-id payload
-                                "resume-search-client")
-    (message "[LOCAL] Requested resume search on island %s from %s"
-             island-id checkpoint-dir)))
+         (env
+          (if (eq mode :online)
+              (completing-read
+               "Gymnasium environment: "
+               '("Cage2-v0"
+                 "Cage2-b_line-100-v0"
+                 "Cage2-meander-100-v0"
+                 "Cage2-sleep-100-v0"
+                 "Cage3SharedPolicy-v0"
+                 "CartPole-v1")
+               nil t
+               "Cage2-v0")
+            :none))
+         (dataset
+          (if (eq mode :offline)
+              (tpg-read-file-path
+               "Dataset file: "
+               "~/.datasets/")
+            :none))
+         (seed-str
+          (read-string "Seed: " "random"))
+         (seed
+          (if (string= seed-str "random")
+              :random
+            (string-to-number seed-str)))
+
+         ;; Use current start-search menu values for all evolution hyperparameters.
+         (args (transient-args 'start-search-menu))
+         (base-payload (make-payload-from-transient-args args))
+         (payload
+          (plist-put
+           (plist-put
+            (plist-put
+             (plist-put
+              (plist-put
+               (plist-put base-payload
+                          :type :resume-search)
+               :mode mode)
+              :gym-environment-name env)
+             :dataset-name dataset)
+            :checkpoint-directory checkpoint-dir)
+           :best-team-path best-team-path)))
+
+    ;; Make sure seed from resume prompt overrides menu seed.
+    (setq payload (plist-put payload :seed seed))
+
+    (tpg-send-payload-to-island island-id payload "resume-search-client")
+
+    (message "[LOCAL] Requested warm-start resume on island %s from %s"
+             island-id best-team-path)))
 
 (transient-define-prefix tpg-menu ()
   "Control Center for TPG."
@@ -362,9 +421,7 @@
    ("q" "Quit Menu" transient-quit-one)]
    
   ["Checkpoints"
-    ("b" "Save Best Team" tpg-save-best-team)
-    ("p" "Save Population" tpg-save-population)
-    ("k" "Save Checkpoint" tpg-save-checkpoint)])
+   ("b" "Save Best Team" tpg-save-best-team)])
    
 
 (defvar tpg-data (make-hash-table :test 'equal))
@@ -522,29 +579,13 @@
 (defun tpg-save-best-team ()
   "Save the current best team."
   (interactive)
-  (let ((dir (read-directory-name
-              "Best team directory: "
-              "~/Documents/Research/checkpoints/")))
-    (sly-eval `(cl-tpg::save-best-team ,dir))
-    (message "Best team saved to %s" dir)))
+  (let ((path
+         (tpg-read-file-path
+          "Save best team as: "
+          "~/Documents/Research/checkpoints/best-team.lisp")))
+    (sly-eval `(cl-tpg::save-best-team ,path))
+    (message "Best team saved to %s" path)))
 
-(defun tpg-save-population ()
-  "Save the current population."
-  (interactive)
-  (let ((dir (read-directory-name
-              "Population directory: "
-              "~/Documents/Research/checkpoints/")))
-    (sly-eval `(cl-tpg::save-population-checkpoint ,dir))
-    (message "Population saved to %s" dir)))
-
-(defun tpg-save-checkpoint ()
-  "Save population and best team together."
-  (interactive)
-  (let ((dir (read-directory-name
-              "Checkpoint directory: "
-              "~/Documents/Research/checkpoints/")))
-    (sly-eval `(cl-tpg::save-checkpoint ,dir))
-    (message "Checkpoint saved to %s" dir)))
 
 (defun tpg-send-payload-to-island (island-id payload process-name)
   "Send PAYLOAD to ISLAND-ID over TCP."
