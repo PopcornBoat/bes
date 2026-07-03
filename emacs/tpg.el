@@ -328,7 +328,7 @@
    ("q" "Back to Main" tpg-menu)]
    
   ["checkpoint  settings"
-    ("-K" "Checkpoint Interval (generations)" "*checkpoint-interval=")]
+    ("-K" "Checkpoint Interval (generations)" "*checkpoint-interval=")])
 
 (transient-define-suffix tpg-resume-search ()
   "Warm-start search from a saved best-team file."
@@ -421,7 +421,10 @@
    ("q" "Quit Menu" transient-quit-one)]
    
   ["Checkpoints"
-   ("b" "Save Best Team" tpg-save-best-team)])
+   ("b" "Save Best Team" tpg-save-best-team)]
+  
+  ["Python"
+    ("p" "Set Python Interpreter" tpg-configure-python-interpreter)])
    
 
 (defvar tpg-data (make-hash-table :test 'equal))
@@ -602,3 +605,19 @@
                              (message "TCP Event: %s" event)))))
       (process-send-string proc (concat (plist-to-cl-sexp payload) "\n"))
       (process-send-eof proc))))
+
+
+(defun tpg-configure-python-interpreter ()
+  "Configure py4cl2 Python interpreter."
+  (interactive)
+  (let ((python-path
+         (tpg-read-file-path
+          "Python interpreter: "
+          "/usr/bin/")))
+    (sly-eval
+     `(progn
+        (setf (py4cl2:config-var 'py4cl2:pycmd) ,python-path)
+        (py4cl2:save-config)
+        (py4cl2:pystop)
+        (py4cl2:pystart)))
+    (message "py4cl2 Python interpreter set to %s" python-path)))
