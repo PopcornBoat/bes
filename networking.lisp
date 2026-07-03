@@ -491,6 +491,8 @@ normal evolution."
 			    ;; Dispatch according to the request received
 			    (ecase (getf msg :type)
 			      (:migrant (receive-migrant-over-socket msg))
+            (:validate-best-team (handle-validate-best-team msg))
+ 
 			      (:start-search (handle-start-search msg))
 				  (:resume-search (handle-resume-search msg))
 			      (:stop-search (handle-stop-search)))))))
@@ -517,3 +519,41 @@ normal evolution."
   (setf *server-threads* nil)
   (format t "Server stopped.~%"))
   
+
+
+(defun handle-validate-best-team (msg)
+  "Validate a saved best team in the fixed CAGE-2 validation environment."
+  (when *running*
+    (emit-error "Cannot validate while a search is running on this node.")
+    (return-from handle-validate-best-team))
+
+  (let ((best-team-path (getf msg :best-team-path)))
+    (unless best-team-path
+      (emit-error "No best-team-path provided for validation.")
+      (return-from handle-validate-best-team))
+
+    (setf *running* t)
+
+    (push
+     (bt:make-thread
+      (lambda ()
+        (unwind-protect
+             (handler-case
+                 (progn
+                   (emit-message
+                    (format nil
+                            "Starting CAGE-2 validation from best team: ~A"
+                            best-team-path))
+
+                   (setf lparallel:*kernel*
+                         (make-kernel *num-threads*))
+
+                   (validate-best-team-online best-team-path))
+               (error (c)
+                 (emit-error
+                  (format nil "Validation crashed: ~A" c))))
+          (setf *running* nil)
+          (when lparallel:*kernel*
+            (lparallel:end-kernel))))
+      :name "validation-thread")
+     *server-threads*)))

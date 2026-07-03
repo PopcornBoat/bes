@@ -119,3 +119,13 @@ Supports:
                    (probe-file "rl-video-episode-0.mp4"))
           (rename-file "rl-video-episode-0.mp4" video-path))))
     episode-reward))
+
+(defun cl-gym-validate-team (team gym-environment-name &optional seed)
+  "Run TEAM in a validation Gym environment.
+
+The validation protocol, including episode count, step limits, red agents,
+and scoring rules, is owned by the Python environment. Lisp only loads the
+team, calls the environment, and returns the reported validation score."
+  (cl-gym:rollout team
+                  gym-environment-name
+                  (or seed (random 9999999))))

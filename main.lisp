@@ -269,3 +269,19 @@ normal evolution."
     (loop while *running*
           do (evolve)
           do (incf *generation*))))
+
+
+(defun validate-best-team-online (best-team-path gym-environment-name)
+  "Load BEST-TEAM-PATH and validate it in GYM-ENVIRONMENT-NAME."
+  (let* ((team (load-best-team best-team-path))
+         (score (cl-gym-validate-team
+                 team
+                 gym-environment-name
+                 (random 9999999))))
+    (emit-message
+     (format nil
+             "Validation finished. Env=~A BestTeam=~A Score=~A"
+             gym-environment-name
+             best-team-path
+             score))
+    score))

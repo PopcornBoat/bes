@@ -286,7 +286,6 @@
     :choices ("online" "offline"))
    ("-G" "Gymnasium Environment Name" "*env="
     :choices ("none" 
-              "Cage2-v0"
               "Cage2-b_line-100-v0"
               "Cage2-meander-100-v0"
               "Cage2-sleep-100-v0"
@@ -358,14 +357,12 @@
           (if (eq mode :online)
               (completing-read
                "Gymnasium environment: "
-               '("Cage2-v0"
-                 "Cage2-b_line-100-v0"
+               '("Cage2-b_line-100-v0"
                  "Cage2-meander-100-v0"
                  "Cage2-sleep-100-v0"
                  "Cage3SharedPolicy-v0"
                  "CartPole-v1")
-               nil t
-               "Cage2-v0")
+               nil t)
             :none))
          (dataset
           (if (eq mode :offline)
@@ -415,6 +412,7 @@
   ["Runs"
    ("S" "Configure & START" start-search-menu)
    ("R" "Resume Search" tpg-resume-search)
+   ("V" "Validate Best Team" tpg-validate-best-team)
    ("D" "Stop a search" stop-search-menu)]
 
   ["Navigation"
@@ -621,3 +619,38 @@
         (py4cl2:pystop)
         (py4cl2:pystart)))
     (message "py4cl2 Python interpreter set to %s" python-path)))
+
+(transient-define-suffix tpg-validate-best-team ()
+  "Validate a saved best team using a selected validation environment."
+  (interactive)
+  (let* ((island-id
+          (string-to-number
+           (completing-read
+            "Island id: "
+            '("0" "1" "2" "3" "4" "5" "6" "7"
+              "8" "9" "10" "11" "12" "13" "14" "15")
+            nil t "0")))
+         (best-team-path
+          (tpg-read-file-path
+           "Best team file: "
+           "~/Documents/Research/checkpoints/"))
+         (validation-env
+          (completing-read
+           "Validation environment: "
+           '("Cage2-validation-v0"
+             "Cage3-validation-v0"
+             "CartPole-v1")
+           nil t
+           "Cage2-validation-v0"))
+         (payload
+          `(:type :validate-best-team
+            :best-team-path ,best-team-path
+            :gym-environment-name ,validation-env)))
+
+    (tpg-send-payload-to-island
+     island-id
+     payload
+     "validate-best-team-client")
+
+    (message "[LOCAL] Requested validation on island %s with env %s from %s"
+             island-id validation-env best-team-path)))
