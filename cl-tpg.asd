@@ -13,6 +13,7 @@
 	       (:file "learner")
 	       (:file "team")
 		   (:file "checkpoint")
+		   (:file "validation")
 	       (:file "mutation")
 	       (:file "dataset")
 	       (:file "migration")

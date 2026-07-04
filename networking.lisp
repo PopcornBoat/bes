@@ -522,12 +522,17 @@ normal evolution."
 
 
 (defun handle-validate-best-team (msg)
-  "Validate a saved best team in the fixed CAGE-2 validation environment."
+  "Run validation for a saved best team."
   (when *running*
     (emit-error "Cannot validate while a search is running on this node.")
     (return-from handle-validate-best-team))
 
-  (let ((best-team-path (getf msg :best-team-path)))
+  (let ((best-team-path (getf msg :best-team-path))
+        (environment (getf msg :environment))
+        (mode (getf msg :validation-mode))
+        (red-agent-name (getf msg :red-agent-name))
+        (episodes (getf msg :episodes)))
+
     (unless best-team-path
       (emit-error "No best-team-path provided for validation.")
       (return-from handle-validate-best-team))
@@ -539,21 +544,14 @@ normal evolution."
       (lambda ()
         (unwind-protect
              (handler-case
-                 (progn
-                   (emit-message
-                    (format nil
-                            "Starting CAGE-2 validation from best team: ~A"
-                            best-team-path))
-
-                   (setf lparallel:*kernel*
-                         (make-kernel *num-threads*))
-
-                   (validate-best-team-online best-team-path))
+                 (validate-best-team best-team-path
+                                     environment
+                                     mode
+                                     :red-agent-name red-agent-name
+                                     :episodes episodes)
                (error (c)
                  (emit-error
                   (format nil "Validation crashed: ~A" c))))
-          (setf *running* nil)
-          (when lparallel:*kernel*
-            (lparallel:end-kernel))))
+          (setf *running* nil)))
       :name "validation-thread")
      *server-threads*)))
