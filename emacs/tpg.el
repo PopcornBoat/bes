@@ -425,6 +425,12 @@
     ("p" "Set Python Interpreter" tpg-configure-python-interpreter)])
    
 
+(defvar tpg-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'tpg-menu)
+    map)
+  "Keymap for `tpg-mode'.")
+
 (defvar tpg-data (make-hash-table :test 'equal))
 
 (defvar tpg-refresh-timer nil
@@ -574,8 +580,6 @@
     (switch-to-buffer db-buf)
     (set-window-buffer (split-window-vertically -30) log-buf)))
 
-;; Bind the transient menu to C-c C-c
-(define-key tpg-mode-map (kbd "C-c C-c") 'tpg-menu)
 
 (defun tpg-save-best-team ()
   "Save the current best team."
@@ -621,7 +625,7 @@
     (message "py4cl2 Python interpreter set to %s" python-path)))
 
 (transient-define-suffix tpg-validate-best-team ()
-  "Validate a saved best team using a selected validation environment."
+  "Validate a saved best team."
   (interactive)
   (let* ((island-id
           (string-to-number
@@ -634,23 +638,58 @@
           (tpg-read-file-path
            "Best team file: "
            "~/Documents/Research/checkpoints/"))
-         (validation-env
+         (environment-str
           (completing-read
            "Validation environment: "
-           '("Cage2-validation-v0"
-             "Cage3-validation-v0"
-             "CartPole-v1")
+           '("cage2" "cage3")
            nil t
-           "Cage2-validation-v0"))
+           "cage2"))
+         (environment
+          (if (string= environment-str "cage2") :cage2 :cage3))
+         (mode-str
+          (if (eq environment :cage2)
+              (completing-read
+               "CAGE2 validation mode: "
+               '("single-red-full" "single-red-100")
+               nil t
+               "single-red-full")
+            (completing-read
+             "CAGE3 validation mode: "
+             '("full" "custom-eps")
+             nil t
+             "full")))
+         (validation-mode
+          (intern (concat ":" mode-str)))
+         (red-agent-name
+          (when (eq environment :cage2)
+            (completing-read
+             "CAGE2 red agent: "
+             '("b_line" "meander" "sleep")
+             nil t
+             "b_line")))
+         (episodes
+          (cond
+           ((and (eq environment :cage2)
+                 (eq validation-mode :single-red-100))
+            (string-to-number
+             (read-string "Episodes: " "1")))
+           ((and (eq environment :cage3)
+                 (eq validation-mode :custom-eps))
+            (string-to-number
+             (read-string "Episodes: " "1")))
+           (t :none)))
          (payload
           `(:type :validate-best-team
             :best-team-path ,best-team-path
-            :gym-environment-name ,validation-env)))
+            :environment ,environment
+            :validation-mode ,validation-mode
+            :red-agent-name ,(or red-agent-name :none)
+            :episodes ,episodes)))
 
     (tpg-send-payload-to-island
      island-id
      payload
      "validate-best-team-client")
 
-    (message "[LOCAL] Requested validation on island %s with env %s from %s"
-             island-id validation-env best-team-path)))
+    (message "[LOCAL] Requested validation on island %s from %s"
+             island-id best-team-path)))
