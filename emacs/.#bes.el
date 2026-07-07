@@ -1,1 +1,0 @@
-kali@localhost.localdomain.150182:1776796129
