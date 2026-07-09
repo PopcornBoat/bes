@@ -9,14 +9,14 @@
 (defvar *server-running* nil
   "When NIL, server loops will exit.")
 
-(defparameter *telemetry-ip* "172.20.96.153"
+(defparameter *telemetry-ip* "172.27.225.143"
   "IP address of the emacs client receiving telemetry.")
 
 (defparameter *heartbeat-interval* 100
   "The amount of time to wait between sending heartbeats (in seconds).")
 
 (defparameter *islands*
-  '(("172.20.96.153" . 0) ;; ds-login2
+  '(("172.27.225.143" . 0) ;; ds-login2
     ("10.100.202.42" . 1) ;; ds-cmlm-02
     ("10.100.202.43" . 2) ;; ds-cmlm-03
     ("10.100.202.44" . 3) ;; ds-cmlm-04
@@ -271,7 +271,39 @@
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
-
+    
+    (emit-message
+ 	(format nil
+        	 "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A checkpoint-dir=~A checkpoint-interval=~A seed=~A"
+         	mode
+         	gym-environment-name
+         	dataset-name
+         	num-observations
+         	num-actions
+         	population-size
+         	init-num-learners
+         	max-num-learners
+         	gap
+         	migration-interval
+         	batch-size
+         	checkpoint-directory
+         	checkpoint-interval
+         	seed))
+    (emit-message
+ 	(format nil
+         "MUTATION PARAM DEBUG: p-add=~A p-del=~A p-mut=~A p-act=~A p-swap=~A init-prog=~A max-prog=~A p-add-instr=~A p-del-instr=~A p-swap-instrs=~A p-mut-constant=~A p-mut-constant-sign=~A"
+         p-add
+         p-del
+         p-mut
+         p-act
+         p-swap
+         init-program-size
+         max-program-size
+         p-add-instr
+         p-del-instr
+         p-swap-instrs
+         p-mut-constant
+         p-mut-constant-sign))
     (if (valid-search-parameters-p mode gym-environment-name dataset-name
                                    num-observations num-actions population-size
                                    init-num-learners max-num-learners

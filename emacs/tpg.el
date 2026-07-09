@@ -3,7 +3,7 @@
 (require 'cl-lib)
 
 (defvar *islands*
-  '(("172.20.96.153" . 0) ;; ds-login2
+  '(("127.0.0.1" . 0) ;; ds-login2
     ("10.100.202.42" . 1) ;; ds-cmlm-02
     ("10.100.202.43" . 2) ;; ds-cmlm-03
     ("10.100.202.44" . 3) ;; ds-cmlm-04
@@ -332,27 +332,38 @@
 (transient-define-suffix tpg-resume-search ()
   "Warm-start search from a saved best-team file."
   (interactive)
-  (let* ((island-id (string-to-number
-                     (completing-read
-                      "Island id: "
-                      '("0" "1" "2" "3" "4" "5" "6" "7"
-                        "8" "9" "10" "11" "12" "13" "14" "15")
-                      nil t "0")))
+  (let* ((island-id
+          (string-to-number
+           (completing-read
+            "Island id: "
+            '("0" "1" "2" "3" "4" "5" "6" "7"
+              "8" "9" "10" "11" "12" "13" "14" "15")
+            nil t "0")))
+
          (best-team-path
           (tpg-read-file-path
            "Best team file: "
            "~/Documents/Research/checkpoints/"))
+
          (checkpoint-dir
           (tpg-read-directory-path
            "Checkpoint directory: "
            (file-name-directory best-team-path)))
+
+         (checkpoint-interval
+          (string-to-number
+           (read-string "Checkpoint interval: " "50")))
+
          (mode-str
           (completing-read
            "Evaluation mode: "
            '("online" "offline")
            nil t
            "offline"))
-         (mode (if (string= mode-str "online") :online :offline))
+
+         (mode
+          (if (string= mode-str "online") :online :offline))
+
          (env
           (if (eq mode :online)
               (completing-read
@@ -362,42 +373,139 @@
                  "Cage2-sleep-100-v0"
                  "Cage3SharedPolicy-v0"
                  "CartPole-v1")
-               nil t)
+               nil t
+               "Cage2-b_line-100-v0")
             :none))
+
          (dataset
           (if (eq mode :offline)
               (tpg-read-file-path
                "Dataset file: "
                "~/.datasets/")
             :none))
+
+         (num-observations
+          (string-to-number
+           (read-string "Number of observations: " "52")))
+
+         (num-actions
+          (string-to-number
+           (read-string "Number of actions: " "145")))
+
+         (population-size
+          (string-to-number
+           (read-string "Population size: " "160")))
+
+         (init-num-learners
+          (string-to-number
+           (read-string "Initial number of learners: " "3")))
+
+         (max-num-learners
+          (string-to-number-or-inf
+           (read-string "Maximum number of learners: " "inf")))
+
+         (p-add
+          (string-to-number
+           (read-string "Add learner probability: " "0.2")))
+
+         (p-del
+          (string-to-number
+           (read-string "Delete learner probability: " "0.1")))
+
+         (p-mut
+          (string-to-number
+           (read-string "Mutate program probability: " "0.5")))
+
+         (p-act
+          (string-to-number
+           (read-string "Change action probability: " "0.2")))
+
+         (p-swap
+          (string-to-number
+           (read-string "Swap learner action probability: " "0.1")))
+
+         (gap
+          (string-to-number
+           (read-string "Gap: " "0.5")))
+
+         (init-program-size
+          (string-to-number-or-inf
+           (read-string "Initial program size: " "100")))
+
+         (max-program-size
+          (string-to-number-or-inf
+           (read-string "Maximum program size: " "inf")))
+
+         (p-add-instr
+          (string-to-number
+           (read-string "Add instruction probability: " "0.9")))
+
+         (p-del-instr
+          (string-to-number
+           (read-string "Delete instruction probability: " "0.5")))
+
+         (p-swap-instrs
+          (string-to-number
+           (read-string "Swap instructions probability: " "1.0")))
+
+         (p-mut-constant
+          (string-to-number
+           (read-string "Mutate constant probability: " "0.5")))
+
+         (p-mut-constant-sign
+          (string-to-number
+           (read-string "Mutate constant sign probability: " "0.1")))
+
+         (migration-interval
+          (string-to-number
+           (read-string "Migration interval: " "50")))
+
+         (batch-size
+          (string-to-number
+           (read-string "Batch size: " "1000")))
+
          (seed-str
           (read-string "Seed: " "random"))
+
          (seed
           (if (string= seed-str "random")
               :random
             (string-to-number seed-str)))
 
-         ;; Use current start-search menu values for all evolution hyperparameters.
-         (args (transient-args 'start-search-menu))
-         (base-payload (make-payload-from-transient-args args))
          (payload
-          (plist-put
-           (plist-put
-            (plist-put
-             (plist-put
-              (plist-put
-               (plist-put base-payload
-                          :type :resume-search)
-               :mode mode)
-              :gym-environment-name env)
-             :dataset-name dataset)
-            :checkpoint-directory checkpoint-dir)
-           :best-team-path best-team-path)))
+          `(:type :resume-search
+            :mode ,mode
+            :gym-environment-name ,env
+            :dataset-name ,dataset
+            :best-team-path ,best-team-path
+            :num-observations ,num-observations
+            :num-actions ,num-actions
+            :population-size ,population-size
+            :init-num-learners ,init-num-learners
+            :max-num-learners ,max-num-learners
+            :p-add ,p-add
+            :p-del ,p-del
+            :p-mut ,p-mut
+            :p-act ,p-act
+            :p-swap ,p-swap
+            :gap ,gap
+            :init-program-size ,init-program-size
+            :max-program-size ,max-program-size
+            :p-add-instr ,p-add-instr
+            :p-del-instr ,p-del-instr
+            :p-swap-instrs ,p-swap-instrs
+            :p-mut-constant ,p-mut-constant
+            :p-mut-constant-sign ,p-mut-constant-sign
+            :migration-interval ,migration-interval
+            :batch-size ,batch-size
+            :checkpoint-directory ,checkpoint-dir
+            :checkpoint-interval ,checkpoint-interval
+            :seed ,seed)))
 
-    ;; Make sure seed from resume prompt overrides menu seed.
-    (setq payload (plist-put payload :seed seed))
-
-    (tpg-send-payload-to-island island-id payload "resume-search-client")
+    (tpg-send-payload-to-island
+     island-id
+     payload
+     "resume-search-client")
 
     (message "[LOCAL] Requested warm-start resume on island %s from %s"
              island-id best-team-path)))
