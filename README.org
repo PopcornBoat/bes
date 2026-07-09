@@ -1,220 +1,284 @@
-* Welcome to CL-TPG!
+# BES/TPG Research Extension
 
-** Getting started with Common Lisp and Emacs.
+## About
 
-Q: /Why design TPG in Common Lisp over Python?/
-A: Tangled Program Graphs (Hereafter, TPG) are inherently computationally expensive. While the canonical TPG implementations written by Stephen Kelly in C++, and written by Robert Smith in Java are fast. To me, Lisp is more of a pleasure to write in and has a better developer experience than either language. SBCL (Steel Bank Common Lisp) can make Lisp competitive with C++ code. Plus, there's a lot of cool functionality around Common Lisp that you're not going to see in other languages.
+This repository is a research-oriented fork of **cl-tpg**, developed for autonomous cyber defence research.
 
-a.) *Homoiconicity*
+The objective of this project is to extend the engineering capabilities of the original BES/TPG framework without modifying its evolutionary algorithm whenever possible.
 
-Other resources can describe this concept better than what I can, but essentially this property means that there is no difference between data and code. In other languages, there's a distinction between the syntax of the language and the data that is flowing through the program. In Lisp, there is no such barrier.
+Rather than redesigning BES/TPG, this fork focuses on adding practical functionality required for large-scale experimentation, checkpoint management, validation, Gymnasium integration, and cyber defence research while maintaining compatibility with the upstream project whenever possible.
 
-b.) *REPL*
+---
 
-Lisp is an interactive language. If you're not familiar with Lisp, then most of the other languages you are going to be familiar with usually expect you to program like this: write code, compile code, test your code, if it fails start over. Programming in Lisp is different because using the REPL allows you to alter your code while its still running. It allows you to inspect variables, redefine functions, and if it crashes then you can simply step back and fix the issue on the fly (a nice feature to have when you're 1000 generations in and something goes wrong.)
+## Original Project
 
-c.) *Emacs*
+This project is based on the original **cl-tpg** repository:
 
-Unlike other languages, the Lisp variants are typically written in Emacs. In the case of Common Lisp, you'll need an Emacs package called *Sly* to be able to access a REPL. It's not particularly hard to set up but takes some familiarity. The process looks something like this:
+https://github.com/bmcnns/cl-tpg
 
-1.) Install SBCL
-2.) Install Emacs
-3.) Customize ~/.emacs to use use-package and then install SLY.
-4.) Install Quicklisp
+Please refer to the original project for:
 
-Once you have that, you have all the essential dependencies to run this repository.
+- Installation instructions
+- BES/TPG architecture
+- Tangled Program Graph (TPG)
+- Evolutionary algorithm
+- Team and learner representations
+- Instruction set
+- Online and offline training workflow
 
-** Getting started with this repository
+This repository intentionally does **not** duplicate the original documentation.
 
-Genetic programming is ``embarrasingly parallel.'' As such, this repository has recently been re-vamped to assume a distributed computing paradigm
-(TPG runs on multiple computers/nodes in a cluster at once.) This means that everything is asynchronous and networked by design. Including the starting and stopping of searches and the setting of hyperparameters.
+Readers interested in the BES/TPG algorithm itself are encouraged to consult the original repository, while this README focuses exclusively on the engineering extensions introduced in this fork.
 
-*** Giving /cl-tpg/ to Quicklisp so you can load it as a module.
+---
 
-Rather than loading this repo by /eval-buffer/ing every file in the correct order, the more convenient way to load the code is to use Quicklisp.
-Quicklisp looks for repositories in the folder ~/quicklisp/local-projects.
+# Design Philosophy
 
-You can make a symlink from your repository to this location with the following:
+One of the primary goals of this fork is to preserve the original BES/TPG implementation as much as possible.
 
-#+BEGIN_SRC sh
-  ln -s /fully/expanded/path/to/your/repos/cl-tpg /fully/expanded/path/to/your/quicklisp/local-projects/
-#+END_SRC
+The following components remain unchanged from the upstream implementation whenever possible:
 
-*** Setting up Python and Gymnasium environments.
+- Team representation
+- Learner representation
+- Program representation
+- Mutation operators
+- Selection strategy
+- Reproduction strategy
+- Migration between islands
+- Island model
+- Evolutionary search workflow
 
-This repository automatically bridges to Python to interact with Gymnasium through py4cl2.
-In order to use a different Python binary than your system-level Python:
+Instead of modifying the evolutionary algorithm itself, new functionality is implemented around the existing framework as auxiliary engineering components.
 
-#+BEGIN_SRC lisp
-  (setf (py4cl2:config-var 'py4cl2:pycmd) "/path/to/your/python/binary")
-  (py4cl2:save-config)
-  (py4cl2:pystop)
-  (py4cl2:pystart)
-#+END_SRC
+This approach minimizes divergence from the upstream repository while allowing new research functionality to be integrated cleanly.
 
-You have to do the above only once in your REPL to point the Python binary from the system python
-to whatever python binary you want to use. This is a persistent change.
+---
 
-*** Author's note on the distributed computing aspect of this system.
+# Major Extensions
 
-As mentioned earlier, this system is distributed and *decentralized* by design.
+## 1. Automatic Best-Team Checkpoint
 
-/Q: What do you mean decentralized?/
+A lightweight checkpoint mechanism has been added.
 
-A: Each node on the cluster is responsible for its own evolution including: fitness evaluation, selection and variation.
-After a specified generational interval, the best individual from each node will be sent to its neighbouring nodes.
+Features include:
 
-/Q: What neighbours?/
+- Configurable checkpoint directory
+- Configurable checkpoint interval
+- Automatic checkpointing during evolution
+- Save only the globally best team
 
-A: Having a fully-connected graph of nodes isn't actually desirable. By restricting the amount of nodes that a node can send
-its individuals to we encourage niche-ing or local competition leading to better diversity.
+Unlike traditional evolutionary checkpoints, this implementation intentionally does **not** save the entire evolutionary population.
 
-/Q: Why not evaluate the individuals in parallel across nodes but then send the results back for selection and variation?/
+---
 
-A: TPG individuals can get large and sending an entire population back and forth over the network introduces overhead. This overhead
-can actually take longer than the fitness evaluation itself.
+## 2. Warm-Start Resume Search
 
-** File Structure
+Interrupted searches can be resumed without restoring the original population.
 
-| File             | Purpose                                                                                                                |
-| emacs/tpg.el     | Everything related to the Emacs package is here including the transient menu for starting searches, stopping searches. |
-| action.lisp      | Defines what an action is: either an atomic action or a reference to another team.                                     |
-| cl-tpg.asd       | ASDF package definition i.e. telling Quicklisp what dependencies are needed to load CL-TPG.                            |
-| dataset.lisp     | Everything related to datasets including how to load and use them efficiently.                                         |
-| globals.lisp     | Key global variables all in one place. Dynamically set by the Emacs client through the search menu                     |
-| helpers.lisp     | Useful utility functions                                                                                               |
-| instruction.lisp | The basic unit of any program stored as an efficient representation.                                                   |
-| learner.lisp     | The combination of (program, action) pairs.                                                                            |
-| main.lisp        | Everything to do with the actual evolution/generational loop.                                                          |
-| migration.lisp   | When teams are received over TCP, they are added to and processed from thread-safe queues defined here.                |
-| mutation.lisp    | All the mutation of teams and learners are defined here.                                                               |
-| networking.lisp  | All socket-based communication from Emacs to CL-TPG or from CL-TPG node to CL-TPG node is implemented here.  |
-| package.lisp     | Defines what functions are public/private and the order in which to load files during (ql:quickload)                   |
-| program.lisp     | The very fast execution engine for running programs on data                                                            |
-| team.lisp        | A team is a candidate solution or part of a candidate solution to the task.                                            |
+The resume workflow is:
 
-* Key settings you need to change
+```
+Random Population
+        │
+        ▼
+Load Saved Best Team
+        │
+        ▼
+Replace First Root Team
+        │
+        ▼
+Evaluate Initial Population
+        │
+        ▼
+Continue Normal Evolution
+```
 
-1.)
+This design preserves evolutionary diversity while allowing previously discovered high-quality policies to seed future searches.
 
-In order for Emacs and the CL-TPG servers to communicate, you first need to set the IP address of the Emacs client.
-In /networking.lisp/ change
+---
 
-#+BEGIN_SRC lisp
-  *telemetry-ip*
-#+END_SRC
+## 3. Validation Framework
 
-to the IP address of the machine you are running Emacs on. If this is a local setup, use "127.0.0.1".
+Training and validation are treated as two completely independent workflows.
 
-2.)
+Validation loads a previously saved best team and evaluates it without modifying the evolutionary search.
 
-Next, you need to set the IP addresses and the corresponding island ID for each node/server you are running.
-You can do this by setting in /networking.lisp/:
+### CAGE2
 
-#+BEGIN_SRC lisp
-  *islands*
-#+END_SRC
+Two validation modes are currently supported.
 
-3.)
+**Mode 1**
 
-Next, you need to set the topology (i.e. which nodes can send teams to which nodes.) You can do this by setting in /networking.lisp/:
+Single selected Red agent.
 
-#+BEGIN_SRC lisp
-  *topology*
-#+END_SRC
+Runs:
 
-4.)
+- 30 steps × 1000 episodes
+- 50 steps × 1000 episodes
+- 100 steps × 1000 episodes
 
-Each node in my compute cluster has 160 CPU cores. In order to leave some cores free for networking and for the operating system, I allocate 140 cores for worker-threads.
-You can adjust the number of threads (multi-threading is used for fast fitness evaluation) in /globals.lisp/ by setting:
+Results are reported individually, for example:
 
-#+BEGIN_SRC lisp
-*num-threads*
-#+END_SRC
+```
+b_line-30
+b_line-50
+b_line-100
+b_line-total
+```
 
-5.)
+The same workflow applies to:
 
-You can specify the number of registers that each program has in TPG (as per any LinearGP implementation). This is intentionally hardcoded
-so the compiler can optimize-to-death the execution of programs.
+- RedMeanderAgent
+- SleepAgent
 
-** Starting the nodes/servers.
+**Mode 2**
 
-In Sly /(M-x sly)/, you can now load the package with the following:
+Single selected Red agent.
 
-#+BEGIN_SRC lisp
-    (ql:quickload :cl-tpg)
-#+END_SRC
+Runs:
 
-After you've loaded the package, you can now start the server.
+- 100 steps
+- User-defined number of episodes
 
-#+BEGIN_SRC lisp
-  (cl-tpg:start-server)
-#+END_SRC
+---
 
-Once you've done this, great! Now your /CL-TPG/ is listening to your Emacs.
+### CAGE3
 
-If you need to stop the server, there is also:
+Two validation modes are currently supported.
 
-#+BEGIN_SRC lisp
-  (cl-tpg:stop-server)
-#+END_SRC
+**Mode 1**
 
-* Enabling the *tpg* package in Emacs.
+- 500 steps
+- 1000 episodes
 
-#+BEGIN_SRC sh
-      C-x C-f ./emacs/tpg.el
-      M-x eval-buffer
-      M-x tpg
-#+END_SRC
+**Mode 2**
 
-The above code opens the /tpg.el/ file from the working directory. /eval-buffer/ executes each expression in the file sequentially. /tpg/ opens two buffers (windows) within emacs.
-The first buffer is *tpg* which is the main control panel for interacting wih the TPG nodes/servers. *tpg* shows things like fitness and generation for the connected nodes. The second buffer is *tpg-log* which receives messages, warnings, and errors from the nodes.
+- 500 steps
+- User-defined number of episodes
 
-[[./figures/*tpg*.png]]
+---
 
-* Starting searches in TPG
+## 4. Python Bridge
 
-When you're in the *tpg* buffer, you can press
+Online training and validation require a Gymnasium-compatible Python environment.
 
-#+BEGIN_SRC sh
-  C-c C-c
-#+END_SRC
+Rather than modifying the BES/TPG evolutionary engine, this project uses a lightweight **Gymnasium bridge** that connects the Lisp implementation of BES/TPG with Python environments through the standard Gymnasium API.
 
-to bring up a /transient/ menu.
+The bridge is responsible for:
 
-The first thing you should do is enable auto-refreshing of the *tpg* panel when new fitness scores or system information arrives.
+- Registering custom Gymnasium environments
+- Wrapping external simulators
+- Providing the standard `reset()` / `step()` interface
+- Exposing observation and action spaces to BES/TPG
 
-After you have done this you can start/stop searches of individual nodes/islands or start/stop searches of all nodes/islands.
+This design keeps Python environments completely independent from the Lisp implementation while allowing new environments to be integrated without modifying the evolutionary core.
 
-#+CAPTION: The menu for starting searches. By pressing "-I" you can specify either all or a specific island to start the search for. You can set other key parameters such as the evaluation mode (offline evaluation against a dataset or online evaluation against a gymnasium environment.). You can specify the number of observations in the state-space, the number of actions for the RL task (or the number of classes in the dataset). This is where you will set other hyperparameters customary to TPG as well.
+The Gymnasium bridge currently used in this project is available here:
 
-[[./figures/start-search.png]]
+https://github.com/PopcornBoat/custom-gym-for-bes
 
-** Understanding the search parameters
+---
 
-| Parameter                  | Key Press | Role                                                                                                                                                                             |
-| Island                     | -I        | The island ID you want to run this against. Select --all for this to be a global search across all nodes.                                                                        |
-| Evaluation Mode            | -M        | CL-TPG supports both offline learning (learning from a dataset with no task interaction) and online learning (interacting with a simulator.) This parameter sets which mode to use. |
-| Gymnasium Environment Name | -G        | This tells CL-TPG which Gymnasium environment to load, e.g. "HalfCheetah-v5"                                                                                                  |
-| Dataset Name               | -F        | The name of the dataset to load. CL-TPG looks for datasets in ~/.datasets/.                                                                                                   |
-| Number of Observations     | -Z        | How many observations are there in the state space or how many features are there in the dataset?                                                                                |
-| Number of Actions          | -X        | How many actions are there in the action space or how many classes are there in the dataset?                                                                                     |
-| Population Size            | -P        | The size of the population (number of root teams).                                                                                                                               |
-| Gap                        | -g        | What percentage of the teams to remove during selection.                                                                                                                         |
-| Migration Interval         | -n        | How many generations should we wait between sending individuals to other islands?                                                                                                |
-| Batch Size                 | -b        | If using an offline dataset, how many transitions do we sample from the dataset?                                                                                                 |
-| Seed                       | -s        | By setting a seed, you can reproduce the same experiment.                                                                                                                        |
-| Initial Number of Learners | -l        | How many learners should a team have when a team is first made?                                                                                                                  |
-| Maximum Number of Learners | -L        | At most how many learners can a team have?                                                                                                                                       |
-| Add Learner (p)            | -a        | What's the probability that when a team is mutated a new learner will be added?                                                                                                  |
-| Delete Learner (p)         | -d        | What's the probability that when a team is mutated a learner will be deleted?                                                                                                    |
-| Mutate Program (p)         | -m        | What's the probability that when a team is mutated, a learner will have its program mutated?                                                                                     |
-| Change Action (p)          | -c        | What's the probability that when a learner is mutated, its action will be changed to a new action?                                                                               |
-| Swap Learner Actions (p)   | -s        | What's the probability that when a team is mutated, two learners will have their actions swapped?                                                                                |
-| Initial Size               | -i        | When a program is made, how many instructions will it have?                                                                                                                      |
-| Maximum Size               | -x        | At most, how many instructions can a program have?                                                                                                                               |
-| Add Instruction (p)        | -A        | When a learner's program is mutated, what's the probability of adding a new instruction in a random place?                                                                       |
-| Delete Instruction (p)     | -D        | When a learner's program is mutated, what's the probability of a random instruction being deleted?                                                                               |
-| Swap Instructions (p)      | -S        | When a learner's program is mutated, what's the probability of two instructions being randomly swapped?                                                                          |
-| Mutate Constant (p)        | -C        | When a learner's program is mutated, what's the probability of a random constant in its program being perturbed by noise?                                                        |
-| Mutate Constant Sign (p)   | -V        | When a learner's program is mutated, what's the probability of a random constant having its sign switched? (negative or positive).                                               |
+## 5. Python Interpreter Management
+
+The framework supports switching between multiple Python environments directly from the Emacs interface.
+
+Typical usage:
+
+```
+CAGE2 Python Environment
+
+↓
+
+CAGE3 Python Environment
+```
+
+Interpreter selection is:
+
+- Persistent across sessions
+- Hot-swappable
+- Does not require restarting Lisp
+
+This allows multiple CybORG codebases to coexist without compatibility issues.
+
+---
+
+## 6. Improved Emacs Interface
+
+The Emacs frontend has been extended with several new utilities.
+
+Current functionality includes:
+
+- Configure and start training
+- Resume search
+- Validation
+- Save best team
+- Configure Python interpreter
+- Automatic path completion
+- Dashboard improvements
+
+Interactive TAB completion is supported for:
+
+- Dataset files
+- Checkpoint directories
+- Saved best teams
+- Python interpreters
+
+---
+
+## 7. Dashboard Improvements
+
+Additional runtime statistics have been added to the dashboard.
+
+Current information includes:
+
+- Current best fitness
+- Rolling mean fitness
+- Generation count
+- Total evaluation episodes
+
+These statistics simplify long-running evolutionary experiments.
+
+---
+
+## Notes
+
+The original offline imitation-learning workflow provided by **cl-tpg** is currently preserved.
+
+Research on reward-based offline fitness and additional offline learning strategies is ongoing but has **not** yet been integrated into the main evolutionary workflow.
+
+---
+
+# Current Research Status
+
+Current research focuses on applying BES/TPG to autonomous cyber defence using the CAGE benchmark.
+
+Currently implemented components include:
+
+- Online evolutionary training
+- Offline imitation learning (original implementation)
+- Automatic best-team checkpointing
+- Warm-start resume search
+- Validation framework
+- CAGE2 integration
+- CAGE3 integration
+- Gymnasium bridge
+- Multiple Python interpreter support
+- Enhanced Emacs interface
+
+Future work includes:
+
+- Reward-based offline fitness
+- Controller-based CAGE2 evaluation
+- Additional cyber defence environments
+- Continued synchronization with upstream **cl-tpg**
+
+---
+
+# Acknowledgements
+
+This project would not exist without the excellent work of the original **cl-tpg** authors.
+
+All credit for the BES/TPG framework belongs to the original project.
+
+This repository only extends the framework with additional engineering functionality required for my research while attempting to preserve the original implementation and remain compatible with future upstream development whenever possible.
