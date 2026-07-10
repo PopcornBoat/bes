@@ -137,6 +137,11 @@
         (batch-size
          (string-to-number
           (transient-arg-value "*batch-size=" args)))
+        (online-fitness-episodes
+        (string-to-number
+          (transient-arg-value
+          "*online-fitness-episodes="
+          args)))
         (checkpoint-interval
          (string-to-number
           (transient-arg-value "*checkpoint-interval=" args)))
@@ -169,6 +174,7 @@
       :p-mut-constant-sign ,p-mut-constant-sign
       :migration-interval ,migration-interval
       :batch-size ,batch-size
+      :online-fitness-episodes ,online-fitness-episodes
       :checkpoint-directory :none
       :checkpoint-interval ,checkpoint-interval
       :seed ,seed)))
@@ -274,6 +280,7 @@
             "*max-num-learners=inf"
             "*migration-interval=50"
             "*batch-size=1000"
+            "*online-fitness-episodes=5"
             "*seed=random"
             "--mode=online"
             
@@ -300,6 +307,9 @@
    ("-g" "Gap" "*gap=")
    ("-n" "Migration Interval" "*migration-interval=") 
    ("-b" "Batch Size" "*batch-size=")
+   ("-e"
+    "Online Fitness Episodes"
+    "*online-fitness-episodes=")
    ("-s" "Seed" "*seed=")]
   [:description "Team Constraints"
    ("-l" "Initial Number of Learners" "*init-num-learners=")
@@ -332,13 +342,16 @@
 (transient-define-suffix tpg-resume-search ()
   "Warm-start search from a saved best-team file."
   (interactive)
+
   (let* ((island-id
           (string-to-number
            (completing-read
             "Island id: "
             '("0" "1" "2" "3" "4" "5" "6" "7"
               "8" "9" "10" "11" "12" "13" "14" "15")
-            nil t "0")))
+            nil
+            t
+            "0")))
 
          (best-team-path
           (tpg-read-file-path
@@ -352,17 +365,22 @@
 
          (checkpoint-interval
           (string-to-number
-           (read-string "Checkpoint interval: " "50")))
+           (read-string
+            "Checkpoint interval: "
+            "50")))
 
          (mode-str
           (completing-read
            "Evaluation mode: "
            '("online" "offline")
-           nil t
+           nil
+           t
            "offline"))
 
          (mode
-          (if (string= mode-str "online") :online :offline))
+          (if (string= mode-str "online")
+              :online
+            :offline))
 
          (env
           (if (eq mode :online)
@@ -373,7 +391,8 @@
                  "Cage2-sleep-100-v0"
                  "Cage3SharedPolicy-v0"
                  "CartPole-v1")
-               nil t
+               nil
+               t
                "Cage2-b_line-100-v0")
             :none))
 
@@ -386,86 +405,136 @@
 
          (num-observations
           (string-to-number
-           (read-string "Number of observations: " "52")))
+           (read-string
+            "Number of observations: "
+            "52")))
 
          (num-actions
           (string-to-number
-           (read-string "Number of actions: " "145")))
+           (read-string
+            "Number of actions: "
+            "145")))
 
          (population-size
           (string-to-number
-           (read-string "Population size: " "160")))
+           (read-string
+            "Population size: "
+            "160")))
 
          (init-num-learners
           (string-to-number
-           (read-string "Initial number of learners: " "3")))
+           (read-string
+            "Initial number of learners: "
+            "3")))
 
          (max-num-learners
           (string-to-number-or-inf
-           (read-string "Maximum number of learners: " "inf")))
+           (read-string
+            "Maximum number of learners: "
+            "inf")))
 
          (p-add
           (string-to-number
-           (read-string "Add learner probability: " "0.2")))
+           (read-string
+            "Add learner probability: "
+            "0.2")))
 
          (p-del
           (string-to-number
-           (read-string "Delete learner probability: " "0.1")))
+           (read-string
+            "Delete learner probability: "
+            "0.1")))
 
          (p-mut
           (string-to-number
-           (read-string "Mutate program probability: " "0.5")))
+           (read-string
+            "Mutate program probability: "
+            "0.5")))
 
          (p-act
           (string-to-number
-           (read-string "Change action probability: " "0.2")))
+           (read-string
+            "Change action probability: "
+            "0.2")))
 
          (p-swap
           (string-to-number
-           (read-string "Swap learner action probability: " "0.1")))
+           (read-string
+            "Swap learner action probability: "
+            "0.1")))
 
          (gap
           (string-to-number
-           (read-string "Gap: " "0.5")))
+           (read-string
+            "Gap: "
+            "0.5")))
 
          (init-program-size
           (string-to-number-or-inf
-           (read-string "Initial program size: " "100")))
+           (read-string
+            "Initial program size: "
+            "100")))
 
          (max-program-size
           (string-to-number-or-inf
-           (read-string "Maximum program size: " "inf")))
+           (read-string
+            "Maximum program size: "
+            "inf")))
 
          (p-add-instr
           (string-to-number
-           (read-string "Add instruction probability: " "0.9")))
+           (read-string
+            "Add instruction probability: "
+            "0.9")))
 
          (p-del-instr
           (string-to-number
-           (read-string "Delete instruction probability: " "0.5")))
+           (read-string
+            "Delete instruction probability: "
+            "0.5")))
 
          (p-swap-instrs
           (string-to-number
-           (read-string "Swap instructions probability: " "1.0")))
+           (read-string
+            "Swap instructions probability: "
+            "1.0")))
 
          (p-mut-constant
           (string-to-number
-           (read-string "Mutate constant probability: " "0.5")))
+           (read-string
+            "Mutate constant probability: "
+            "0.5")))
 
          (p-mut-constant-sign
           (string-to-number
-           (read-string "Mutate constant sign probability: " "0.1")))
+           (read-string
+            "Mutate constant sign probability: "
+            "0.1")))
 
          (migration-interval
           (string-to-number
-           (read-string "Migration interval: " "50")))
+           (read-string
+            "Migration interval: "
+            "50")))
 
          (batch-size
           (string-to-number
-           (read-string "Batch size: " "1000")))
+           (read-string
+            "Batch size: "
+            "1000")))
+
+         ;; Online 模式下决定每个 team 用多少个完整 episode
+         ;; 计算一次 fitness。Offline 模式下该值仍会传递，但不会使用。
+         (online-fitness-episodes
+          (string-to-number
+           (read-string
+            "Online fitness episodes per team: "
+            "5")))
 
          (seed-str
-          (read-string "Seed: " "random"))
+          (read-string
+           "Seed: "
+           "random"))
 
          (seed
           (if (string= seed-str "random")
@@ -478,28 +547,38 @@
             :gym-environment-name ,env
             :dataset-name ,dataset
             :best-team-path ,best-team-path
+
             :num-observations ,num-observations
             :num-actions ,num-actions
             :population-size ,population-size
+
             :init-num-learners ,init-num-learners
             :max-num-learners ,max-num-learners
+
             :p-add ,p-add
             :p-del ,p-del
             :p-mut ,p-mut
             :p-act ,p-act
             :p-swap ,p-swap
+
             :gap ,gap
+
             :init-program-size ,init-program-size
             :max-program-size ,max-program-size
+
             :p-add-instr ,p-add-instr
             :p-del-instr ,p-del-instr
             :p-swap-instrs ,p-swap-instrs
             :p-mut-constant ,p-mut-constant
             :p-mut-constant-sign ,p-mut-constant-sign
+
             :migration-interval ,migration-interval
             :batch-size ,batch-size
+            :online-fitness-episodes ,online-fitness-episodes
+
             :checkpoint-directory ,checkpoint-dir
             :checkpoint-interval ,checkpoint-interval
+
             :seed ,seed)))
 
     (tpg-send-payload-to-island
@@ -507,8 +586,12 @@
      payload
      "resume-search-client")
 
-    (message "[LOCAL] Requested warm-start resume on island %s from %s"
-             island-id best-team-path)))
+    (message
+     "[LOCAL] Requested warm-start resume on island %s from %s; mode=%s; online fitness episodes=%s"
+     island-id
+     best-team-path
+     mode
+     online-fitness-episodes)))
 
 (transient-define-prefix tpg-menu ()
   "Control Center for TPG."
@@ -571,36 +654,99 @@
 
 (define-derived-mode tpg-mode tabulated-list-mode "TPG-Islands"
   "Major mode for displaying Island fitness data."
-  (setq tabulated-list-format [("Island" 10 t)
-                             ("Reward" 15 t)
-                             ("Mean" 25 t)
-                             ("Generation" 15 t)
-                             ("CPU" 10 t)
-                             ("Mem" 10 t)])
+
+  (setq tabulated-list-format
+        [("Island" 8 t)
+         ("Gen Best" 12 t)
+         ("Hist Best" 12 t)
+         ("Pop Mean" 12 t)
+         ("Median" 12 t)
+         ("Worst" 12 t)
+         ("Fit Eps" 8 t)
+         ("Generation" 10 t)
+         ("CPU" 8 t)
+         ("Mem" 8 t)])
+
   (setq tabulated-list-padding 2)
-  (add-hook 'tabulated-list-revert-hook #'tpg--refresh-data nil t)
+
+  (add-hook
+   'tabulated-list-revert-hook
+   #'tpg--refresh-data
+   nil
+   t)
+
   (tabulated-list-init-header))
 
 (defun tpg--refresh-data ()
   "Translate hash table data into tabulated-list format."
+
   (interactive)
+
   (let (entries)
-    (maphash (lambda (id data)
-	       (let ((fitness (plist-get data :fitness))
-		     (gen (plist-get data :generation))
-		     (cpu (plist-get data :cpu))
-		     (memory (plist-get data :memory)))
-		 (push (list id (vector
-                      (format "%s" id)
-                      (format "%s" (or fitness "-"))
-                      (format "%s (%s eps)"
-                              (or (plist-get data :mean) "-")
-                              (or (plist-get data :total-eps) "-"))
-                      (format "%s" (or gen "-"))
-                      (format "%.1f" (or cpu 0.0))
-                      (format "%.1f" (or memory 0.0))))
-		       entries)))
-	     tpg-data)
+
+    (maphash
+
+     (lambda (id data)
+
+       (push
+
+        (list
+
+         id
+
+         (vector
+
+          (format "%s" id)
+
+          (format "%s"
+                  (or
+                   (plist-get data :generation-best)
+                   "-"))
+
+          (format "%s"
+                  (or
+                   (plist-get data :historical-best)
+                   "-"))
+
+          (format "%s"
+                  (or
+                   (plist-get data :population-mean)
+                   "-"))
+
+          (format "%s"
+                  (or
+                   (plist-get data :population-median)
+                   "-"))
+
+          (format "%s"
+                  (or
+                   (plist-get data :population-worst)
+                   "-"))
+
+          (format "%s"
+                  (or
+                   (plist-get data :online-fitness-episodes)
+                   "-"))
+
+          (format "%s"
+                  (or
+                   (plist-get data :generation)
+                   "-"))
+
+          (format "%.1f"
+                  (or
+                   (plist-get data :cpu)
+                   0.0))
+
+          (format "%.1f"
+                  (or
+                   (plist-get data :memory)
+                   0.0))))
+
+        entries))
+
+     tpg-data)
+
     (setq tabulated-list-entries entries)))
 
 (defun tpg-telemetry-handler (_proc string)
@@ -613,19 +759,66 @@
 	   (current-data (gethash from-id tpg-data '())))
       (cond
        ((eq type :FITNESS)
-	(let ((fitness (plist-get msg :FITNESS))
-      (mean (plist-get msg :MEAN))
-      (total-eps (plist-get msg :TOTAL-EPS))
-      (generation (plist-get msg :GENERATION)))
-  (puthash from-id
-           (plist-put
-            (plist-put
-             (plist-put
-              (plist-put current-data :fitness fitness)
-              :mean mean)
-             :total-eps total-eps)
-            :generation generation)
-           tpg-data)))
+
+ (let ((generation-best
+        (plist-get msg :GENERATION-BEST))
+
+       (historical-best
+        (plist-get msg :HISTORICAL-BEST))
+
+       (population-mean
+        (plist-get msg :POPULATION-MEAN))
+
+       (population-median
+        (plist-get msg :POPULATION-MEDIAN))
+
+       (population-worst
+        (plist-get msg :POPULATION-WORST))
+
+       (online-fitness-episodes
+        (plist-get msg :ONLINE-FITNESS-EPISODES))
+
+       (generation
+        (plist-get msg :GENERATION)))
+
+   (puthash
+
+    from-id
+
+    (plist-put
+     (plist-put
+      (plist-put
+       (plist-put
+        (plist-put
+         (plist-put
+          current-data
+          :generation-best
+          generation-best)
+
+         :historical-best
+         historical-best)
+
+        :population-mean
+        population-mean)
+
+       :population-median
+       population-median)
+
+      :population-worst
+      population-worst)
+
+     :online-fitness-episodes
+     online-fitness-episodes)
+
+    tpg-data)
+
+   (puthash
+    from-id
+    (plist-put
+     (gethash from-id tpg-data)
+     :generation
+     generation)
+    tpg-data)))
 
        ((eq type :MESSAGE)
 	(let ((message (plist-get msg :MSG)))

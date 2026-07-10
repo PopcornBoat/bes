@@ -102,6 +102,12 @@
 (defparameter *batch-size* 1000
   "The number of generations to wait between sending migrants.")
 
+(defparameter *online-fitness-episodes* 1
+  "Number of complete episodes used to evaluate one team in online mode.
+
+A value of 1 reproduces the original BES/TPG behaviour.
+Larger values reduce fitness variance by averaging multiple rollouts.")
+
 (defvar *best-team* nil
   "Best root team seen so far.")
 

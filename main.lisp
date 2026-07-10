@@ -20,39 +20,66 @@
 	     count (= actual predicted))
        (length actuals))))
 
-(defparameter *fitness-window-size* 1000)
-(defparameter *fitness-window* '())
-(defparameter *fitness-window-sum* 0.0d0)
+(defun arithmetic-mean (values)
+  "Return the arithmetic mean of VALUES as a double-float."
+  (if (null values)
+      0.0d0
+      (let ((sum
+        (coerce
+         (reduce #'+
+                 values
+                 :initial-value 0.0d0)
+         'double-float)))
 
-(defun reset-fitness-window ()
-  (setf *fitness-window* '()
-        *fitness-window-sum* 0.0d0))
+        (/ sum
+           (coerce (length values)
+                   'double-float)))))
 
-(defun record-fitness-and-mean (fitness)
-  (let ((f (coerce fitness 'double-float)))
-    (push f *fitness-window*)
-    (incf *fitness-window-sum* f)
+(defun numeric-median (values)
+  "Return the median of VALUES as a double-float."
+  (if (null values)
+      0.0d0
+      (let* ((sorted (sort (copy-list values) #'<))
+             (n (length sorted))
+             (middle (floor n 2)))
+        (if (oddp n)
+            (coerce (nth middle sorted)
+                    'double-float)
+            (/ (coerce (+ (nth (1- middle) sorted)
+                          (nth middle sorted))
+                       'double-float)
+               2.0d0)))))
 
-    (when (> (length *fitness-window*) *fitness-window-size*)
-      (let ((oldest (car (last *fitness-window*))))
-        (setf *fitness-window* (butlast *fitness-window*))
-        (decf *fitness-window-sum* oldest)))
+(defun online-fitness (team gym-environment-name)
+  "Evaluate TEAM over *ONLINE-FITNESS-EPISODES* complete episodes.
 
-    (values (/ *fitness-window-sum*
-               (length *fitness-window*))
-            (length *fitness-window*))))
+The returned fitness is the mean episode reward."
+  (unless (and (integerp *online-fitness-episodes*)
+               (> *online-fitness-episodes* 0))
+    (error "*ONLINE-FITNESS-EPISODES* must be a positive integer."))
+
+  (arithmetic-mean
+   (loop repeat *online-fitness-episodes*
+         collect
+         (cl-gym:rollout team
+                         gym-environment-name
+                         (random 9999999)))))
             	  
 (defun make-fitness-function (&key gym-environment-name dataset-name)
   (cond
     (gym-environment-name
      (setf *fitness-fn*
-	   (lambda (team)
-	     (cl-gym:rollout team gym-environment-name (random 9999999)))))
+           (lambda (team)
+             (online-fitness team gym-environment-name))))
+
     (dataset-name
      (let ((dataset (load-dataset dataset-name)))
-       (setf *fitness-fn* 
-	     (lambda (team)
-	       (accuracy team dataset)))))))
+       (setf *fitness-fn*
+             (lambda (team)
+               (accuracy team dataset)))))
+
+    (t
+     (error "Neither GYM-ENVIRONMENT-NAME nor DATASET-NAME was supplied."))))
 
 (defun configure-fitness-function (mode gym-environment-name dataset-name)
   "Configure *FITNESS-FN* according to MODE."
@@ -90,29 +117,45 @@
     good-results))
 
 (defun select (scores)
-  "Remove GAP percent of the population by removing the worst teams."
+  "Remove GAP percent of the population by removing the worst teams.
+
+Telemetry reports both generation-level population statistics and the
+historical best fitness associated with *BEST-TEAM*."
+  (unless scores
+    (error "Cannot select from an empty score list."))
+
   (let* ((sorted (sort (copy-list scores) #'> :key #'cdr))
-         (n-remove (floor (* *gap* (length scores))))
-         (worst (last sorted n-remove))
+         (fitness-values (mapcar #'cdr sorted))
+         (n-remove (floor (* *gap* (length sorted))))
+         (worst-entries (if (> n-remove 0)
+                            (last sorted n-remove)
+                            nil))
          (best-entry (first sorted))
-         (best-fitness (and best-entry (cdr best-entry))))
+         (generation-best (cdr best-entry))
+         (population-mean (arithmetic-mean fitness-values))
+         (population-median (numeric-median fitness-values))
+         (population-worst
+          (reduce #'min
+                  fitness-values
+                  :initial-value most-positive-double-float)))
 
-    (when best-fitness
-      ;; Maintain best individual seen so far.
-      (when (or (null *best-fitness*)
-                (> best-fitness *best-fitness*))
-        (setf *best-fitness* best-fitness
-              *best-team* (car best-entry)))
+    ;; Maintain the historical best team and its corresponding fitness.
+    (when (or (null *best-fitness*)
+              (> generation-best *best-fitness*))
+      (setf *best-fitness* generation-best
+            *best-team* (car best-entry)))
 
-      (multiple-value-bind (rolling-mean total-eps)
-          (record-fitness-and-mean best-fitness)
-        (emit-fitness-scores (who-am-i)
-                             best-fitness
-                             *generation*
-                             :mean rolling-mean
-                             :total-eps total-eps)))
+    (emit-fitness-scores
+    (who-am-i)
+    generation-best
+    *best-fitness*
+    population-mean
+    population-median
+    population-worst
+    *generation*
+    :online-fitness-episodes *online-fitness-episodes*)
 
-    (dolist (entry worst)
+    (dolist (entry worst-entries)
       (delete-team (car entry)))))
 
 (defun should-send-migrants-p ()
@@ -173,7 +216,7 @@
     (setf *best-team* nil)
     (setf *best-fitness* nil)
 
-    (reset-fitness-window)
+   
 
     (make-initial-population)
     (configure-fitness-function mode gym-environment-name dataset-name)
@@ -250,7 +293,7 @@ normal evolution."
     (setf *best-team* nil)
     (setf *best-fitness* nil)
 
-    (reset-fitness-window)
+ 
 
     ;; Build fresh random population for this island.
     (make-initial-population)

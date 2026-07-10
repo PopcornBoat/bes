@@ -59,16 +59,46 @@
 	 (usocket:socket-send socket msg (length msg))
       (usocket:socket-close socket))))
 			 
-(defun emit-fitness-scores (island-id fitness generation &key mean total-eps)
-  "Sends the island's fitness score to the telemetry client."
-  (let ((payload (prin1-to-string
-                  `(:type :fitness
-                    :fitness ,(format nil "~,4F" fitness)
-                    :mean ,(when mean (format nil "~,4F" mean))
-                    :total-eps ,total-eps
-                    :from ,island-id
-                    :generation ,generation
-                    :ts ,(get-universal-time)))))
+(defun emit-fitness-scores
+       (island-id
+        generation-best
+        historical-best
+        population-mean
+        population-median
+        population-worst
+        generation
+        &key online-fitness-episodes)
+  "Send generation-level and population-level fitness statistics
+to the telemetry client."
+  (let ((payload
+          (prin1-to-string
+           `(:type :fitness
+             :generation-best
+             ,(format nil "~,4F" generation-best)
+
+             :historical-best
+             ,(format nil "~,4F" historical-best)
+
+             :population-mean
+             ,(format nil "~,4F" population-mean)
+
+             :population-median
+             ,(format nil "~,4F" population-median)
+
+             :population-worst
+             ,(format nil "~,4F" population-worst)
+
+             :online-fitness-episodes
+             ,online-fitness-episodes
+
+             :from
+             ,island-id
+
+             :generation
+             ,generation
+
+             :ts
+             ,(get-universal-time)))))
     (notify-telemetry payload)))
 
 (defun emit-heartbeat ()
@@ -171,32 +201,42 @@
   (cdr (assoc island-id *topology* :test #'equal)))
 
 (defun set-global-parameters (population-size
-			      num-observations num-actions
-			      init-num-learners max-num-learners
-			      p-add p-del p-mut p-act p-swap
-			      gap init-program-size max-program-size
-			      p-add-instr p-del-instr p-swap-instrs
-			      p-mut-constant p-mut-constant-sign
-			      migration-interval batch-size
-				  &key checkpoint-directory checkpoint-interval)
+                              num-observations num-actions
+                              init-num-learners max-num-learners
+                              p-add p-del p-mut p-act p-swap
+                              gap init-program-size max-program-size
+                              p-add-instr p-del-instr p-swap-instrs
+                              p-mut-constant p-mut-constant-sign
+                              migration-interval
+                              batch-size
+                              online-fitness-episodes
+                              &key checkpoint-directory checkpoint-interval)
   "Set the hyperparameters according to the TCP request."
+
   (setf *population-size* population-size)
   (setf *num-observations* num-observations)
   (setf *num-actions* num-actions)
+
   (setf *init-num-learners* init-num-learners)
-  (setf *max-num-learners* (case max-num-learners
-			     (:inf +inf+)
-			     (otherwise max-num-learners)))
+  (setf *max-num-learners*
+        (case max-num-learners
+          (:inf +inf+)
+          (otherwise max-num-learners)))
+
   (setf *p-add* p-add)
   (setf *p-del* p-del)
   (setf *p-mut* p-mut)
   (setf *p-act* p-act)
   (setf *p-swap* p-swap)
+
   (setf *gap* gap)
+
   (setf *init-program-size* init-program-size)
-  (setf *max-program-size* (case max-program-size
-			      (:inf +inf+)
-			      (otherwise max-program-size)))
+  (setf *max-program-size*
+        (case max-program-size
+          (:inf +inf+)
+          (otherwise max-program-size)))
+
   (setf *p-add-instr* p-add-instr)
   (setf *p-del-instr* p-del-instr)
   (setf *p-swap-instrs* p-swap-instrs)
@@ -205,8 +245,14 @@
 
   (setf *migration-interval* migration-interval)
   (setf *batch-size* batch-size)
+
+  (setf *online-fitness-episodes*
+        online-fitness-episodes)
+
   (setf *checkpoint-directory* checkpoint-directory)
-  (setf *checkpoint-interval* (or checkpoint-interval 50)))
+
+  (setf *checkpoint-interval*
+        (or checkpoint-interval 50)))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
 				  num-observations num-actions
@@ -236,9 +282,7 @@
     (lookup-island-id-by-ip ip-address)))
 
 (defun handle-start-search (msg)
-  "When a search is started through TCP, validate that the search parameters
-   are valid then begin the search. This will also send a search started
-   message to the telemetry client."
+  "Validate a start-search request, configure globals, and begin searching."
   (when *running*
     (emit-error "A search is already running on this node.")
     (return-from handle-start-search))
@@ -268,62 +312,96 @@
         (p-mut-constant-sign (getf msg :p-mut-constant-sign))
         (migration-interval (getf msg :migration-interval))
         (batch-size (getf msg :batch-size))
+        (online-fitness-episodes
+          (or (getf msg :online-fitness-episodes) 1))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
-    
+
     (emit-message
- 	(format nil
-        	 "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A checkpoint-dir=~A checkpoint-interval=~A seed=~A"
-         	mode
-         	gym-environment-name
-         	dataset-name
-         	num-observations
-         	num-actions
-         	population-size
-         	init-num-learners
-         	max-num-learners
-         	gap
-         	migration-interval
-         	batch-size
-         	checkpoint-directory
-         	checkpoint-interval
-         	seed))
+     (format nil
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A online-fit-eps=~A checkpoint-dir=~A checkpoint-interval=~A seed=~A"
+             mode
+             gym-environment-name
+             dataset-name
+             num-observations
+             num-actions
+             population-size
+             init-num-learners
+             max-num-learners
+             gap
+             migration-interval
+             batch-size
+             online-fitness-episodes
+             checkpoint-directory
+             checkpoint-interval
+             seed))
+
     (emit-message
- 	(format nil
-         "MUTATION PARAM DEBUG: p-add=~A p-del=~A p-mut=~A p-act=~A p-swap=~A init-prog=~A max-prog=~A p-add-instr=~A p-del-instr=~A p-swap-instrs=~A p-mut-constant=~A p-mut-constant-sign=~A"
+     (format nil
+             "MUTATION PARAM DEBUG: p-add=~A p-del=~A p-mut=~A p-act=~A p-swap=~A init-prog=~A max-prog=~A p-add-instr=~A p-del-instr=~A p-swap-instrs=~A p-mut-constant=~A p-mut-constant-sign=~A"
+             p-add
+             p-del
+             p-mut
+             p-act
+             p-swap
+             init-program-size
+             max-program-size
+             p-add-instr
+             p-del-instr
+             p-swap-instrs
+             p-mut-constant
+             p-mut-constant-sign))
+
+    (if (valid-search-parameters-p
+         mode
+         gym-environment-name
+         dataset-name
+         num-observations
+         num-actions
+         population-size
+         init-num-learners
+         max-num-learners
          p-add
          p-del
          p-mut
          p-act
          p-swap
+         gap
          init-program-size
          max-program-size
          p-add-instr
          p-del-instr
          p-swap-instrs
          p-mut-constant
-         p-mut-constant-sign))
-    (if (valid-search-parameters-p mode gym-environment-name dataset-name
-                                   num-observations num-actions population-size
-                                   init-num-learners max-num-learners
-                                   p-add p-del p-mut p-act p-swap gap
-                                   init-program-size max-program-size
-                                   p-add-instr p-del-instr p-swap-instrs
-                                   p-mut-constant p-mut-constant-sign
-                                   migration-interval batch-size seed)
+         p-mut-constant-sign
+         migration-interval
+         batch-size
+         seed)
+
         (progn
           (set-global-parameters
            population-size
-           num-observations num-actions
-           init-num-learners max-num-learners
-           p-add p-del p-mut p-act
-           p-swap gap init-program-size
-           max-program-size p-add-instr
-           p-del-instr p-swap-instrs
-           p-mut-constant p-mut-constant-sign
+           num-observations
+           num-actions
+           init-num-learners
+           max-num-learners
+           p-add
+           p-del
+           p-mut
+           p-act
+           p-swap
+           gap
+           init-program-size
+           max-program-size
+           p-add-instr
+           p-del-instr
+           p-swap-instrs
+           p-mut-constant
+           p-mut-constant-sign
            migration-interval
            batch-size
+           online-fitness-episodes
            :checkpoint-directory checkpoint-directory
            :checkpoint-interval checkpoint-interval)
 
@@ -336,37 +414,43 @@
                    (handler-case
                        (progn
                          (emit-message
-                          (format nil "Search started on island ~A~%" (who-am-i)))
+                          (format nil
+                                  "Search started on island ~A"
+                                  (who-am-i)))
 
                          (when *checkpoint-directory*
                            (emit-message
-                            (format nil "Checkpoint directory: ~A, interval: ~A"
+                            (format nil
+                                    "Checkpoint directory: ~A, interval: ~A"
                                     *checkpoint-directory*
                                     *checkpoint-interval*)))
 
-                         ;; enable multi-threading
                          (setf lparallel:*kernel*
                                (make-kernel *num-threads*))
 
-                         (run-search mode gym-environment-name dataset-name seed))
+                         (run-search
+                          mode
+                          gym-environment-name
+                          dataset-name
+                          seed))
+
                      (error (c)
                        (setf *running* nil)
-                       (emit-error (format nil "Search crashed: ~A" c))))
+                       (emit-error
+                        (format nil "Search crashed: ~A" c))))
+
                 (setf *running* nil)
+
                 (when lparallel:*kernel*
                   (lparallel:end-kernel))))
             :name "search-thread")
            *server-threads*))
-        (emit-error "The search parameters provided are invalid."))))
 
+        (emit-error
+         "The search parameters provided are invalid."))))
 
 (defun handle-resume-search (msg)
-  "Warm-start a search from a saved best-team file.
-
-This does not restore a full population checkpoint. It sets the same global
-parameters as a normal search, creates a fresh population, loads BEST-TEAM-PATH,
-injects it into the first root slot, evaluates the population, and continues
-normal evolution."
+  "Warm-start a search from a saved best-team file."
   (when *running*
     (emit-error "A search is already running on this node.")
     (return-from handle-resume-search))
@@ -397,6 +481,8 @@ normal evolution."
         (p-mut-constant-sign (getf msg :p-mut-constant-sign))
         (migration-interval (getf msg :migration-interval))
         (batch-size (getf msg :batch-size))
+        (online-fitness-episodes
+          (or (getf msg :online-fitness-episodes) 1))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -408,30 +494,60 @@ normal evolution."
     (unless checkpoint-directory
       (setf checkpoint-directory
             (namestring
-             (make-pathname :directory
-                            (pathname-directory
-                             (pathname best-team-path))))))
+             (make-pathname
+              :directory
+              (pathname-directory
+               (pathname best-team-path))))))
 
-    (if (valid-search-parameters-p mode gym-environment-name dataset-name
-                                   num-observations num-actions population-size
-                                   init-num-learners max-num-learners
-                                   p-add p-del p-mut p-act p-swap gap
-                                   init-program-size max-program-size
-                                   p-add-instr p-del-instr p-swap-instrs
-                                   p-mut-constant p-mut-constant-sign
-                                   migration-interval batch-size seed)
+    (if (valid-search-parameters-p
+         mode
+         gym-environment-name
+         dataset-name
+         num-observations
+         num-actions
+         population-size
+         init-num-learners
+         max-num-learners
+         p-add
+         p-del
+         p-mut
+         p-act
+         p-swap
+         gap
+         init-program-size
+         max-program-size
+         p-add-instr
+         p-del-instr
+         p-swap-instrs
+         p-mut-constant
+         p-mut-constant-sign
+         migration-interval
+         batch-size
+         seed)
+
         (progn
           (set-global-parameters
            population-size
-           num-observations num-actions
-           init-num-learners max-num-learners
-           p-add p-del p-mut p-act
-           p-swap gap init-program-size
-           max-program-size p-add-instr
-           p-del-instr p-swap-instrs
-           p-mut-constant p-mut-constant-sign
+           num-observations
+           num-actions
+           init-num-learners
+           max-num-learners
+           p-add
+           p-del
+           p-mut
+           p-act
+           p-swap
+           gap
+           init-program-size
+           max-program-size
+           p-add-instr
+           p-del-instr
+           p-swap-instrs
+           p-mut-constant
+           p-mut-constant-sign
            migration-interval
            batch-size
+           online-fitness-episodes
            :checkpoint-directory checkpoint-directory
            :checkpoint-interval checkpoint-interval)
 
@@ -464,16 +580,23 @@ normal evolution."
                           dataset-name
                           seed
                           best-team-path))
+
                      (error (c)
                        (setf *running* nil)
                        (emit-error
-                        (format nil "Warm-start resume crashed: ~A" c))))
+                        (format nil
+                                "Warm-start resume crashed: ~A"
+                                c))))
+
                 (setf *running* nil)
+
                 (when lparallel:*kernel*
                   (lparallel:end-kernel))))
             :name "warm-start-resume-thread")
            *server-threads*))
-        (emit-error "The resume-search parameters provided are invalid."))))
+
+        (emit-error
+         "The resume-search parameters provided are invalid."))))
 
 (defun handle-stop-search ()
   "When a request is received to stop a running search, set *running* to NIL."
