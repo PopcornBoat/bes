@@ -79,12 +79,38 @@
 	  (batch dataset start (+ start *batch-size*))))))
 
 (defun load-dataset (name &key path)
-  "Load a dataset from a path on the filesystem.
-   If a path is not specified, assume '~/.datasets/'"
-  (let* ((dataset-name name)
-	 (file-name (if path
-		       path
-		       (concatenate 'string "~/.datasets/" dataset-name))))
+  "Load and convert a dataset.
+
+If PATH is supplied, use PATH directly.
+
+If NAME is an absolute path, a relative path containing directory
+components, or a home-relative path beginning with ~, use NAME directly.
+
+Otherwise, treat NAME as a dataset filename under ~/.datasets/."
+  (let* ((name-string (namestring name))
+         (pathname (pathname name-string))
+         (file-name
+           (cond
+             (path
+              (namestring path))
+
+             ;; Absolute Unix path, home-relative path, or a pathname
+             ;; containing directory components.
+             ((or (uiop:absolute-pathname-p pathname)
+                  (and (> (length name-string) 0)
+                       (char= (char name-string 0) #\~))
+                  (pathname-directory pathname))
+              name-string)
+
+             ;; Bare dataset filename.
+             (t
+              (namestring
+               (merge-pathnames
+                pathname
+                (uiop:ensure-directory-pathname
+                 (merge-pathnames ".datasets/"
+                                  (user-homedir-pathname)))))))))
+
     (with-open-file (in file-name :direction :input)
       (format t "Loading and converting dataset: ~A...~%" file-name)
       (convert-list-to-dataset (read in)))))
