@@ -13,7 +13,7 @@
   (checkpoint-path directory "best-team.lisp"))
 
 (defun save-best-team (&optional (path (best-team-checkpoint-path)))
-  "Save the current *BEST-TEAM* to PATH."
+  "Save the current frozen *BEST-TEAM* to PATH."
   (unless *best-team*
     (error "Cannot save best team: *BEST-TEAM* is NIL."))
 
@@ -27,10 +27,16 @@
       (let ((*print-circle* t)
             (*print-readably* t)
             (*print-pretty* nil))
-        (write (serialize-team *best-team*) :stream out))))
+        (write
+         (serialize-team
+          *best-team*
+          (make-hash-table :test #'equal))
+         :stream out))))
 
   (emit-message
-   (format nil "Best team saved: ~A" (namestring path)))
+   (format nil
+           "Best team saved immediately: ~A"
+           (namestring path)))
 
   path)
 
@@ -55,3 +61,17 @@
 (defun clear-loaded-best-team ()
   "Clear the loaded best team."
   (setf *loaded-best-team* nil))
+
+(defun deep-copy-team-via-serialization (team)
+  "Create a fully independent copy of TEAM using the existing
+TPG serialization/deserialization mechanism.
+
+Unlike CLONE-TEAM, this copies the complete referenced team graph
+instead of sharing internal referenced teams."
+  (let ((serialized
+          (serialize-team
+           team
+           (make-hash-table :test #'equal))))
+    (deserialize-team
+     serialized
+     (make-hash-table :test #'equal))))

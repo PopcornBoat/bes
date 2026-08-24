@@ -119,41 +119,102 @@ The returned fitness is the mean episode reward."
 (defun select (scores)
   "Remove GAP percent of the population by removing the worst teams.
 
-Telemetry reports both generation-level population statistics and the
-historical best fitness associated with *BEST-TEAM*."
+Maintain a frozen deep copy of the historical best team. Whenever a new
+global best is discovered, immediately deep-copy the complete TPG graph
+through serialization/deserialization and save it to disk."
+
   (unless scores
     (error "Cannot select from an empty score list."))
 
-  (let* ((sorted (sort (copy-list scores) #'> :key #'cdr))
-         (fitness-values (mapcar #'cdr sorted))
-         (n-remove (floor (* *gap* (length sorted))))
-         (worst-entries (if (> n-remove 0)
-                            (last sorted n-remove)
-                            nil))
-         (best-entry (first sorted))
-         (generation-best (cdr best-entry))
-         (population-mean (arithmetic-mean fitness-values))
-         (population-median (numeric-median fitness-values))
-         (population-worst
-          (reduce #'min
-                  fitness-values
-                  :initial-value most-positive-double-float)))
+  (let* ((sorted
+           (sort (copy-list scores) #'> :key #'cdr))
 
-    ;; Maintain the historical best team and its corresponding fitness.
+         (fitness-values
+           (mapcar #'cdr sorted))
+
+         (n-remove
+           (floor (* *gap* (length sorted))))
+
+         (worst-entries
+           (if (> n-remove 0)
+               (last sorted n-remove)
+               nil))
+
+         (best-entry
+           (first sorted))
+
+         (generation-best
+           (cdr best-entry))
+
+         (generation-best-team
+           (car best-entry))
+
+         (population-mean
+           (arithmetic-mean fitness-values))
+
+         (population-median
+           (numeric-median fitness-values))
+
+         (population-worst
+           (reduce #'min
+                   fitness-values
+                   :initial-value
+                   most-positive-double-float)))
+
+    ;; ------------------------------------------------------------
+    ;; Historical best
+    ;;
+    ;; IMPORTANT:
+    ;; Never store the live population team directly in *BEST-TEAM*.
+    ;;
+    ;; Instead:
+    ;;   1. detect a new global best
+    ;;   2. deep-copy its entire graph immediately
+    ;;   3. store that frozen copy in *BEST-TEAM*
+    ;;   4. immediately write it to disk
+    ;;
+    ;; This guarantees that *BEST-FITNESS* and *BEST-TEAM* refer to
+    ;; the exact same policy state.
+    ;; ------------------------------------------------------------
+
     (when (or (null *best-fitness*)
               (> generation-best *best-fitness*))
-      (setf *best-fitness* generation-best
-            *best-team* (car best-entry)))
+
+      (let ((frozen-best-team
+              (deep-copy-team-via-serialization
+               generation-best-team)))
+
+        (setf *best-fitness* generation-best
+              *best-team* frozen-best-team)
+
+        (emit-message
+         (format nil
+                 "NEW GLOBAL BEST: generation=~A fitness=~A. "
+                 *generation*
+                 *best-fitness*))
+
+        ;; Save immediately, before reproduce/mutation/deletion.
+        (when *checkpoint-directory*
+          (save-best-team))))
+
+    ;; ------------------------------------------------------------
+    ;; Telemetry
+    ;; ------------------------------------------------------------
 
     (emit-fitness-scores
-    (who-am-i)
-    generation-best
-    *best-fitness*
-    population-mean
-    population-median
-    population-worst
-    *generation*
-    :online-fitness-episodes *online-fitness-episodes*)
+     (who-am-i)
+     generation-best
+     *best-fitness*
+     population-mean
+     population-median
+     population-worst
+     *generation*
+     :online-fitness-episodes
+     *online-fitness-episodes*)
+
+    ;; ------------------------------------------------------------
+    ;; Selection
+    ;; ------------------------------------------------------------
 
     (dolist (entry worst-entries)
       (delete-team (car entry)))))
@@ -260,8 +321,12 @@ population."
     (unless best-entry
       (error "Warm-start evaluation failed: no valid teams after evaluation."))
 
-    (setf *best-team* (car best-entry)
-          *best-fitness* (cdr best-entry))
+    (setf *best-team*
+      (deep-copy-team-via-serialization
+       (car best-entry))
+
+      *best-fitness*
+      (cdr best-entry))
 
     (if (eq *best-team* loaded-best-team)
         (emit-message
