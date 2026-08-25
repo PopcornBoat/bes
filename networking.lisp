@@ -9,30 +9,31 @@
 (defvar *server-running* nil
   "When NIL, server loops will exit.")
 
-(defparameter *telemetry-ip* "172.20.2.184"
-  "IP address of the emacs client receiving telemetry.")
+(defparameter *telemetry-ip* "127.0.0.1"
+  "IP address of the Emacs client receiving telemetry.")
 
 (defparameter *heartbeat-interval* 100
   "The amount of time to wait between sending heartbeats (in seconds).")
 
 (defparameter *islands*
-  '(("172.20.2.184" . 0) ;; ds-login2
-    ("10.100.202.42" . 1) ;; ds-cmlm-02
-    ("10.100.202.43" . 2) ;; ds-cmlm-03
-    ("10.100.202.44" . 3) ;; ds-cmlm-04
-    ("10.100.202.46" . 4) ;; ds-cmlm-06
-    ("10.100.202.47" . 5) ;; ds-cmlm-07
-    ("10.100.202.48" . 6) ;; ds-cmlm-08
-    ("10.100.202.49" . 7) ;; ds-cmlm-09
-    ("10.100.202.51" . 8) ;; ds-cmlm-11
-    ("10.100.202.52" . 9) ;; ds-cmlm-12
-    ("10.100.202.54" . 10) ;; ds-cmlm-14
-    ("10.100.202.55" . 11) ;; ds-cmlm-15
-    ("10.100.202.56" . 12) ;; ds-cmlm-16
-    ("10.100.202.57" . 13) ;; ds-cmlm-17
-    ("10.100.202.58" . 14) ;; ds-cmlm-18
-    ("10.100.202.59" . 15)) ;; ds-cmlm-19
-  "The mapping between IP address and their island ID.")
+  '((:local . 0)               ;; current local machine / island 0
+    ("10.100.202.42" . 1)      ;; ds-cmlm-02
+    ("10.100.202.43" . 2)      ;; ds-cmlm-03
+    ("10.100.202.44" . 3)      ;; ds-cmlm-04
+    ("10.100.202.46" . 4)      ;; ds-cmlm-06
+    ("10.100.202.47" . 5)      ;; ds-cmlm-07
+    ("10.100.202.48" . 6)      ;; ds-cmlm-08
+    ("10.100.202.49" . 7)      ;; ds-cmlm-09
+    ("10.100.202.51" . 8)      ;; ds-cmlm-11
+    ("10.100.202.52" . 9)      ;; ds-cmlm-12
+    ("10.100.202.54" . 10)     ;; ds-cmlm-14
+    ("10.100.202.55" . 11)     ;; ds-cmlm-15
+    ("10.100.202.56" . 12)     ;; ds-cmlm-16
+    ("10.100.202.57" . 13)     ;; ds-cmlm-17
+    ("10.100.202.58" . 14)     ;; ds-cmlm-18
+    ("10.100.202.59" . 15))    ;; ds-cmlm-19
+  "The mapping between island location and island ID.
+The special key :LOCAL always resolves dynamically to the current machine IP.")
 
 (defparameter *topology*
   '((1 . (2 5 6 11))
@@ -121,13 +122,36 @@ to the telemetry client."
 	 (format nil "~{~A~^.~}" (coerce (usocket:get-local-address socket) 'list))
       (usocket:socket-close socket))))
 
+(defun resolve-island-ip (entry)
+  "Return the current IP address represented by an island ENTRY.
+
+For island 0, whose address is stored as :LOCAL, dynamically call
+GET-LOCAL-IP every time. Other islands use their fixed configured IP."
+  (let ((ip-spec (car entry)))
+    (if (eq ip-spec :local)
+        (get-local-ip)
+        ip-spec)))
+
+
 (defun lookup-island-id-by-ip (ipaddr)
-  "Look up the ID of the island by an IP address."
-  (cdr (assoc ipaddr *islands* :test #'string=)))
-	  
+  "Look up the island ID corresponding to IPADDR.
+
+Island 0 is resolved dynamically against the current local IP, so an IP
+change during a long-running search does not break local island identity."
+  (loop for entry in *islands*
+        for resolved-ip = (resolve-island-ip entry)
+        when (string= ipaddr resolved-ip)
+          do (return (cdr entry))))
+
+
 (defun lookup-island-ip-by-id (id)
-  "Look up the IP address of the island by its ID."
-  (car (rassoc id *islands* :test #'equal)))
+  "Look up the current IP address of island ID.
+
+Island 0 always returns the current value of GET-LOCAL-IP. Other islands
+return their fixed configured addresses."
+  (let ((entry (rassoc id *islands* :test #'equal)))
+    (when entry
+      (resolve-island-ip entry))))
 
 (defun emit-error (message)
   "An error has occurred, notify the telemetry client."
