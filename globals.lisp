@@ -7,6 +7,21 @@
   "The number of registers that a program has access to during execution.
    This is declared as a constant for optimization speed.")
 
+(defconstant +bid-register+ 0
+  "Register used as a learner's bid during team execution.")
+
+(defconstant +response-register+ 1
+  "Register on the final terminal learner used to decode response type.")
+
+(defconstant +decoy-option-register+ 2
+  "Register on the final terminal learner used to decode a decoy option.")
+
+(defconstant +num-semantic-targets+ 11
+  "Number of targets in the hierarchical CAGE2 policy output.")
+
+(defconstant +global-target+ 0
+  "Target value representing the global Monitor action.")
+
 (defconstant +inf+ most-positive-fixnum)
 
 (defvar *running* nil

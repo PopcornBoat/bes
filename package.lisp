@@ -5,7 +5,14 @@
 			  #:make-kernel
 			  #:pmap
 			  #:end-kernel)
-	    (:export :start-server :stop-server :execute-team))
+	    (:export :start-server
+                     :stop-server
+                     :execute-team
+                     :execute-team-semantic
+                     :semantic-action
+                     :semantic-action-target
+                     :semantic-action-response
+                     :semantic-action-option))
 
 (defpackage :cl-gym
   (:use :cl :cl-tpg)
