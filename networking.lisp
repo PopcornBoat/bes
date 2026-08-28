@@ -136,12 +136,17 @@ GET-LOCAL-IP every time. Other islands use their fixed configured IP."
 (defun lookup-island-id-by-ip (ipaddr)
   "Look up the island ID corresponding to IPADDR.
 
-Island 0 is resolved dynamically against the current local IP, so an IP
-change during a long-running search does not break local island identity."
-  (loop for entry in *islands*
-        for resolved-ip = (resolve-island-ip entry)
-        when (string= ipaddr resolved-ip)
-          do (return (cdr entry))))
+Fixed island addresses take precedence over the dynamic :LOCAL entry.
+If no fixed address matches, island 0 is resolved against the current local
+IP so an address change does not break its identity."
+  (or (loop for (ip-spec . id) in *islands*
+            when (and (stringp ip-spec)
+                      (string= ipaddr ip-spec))
+              do (return id))
+      (let ((local-entry (assoc :local *islands*)))
+        (when (and local-entry
+                   (string= ipaddr (resolve-island-ip local-entry)))
+          (cdr local-entry)))))
 
 
 (defun lookup-island-ip-by-id (id)
