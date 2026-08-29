@@ -276,6 +276,8 @@
             "*env=none"
            
             "*population-size=160"
+            "*num-observations=52"
+            "*num-actions=11"
             "*init-num-learners=3"
             "*max-num-learners=inf"
             "*migration-interval=50"
@@ -413,7 +415,7 @@
           (string-to-number
            (read-string
             "Number of actions: "
-            "145")))
+            "11")))
 
          (population-size
           (string-to-number

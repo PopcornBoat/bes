@@ -61,6 +61,51 @@
             (cl-tpg:execute-team root-team single-observation))
           observation))
 
+(defun cage2-environment-p (environment-name)
+  "Return true when ENVIRONMENT-NAME identifies a CAGE2 bridge environment."
+  (and (stringp environment-name)
+       (search "Cage2" environment-name)))
+
+(defun semantic-response-index (response)
+  "Return the Python bridge index for a BES semantic host RESPONSE."
+  (case response
+    (:analyse 0)
+    (:remove 1)
+    (:restore 2)
+    (:decoy 3)
+    (otherwise nil)))
+
+(defun semantic-action->cage2-input (action)
+  "Convert a BES SEMANTIC-ACTION into py4cl2-friendly integer input.
+
+The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
+:MONITOR fallbacks canonicalize to (0 0 0). Non-Decoy responses use option 0."
+  (let* ((target (cl-tpg:semantic-action-target action))
+         (response (cl-tpg:semantic-action-response action))
+         (option (cl-tpg:semantic-action-option action))
+         (response-index (semantic-response-index response)))
+    (cond
+      ((or (not (integerp target))
+           (< target cl-tpg:+global-target+)
+           (>= target cl-tpg:+num-semantic-targets+)
+           (= target cl-tpg:+global-target+)
+           (eq response :monitor)
+           (null response-index))
+       (list cl-tpg:+global-target+ 0 0))
+      ((eq response :decoy)
+       (if (and (integerp option) (<= 0 option 7))
+           (list target response-index option)
+           (list cl-tpg:+global-target+ 0 0)))
+      (t
+       (list target response-index 0)))))
+
+(defun execute-policy-action (root-team observation environment-name)
+  "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
+  (if (cage2-environment-p environment-name)
+      (semantic-action->cage2-input
+       (cl-tpg:execute-team-semantic root-team observation))
+      (cl-tpg:execute-team root-team observation)))
+
 (defun make (environment-name &key (video-path nil))
   "Makes a new Gymnasium environment."
   (if video-path
@@ -105,7 +150,10 @@ Supports:
                do (let ((action
                           (if (shared-policy-observation-p observation)
                               (shared-policy-actions root-team observation)
-                              (cl-tpg:execute-team root-team observation))))
+                              (execute-policy-action
+                               root-team
+                               observation
+                               environment-name))))
                     (multiple-value-bind (obs rew term trunc info)
                         (step env action)
                       (declare (ignore info))

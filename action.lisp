@@ -7,10 +7,11 @@
 (defstruct semantic-action
   "Structured BES policy output for the hierarchical CAGE2 action space.
 
-TARGET is the terminal learner's atomic target integer. RESPONSE is one of
-:MONITOR, :ANALYSE, :REMOVE, :RESTORE, or :DECOY. OPTION is NIL except for
-:DECOY, where it is an integer from 0 through 7. The Python bridge is
-responsible for converting this representation into a concrete CAGE2 action."
+TARGET is the terminal learner's atomic target integer. Host RESPONSE is one
+of :ANALYSE, :REMOVE, :RESTORE, or :DECOY. :MONITOR is used only as a defensive
+fallback. OPTION is NIL except for :DECOY, where it is an integer from 0
+through 7. The Python bridge converts this semantic representation into a
+concrete CAGE2 action."
   target
   response
   option)

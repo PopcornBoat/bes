@@ -303,7 +303,14 @@ return their fixed configured addresses."
 		       (eq dataset-name :none)))
 	 (:offline (and dataset-name
 			(not (eq dataset-name :none))
-			(eq gym-environment-name :none))))))
+			(eq gym-environment-name :none))))
+       ;; The semantic CAGE2 bridge requires 52 observations and 11 targets.
+       (or (not (and (stringp gym-environment-name)
+                     (search "Cage2" gym-environment-name)))
+           (and (integerp num-observations)
+                (integerp num-actions)
+                (= num-observations 52)
+                (= num-actions +num-semantic-targets+)))))
 
 (defun who-am-i ()
   "Returns the island ID of the currently running server."

@@ -12,7 +12,9 @@
                      :semantic-action
                      :semantic-action-target
                      :semantic-action-response
-                     :semantic-action-option))
+                     :semantic-action-option
+                     :+global-target+
+                     :+num-semantic-targets+))
 
 (defpackage :cl-gym
   (:use :cl :cl-tpg)
