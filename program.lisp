@@ -13,15 +13,19 @@
   "Makes a machine-readable program that can be sent over the wire."
   `(:instructions ,(coerce (program-instructions program) 'list)))
 
+(defun copy-program-instructions (instructions)
+  "Return an adjustable instruction array with no shared instruction objects."
+  (make-array (length instructions)
+              :fill-pointer t
+              :adjustable t
+              :initial-contents
+              (map 'list #'copy-instruction instructions)))
+
 (defun deserialize-program (data)
   "From a serialized program back into the actual struct."
   (let ((instructions (getf data :instructions)))
     (make-program
-     :instructions (make-array (length instructions)
-		:fill-pointer t
-		:adjustable t
-		:initial-contents
-		instructions))))
+     :instructions (copy-program-instructions instructions))))
 
 (defun execute-program (program observations)
   "Given an encoded program and a double-array of OBSERVATIONS
@@ -93,6 +97,7 @@
     (format stream "~%~{ ~A~%~}" (pprint-program p))))
 
 (defun clone-program (program)
-  "Deep-copies a program."
+  "Deep-copy a program, including each mutable instruction object."
   (make-program
-   :instructions (alexandria:copy-array (program-instructions program))))
+   :instructions
+   (copy-program-instructions (program-instructions program))))
