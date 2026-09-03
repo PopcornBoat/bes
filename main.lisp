@@ -263,8 +263,7 @@ through serialization/deserialization and save it to disk."
 
     (select evaluation-scores)
     
-    (reproduce)
-    (maybe-save-best-team)))
+    (reproduce)))
 
 (defun run-search (mode gym-environment-name dataset-name seed)
   "Search the solution space with a tangled program graph."

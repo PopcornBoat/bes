@@ -40,15 +40,6 @@
 
   path)
 
-(defun maybe-save-best-team ()
-  "Save *BEST-TEAM* every *CHECKPOINT-INTERVAL* generations."
-  (when (and *best-team*
-             *checkpoint-directory*
-             (numberp *checkpoint-interval*)
-             (> *checkpoint-interval* 0)
-             (= (mod *generation* *checkpoint-interval*) 0))
-    (save-best-team)))
-
 (defun load-best-team (path)
   "Load best team from PATH and store it in *LOADED-BEST-TEAM*."
   (setf *loaded-best-team*
