@@ -508,15 +508,23 @@ normal evolution."
 
 (defun validate-best-team-online (best-team-path gym-environment-name)
   "Load BEST-TEAM-PATH and validate it in GYM-ENVIRONMENT-NAME."
-  (let* ((team (load-best-team best-team-path))
-         (score (cl-gym-validate-team
-                 team
-                 gym-environment-name
-                 (random 9999999))))
-    (emit-message
-     (format nil
-             "Validation finished. Env=~A BestTeam=~A Score=~A"
-             gym-environment-name
-             best-team-path
-             score))
-    score))
+  (let* ((cage2-p (cl-gym:cage2-environment-p gym-environment-name))
+         (*random-state*
+           (if cage2-p
+               (sb-ext:seed-random-state +cage2-evaluation-seed+)
+               *random-state*)))
+    (when cage2-p
+      (cl-gym:seed-python-random +cage2-evaluation-seed+))
+
+    (let* ((team (load-best-team best-team-path))
+           (score (cl-gym:cl-gym-validate-team
+                   team
+                   gym-environment-name
+                   (random 9999999))))
+      (emit-message
+       (format nil
+               "Validation finished. Env=~A BestTeam=~A Score=~A"
+               gym-environment-name
+               best-team-path
+               score))
+      score)))
