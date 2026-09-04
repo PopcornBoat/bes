@@ -16,6 +16,18 @@
                                  xs))
                  (- n 1))))))
 
+(defun seed-cage2-evaluation ()
+  "Initialize CAGE2 validation randomness using the official seed.
+
+The official protocol calls Python random.seed(153) once before evaluation.
+The caller dynamically binds the Lisp generator to the same seed so per-rollout
+Gym seeds are reproducible without changing randomness after validation."
+  (cl-gym:seed-python-random +cage2-evaluation-seed+)
+  (emit-message
+   (format nil
+           "CAGE2 validation random seed initialized to ~A."
+           +cage2-evaluation-seed+)))
+
 (defun run-validation-rollouts (team gym-environment-name episodes)
   "Run TEAM in GYM-ENVIRONMENT-NAME for EPISODES episodes."
   (loop repeat episodes
@@ -146,33 +158,40 @@ CAGE3 MODE:
   :custom-eps
     Requires EPISODES.
     Runs 500 steps, EPISODES eps."
-  (let ((team (load-best-team best-team-path)))
-    (emit-message
-     (format nil
-             "Validation started. best-team=~A environment=~A mode=~A red=~A episodes=~A"
-             best-team-path
-             environment
-             mode
-             red-agent-name
-             episodes))
+  (let ((*random-state*
+          (if (eq environment :cage2)
+              (sb-ext:seed-random-state +cage2-evaluation-seed+)
+              *random-state*)))
+    (when (eq environment :cage2)
+      (seed-cage2-evaluation))
 
-    (ecase environment
-      (:cage2
-       (unless red-agent-name
-         (error "CAGE2 validation requires RED-AGENT-NAME."))
-       (ecase mode
-         (:single-red-full
-          (validate-cage2-single-red-full team red-agent-name))
-         (:single-red-100
-          (unless episodes
-            (error "CAGE2 :SINGLE-RED-100 requires EPISODES."))
-          (validate-cage2-single-red-100 team red-agent-name episodes))))
+    (let ((team (load-best-team best-team-path)))
+      (emit-message
+       (format nil
+               "Validation started. best-team=~A environment=~A mode=~A red=~A episodes=~A"
+               best-team-path
+               environment
+               mode
+               red-agent-name
+               episodes))
 
-      (:cage3
-       (ecase mode
-         (:full
-          (validate-cage3-full team))
-         (:custom-eps
-          (unless episodes
-            (error "CAGE3 :CUSTOM-EPS requires EPISODES."))
-          (validate-cage3-custom-eps team episodes)))))))
+      (ecase environment
+        (:cage2
+         (unless red-agent-name
+           (error "CAGE2 validation requires RED-AGENT-NAME."))
+         (ecase mode
+           (:single-red-full
+            (validate-cage2-single-red-full team red-agent-name))
+           (:single-red-100
+            (unless episodes
+              (error "CAGE2 :SINGLE-RED-100 requires EPISODES."))
+            (validate-cage2-single-red-100 team red-agent-name episodes))))
+
+        (:cage3
+         (ecase mode
+           (:full
+            (validate-cage3-full team))
+           (:custom-eps
+            (unless episodes
+              (error "CAGE3 :CUSTOM-EPS requires EPISODES."))
+            (validate-cage3-custom-eps team episodes))))))))

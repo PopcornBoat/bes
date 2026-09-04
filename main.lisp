@@ -50,6 +50,14 @@
                        'double-float)
                2.0d0)))))
 
+(defun abort-search-if-requested ()
+  "Leave the current search promptly after a stop request.
+
+The non-local exit is caught by RUN-SEARCH or RUN-SEARCH-FROM-BEST-TEAM.  It is
+not an error and therefore is not converted into a bad-team fitness result."
+  (unless *running*
+    (throw 'search-stop-requested nil)))
+
 (defun online-fitness (team gym-environment-name)
   "Evaluate TEAM over *ONLINE-FITNESS-EPISODES* complete episodes.
 
@@ -60,6 +68,7 @@ The returned fitness is the mean episode reward."
 
   (arithmetic-mean
    (loop repeat *online-fitness-episodes*
+         do (abort-search-if-requested)
          collect
          (cl-gym:rollout team
                          gym-environment-name
@@ -105,8 +114,11 @@ The returned fitness is the mean episode reward."
             
 (defun evaluate ()
   "Returns a list of (team . fitness), skipping and deleting bad teams."
-  (let* ((results (mapcar #'safe-evaluate-team
-                                     (root-teams)))
+  (let* ((results
+           (mapcar (lambda (team)
+                     (abort-search-if-requested)
+                     (safe-evaluate-team team))
+                   (root-teams)))
          (bad-teams (loop for (team . fitness) in results
                           when (eq fitness :bad)
                             collect team))
@@ -254,9 +266,14 @@ through serialization/deserialization and save it to disk."
 
 (defun evolve ()
   "Evolve the population for a single generation."
+  (abort-search-if-requested)
   (receive-migrants)
 
   (let ((evaluation-scores (evaluate)))
+
+    ;; Do not select, checkpoint, migrate, or reproduce a partially evaluated
+    ;; generation after the user has requested that the search stop.
+    (abort-search-if-requested)
 
     (when (should-send-migrants-p)
       (send-migrants evaluation-scores))
@@ -271,19 +288,23 @@ through serialization/deserialization and save it to disk."
          (captured-state (sb-ext:seed-random-state seed)))
     (setf *random-state* captured-state)
 
-    (setf *teams* nil)
-    (setf *generation* 1)
-    (setf *best-team* nil)
-    (setf *best-fitness* nil)
+    ;; CybORG uses Python's process-wide random generator.  Seed it once so an
+    ;; explicitly seeded BES run controls both evolution and environment noise.
+    (when (cl-gym:cage2-environment-p gym-environment-name)
+      (cl-gym:seed-python-random seed))
 
-   
+    (catch 'search-stop-requested
+      (setf *teams* nil)
+      (setf *generation* 1)
+      (setf *best-team* nil)
+      (setf *best-fitness* nil)
 
-    (make-initial-population)
-    (configure-fitness-function mode gym-environment-name dataset-name)
+      (make-initial-population)
+      (configure-fitness-function mode gym-environment-name dataset-name)
 
-    (loop while *running*
-          do (evolve)
-          do (incf *generation*))))
+      (loop while *running*
+            do (evolve)
+            do (incf *generation*)))))
 
 (defun inject-loaded-best-team-into-population (loaded-best-team)
   "Replace the first root team in a freshly initialized population with LOADED-BEST-TEAM."
@@ -351,31 +372,33 @@ normal evolution."
          (captured-state (sb-ext:seed-random-state seed)))
     (setf *random-state* captured-state)
 
-    ;; Fresh island-local state.
-    (setf *teams* nil)
-    (setf *generation* 1)
-    (setf *best-team* nil)
-    (setf *best-fitness* nil)
+    (when (cl-gym:cage2-environment-p gym-environment-name)
+      (cl-gym:seed-python-random seed))
 
- 
+    (catch 'search-stop-requested
+      ;; Fresh island-local state.
+      (setf *teams* nil)
+      (setf *generation* 1)
+      (setf *best-team* nil)
+      (setf *best-fitness* nil)
 
-    ;; Build fresh random population for this island.
-    (make-initial-population)
+      ;; Build fresh random population for this island.
+      (make-initial-population)
 
-    ;; Fitness must exist before the initial evaluation.
-    (configure-fitness-function mode gym-environment-name dataset-name)
+      ;; Fitness must exist before the initial evaluation.
+      (configure-fitness-function mode gym-environment-name dataset-name)
 
-    ;; Load and inject this island's best team.
-    (let ((loaded-best-team (load-best-team best-team-path)))
-      (inject-loaded-best-team-into-population loaded-best-team)
+      ;; Load and inject this island's best team.
+      (let ((loaded-best-team (load-best-team best-team-path)))
+        (inject-loaded-best-team-into-population loaded-best-team)
 
-      ;; Evaluate all root teams once and decide whether loaded best is still best.
-      (initialize-best-from-current-population loaded-best-team))
+        ;; Evaluate all root teams once and decide whether loaded best is still best.
+        (initialize-best-from-current-population loaded-best-team))
 
-    ;; Continue normal BES/TPG evolution.
-    (loop while *running*
-          do (evolve)
-          do (incf *generation*))))
+      ;; Continue normal BES/TPG evolution.
+      (loop while *running*
+            do (evolve)
+            do (incf *generation*)))))
 
 
 (defun validate-best-team-online (best-team-path gym-environment-name)

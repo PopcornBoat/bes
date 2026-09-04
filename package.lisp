@@ -14,12 +14,19 @@
                      :semantic-action-response
                      :semantic-action-option
                      :+global-target+
-                     :+num-semantic-targets+))
+                     :+num-semantic-targets+
+                     :+cage2-evaluation-seed+))
 
 (defpackage :cl-gym
   (:use :cl :cl-tpg)
   (:shadow #:step)
-  (:export #:rollout #:obs->array #:make #:reset #:step)
+  (:export #:rollout
+           #:obs->array
+           #:make
+           #:reset
+           #:step
+           #:cage2-environment-p
+           #:seed-python-random)
   (:documentation "A Gymnasium wrapper for CL-TPG."))
 
 (in-package :cl-tpg)
