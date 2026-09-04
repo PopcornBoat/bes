@@ -63,8 +63,7 @@ A lightweight checkpoint mechanism has been added.
 Features include:
 
 - Configurable checkpoint directory
-- Configurable checkpoint interval
-- Automatic checkpointing during evolution
+- Immediate checkpointing whenever a new global best is accepted
 - Save only the globally best team
 
 Unlike traditional evolutionary checkpoints, this implementation intentionally does **not** save the entire evolutionary population.

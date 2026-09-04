@@ -142,9 +142,6 @@
           (transient-arg-value
           "*online-fitness-episodes="
           args)))
-        (checkpoint-interval
-         (string-to-number
-          (transient-arg-value "*checkpoint-interval=" args)))
         (seed
          (let ((seed-arg (transient-arg-value "*seed=" args)))
            (cond
@@ -176,7 +173,6 @@
       :batch-size ,batch-size
       :online-fitness-episodes ,online-fitness-episodes
       :checkpoint-directory :none
-      :checkpoint-interval ,checkpoint-interval
       :seed ,seed)))
 
 (transient-define-suffix start-search ()
@@ -282,9 +278,7 @@
             "*batch-size=1000"
             "*online-fitness-episodes=5"
             "*seed=random"
-            "--mode=online"
-            
-            "*checkpoint-interval=50")
+            "--mode=online")
   ["Island"
     ("-I" "Island" "--island="
     :choices ("all" "0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15"))]
@@ -334,10 +328,7 @@
 
   ["Actions"
    ("S" "START Search" start-search)
-   ("q" "Back to Main" tpg-menu)]
-   
-  ["checkpoint  settings"
-    ("-K" "Checkpoint Interval (generations)" "*checkpoint-interval=")])
+   ("q" "Back to Main" tpg-menu)])
 
 (transient-define-suffix tpg-resume-search ()
   "Warm-start search from a saved best-team file."
@@ -362,12 +353,6 @@
           (tpg-read-directory-path
            "Checkpoint directory: "
            (file-name-directory best-team-path)))
-
-         (checkpoint-interval
-          (string-to-number
-           (read-string
-            "Checkpoint interval: "
-            "50")))
 
          (mode-str
           (completing-read
@@ -577,7 +562,6 @@
             :online-fitness-episodes ,online-fitness-episodes
 
             :checkpoint-directory ,checkpoint-dir
-            :checkpoint-interval ,checkpoint-interval
 
             :seed ,seed)))
 

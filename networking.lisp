@@ -239,7 +239,7 @@ return their fixed configured addresses."
                               migration-interval
                               batch-size
                               online-fitness-episodes
-                              &key checkpoint-directory checkpoint-interval)
+                              &key checkpoint-directory)
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -278,10 +278,7 @@ return their fixed configured addresses."
   (setf *online-fitness-episodes*
         online-fitness-episodes)
 
-  (setf *checkpoint-directory* checkpoint-directory)
-
-  (setf *checkpoint-interval*
-        (or checkpoint-interval 50)))
+  (setf *checkpoint-directory* checkpoint-directory))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
 				  num-observations num-actions
@@ -319,7 +316,6 @@ return their fixed configured addresses."
   (let ((mode (getf msg :mode))
         (gym-environment-name (getf msg :gym-environment-name))
         (checkpoint-directory (getf msg :checkpoint-directory))
-        (checkpoint-interval (or (getf msg :checkpoint-interval) 50))
         (dataset-name (getf msg :dataset-name))
         (num-observations (getf msg :num-observations))
         (num-actions (getf msg :num-actions))
@@ -349,7 +345,7 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A online-fit-eps=~A checkpoint-dir=~A checkpoint-interval=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A online-fit-eps=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
@@ -363,7 +359,6 @@ return their fixed configured addresses."
              batch-size
              online-fitness-episodes
              checkpoint-directory
-             checkpoint-interval
              seed))
 
     (emit-message
@@ -431,8 +426,7 @@ return their fixed configured addresses."
            migration-interval
            batch-size
            online-fitness-episodes
-           :checkpoint-directory checkpoint-directory
-           :checkpoint-interval checkpoint-interval)
+           :checkpoint-directory checkpoint-directory)
 
           (setf *running* t)
 
@@ -450,9 +444,8 @@ return their fixed configured addresses."
                          (when *checkpoint-directory*
                            (emit-message
                             (format nil
-                                    "Checkpoint directory: ~A, interval: ~A"
-                                    *checkpoint-directory*
-                                    *checkpoint-interval*)))
+                                    "Checkpoint directory: ~A"
+                                    *checkpoint-directory*)))
 
                          (setf lparallel:*kernel*
                                (make-kernel *num-threads*))
@@ -489,7 +482,6 @@ return their fixed configured addresses."
         (dataset-name (getf msg :dataset-name))
         (best-team-path (getf msg :best-team-path))
         (checkpoint-directory (getf msg :checkpoint-directory))
-        (checkpoint-interval (or (getf msg :checkpoint-interval) 50))
         (num-observations (getf msg :num-observations))
         (num-actions (getf msg :num-actions))
         (population-size (getf msg :population-size))
@@ -577,8 +569,7 @@ return their fixed configured addresses."
            migration-interval
            batch-size
            online-fitness-episodes
-           :checkpoint-directory checkpoint-directory
-           :checkpoint-interval checkpoint-interval)
+           :checkpoint-directory checkpoint-directory)
 
           (setf *running* t)
 
@@ -596,9 +587,8 @@ return their fixed configured addresses."
 
                          (emit-message
                           (format nil
-                                  "Checkpoint directory: ~A, interval: ~A"
-                                  *checkpoint-directory*
-                                  *checkpoint-interval*))
+                                  "Checkpoint directory: ~A"
+                                  *checkpoint-directory*))
 
                          (setf lparallel:*kernel*
                                (make-kernel *num-threads*))

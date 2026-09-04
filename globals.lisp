@@ -117,6 +117,3 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 (defparameter *checkpoint-directory*
   "~/Documents/Research/checkpoints/"
   "Default directory for checkpoints.")
-
-(defparameter *checkpoint-interval* 50
-  "Save full checkpoint every N generations. 0 disables auto checkpoint.")
