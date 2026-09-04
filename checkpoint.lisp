@@ -9,7 +9,7 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 2
+(defconstant +best-team-checkpoint-version+ 3
   "Current version of the best-team checkpoint envelope.")
 
 (defun checkpoint-path (directory filename)
@@ -23,7 +23,8 @@
 
 (defun make-best-team-checkpoint-data
        (team fitness &key generation gym-environment-name
-                          online-fitness-episodes search-seed)
+                          online-fitness-episodes search-seed
+                          fitness-evaluation-protocol)
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   `(:checkpoint-version ,+best-team-checkpoint-version+
     :fitness ,fitness
@@ -31,6 +32,7 @@
     :gym-environment-name ,gym-environment-name
     :online-fitness-episodes ,online-fitness-episodes
     :search-seed ,search-seed
+    :fitness-evaluation-protocol ,fitness-evaluation-protocol
     :team ,(serialize-team team (make-hash-table :test #'equal))))
 
 (defun versioned-best-team-checkpoint-p (data)
@@ -41,7 +43,8 @@
 
 (defun write-best-team-checkpoint
        (team fitness path &key generation gym-environment-name
-                               online-fitness-episodes search-seed)
+                               online-fitness-episodes search-seed
+                               fitness-evaluation-protocol)
   "Write TEAM, FITNESS, and provenance metadata to PATH."
   (ensure-directories-exist path)
 
@@ -55,12 +58,13 @@
             (*print-pretty* nil))
         (write
          (make-best-team-checkpoint-data
-          team
-          fitness
-          :generation generation
-          :gym-environment-name gym-environment-name
-          :online-fitness-episodes online-fitness-episodes
-          :search-seed search-seed)
+           team
+           fitness
+           :generation generation
+           :gym-environment-name gym-environment-name
+           :online-fitness-episodes online-fitness-episodes
+           :search-seed search-seed
+           :fitness-evaluation-protocol fitness-evaluation-protocol)
          :stream out))))
 
   path)
@@ -77,7 +81,10 @@
    :generation *generation*
    :gym-environment-name *current-gym-environment-name*
    :online-fitness-episodes *online-fitness-episodes*
-   :search-seed *current-search-seed*)
+   :search-seed *current-search-seed*
+   :fitness-evaluation-protocol
+   (and (cl-gym:cage2-environment-p *current-gym-environment-name*)
+        +cage2-online-fitness-protocol+))
 
   (emit-message
    (format nil
@@ -115,7 +122,8 @@ return NIL for FITNESS and METADATA."
 
 (defun upgrade-best-team-checkpoint
        (path fitness &key output-path generation gym-environment-name
-                          online-fitness-episodes search-seed)
+                          online-fitness-episodes search-seed
+                          fitness-evaluation-protocol)
   "Add fitness metadata to a legacy best-team checkpoint.
 
 OUTPUT-PATH defaults to PATH.  Supplying a different path is recommended when
@@ -131,7 +139,8 @@ preserving the original legacy file."
      :generation generation
      :gym-environment-name gym-environment-name
      :online-fitness-episodes online-fitness-episodes
-     :search-seed search-seed)
+     :search-seed search-seed
+     :fitness-evaluation-protocol fitness-evaluation-protocol)
     (emit-message
      (format nil
              "Best-team checkpoint metadata written: ~A fitness=~A"
