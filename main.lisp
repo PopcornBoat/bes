@@ -53,17 +53,32 @@
 (defun online-fitness (team gym-environment-name)
   "Evaluate TEAM over *ONLINE-FITNESS-EPISODES* complete episodes.
 
-The returned fitness is the mean episode reward."
+The returned fitness is the mean episode reward. CAGE2 teams are always
+evaluated on the same deterministic episode batch rooted at seed 153. This
+makes a saved policy's score replayable and gives every candidate common
+random numbers. The dynamic Lisp random-state binding also keeps rollout seed
+generation from consuming the evolutionary random stream."
   (unless (and (integerp *online-fitness-episodes*)
                (> *online-fitness-episodes* 0))
     (error "*ONLINE-FITNESS-EPISODES* must be a positive integer."))
 
-  (arithmetic-mean
-   (loop repeat *online-fitness-episodes*
-         collect
-         (cl-gym:rollout team
-                         gym-environment-name
-                         (random 9999999)))))
+  (let* ((cage2-p (cl-gym:cage2-environment-p gym-environment-name))
+         (*random-state*
+           (if cage2-p
+               (sb-ext:seed-random-state +cage2-evaluation-seed+)
+               *random-state*)))
+    ;; CybORG consumes Python's process-wide RANDOM stream. Reset it once per
+    ;; candidate evaluation, not once per episode, so a fixed policy sees a
+    ;; repeatable advancing sequence rather than one repeated episode.
+    (when cage2-p
+      (cl-gym:seed-python-random +cage2-evaluation-seed+))
+
+    (arithmetic-mean
+     (loop repeat *online-fitness-episodes*
+           collect
+           (cl-gym:rollout team
+                           gym-environment-name
+                           (random 9999999))))))
             	  
 (defun make-fitness-function (&key gym-environment-name dataset-name)
   (cond
@@ -316,18 +331,20 @@ global best. Otherwise use the best individual from the freshly initialized
 population."
   (let* ((scores (evaluate))
          (best-entry (and scores
-                          (first (sort (copy-list scores) #'> :key #'cdr)))))
+                          (first (sort (copy-list scores) #'> :key #'cdr))))
+         (generation-best-team (and best-entry (car best-entry)))
+         (loaded-won-p (eq generation-best-team loaded-best-team)))
     (unless best-entry
       (error "Warm-start evaluation failed: no valid teams after evaluation."))
 
     (setf *best-team*
       (deep-copy-team-via-serialization
-       (car best-entry))
+       generation-best-team)
 
       *best-fitness*
       (cdr best-entry))
 
-    (if (eq *best-team* loaded-best-team)
+    (if loaded-won-p
         (emit-message
          (format nil
                  "Warm-start: loaded best team remains best after initial evaluation. Fitness=~A"
@@ -380,15 +397,23 @@ normal evolution."
 
 (defun validate-best-team-online (best-team-path gym-environment-name)
   "Load BEST-TEAM-PATH and validate it in GYM-ENVIRONMENT-NAME."
-  (let* ((team (load-best-team best-team-path))
-         (score (cl-gym-validate-team
-                 team
-                 gym-environment-name
-                 (random 9999999))))
-    (emit-message
-     (format nil
-             "Validation finished. Env=~A BestTeam=~A Score=~A"
-             gym-environment-name
-             best-team-path
-             score))
-    score))
+  (let* ((cage2-p (cl-gym:cage2-environment-p gym-environment-name))
+         (*random-state*
+           (if cage2-p
+               (sb-ext:seed-random-state +cage2-evaluation-seed+)
+               *random-state*)))
+    (when cage2-p
+      (cl-gym:seed-python-random +cage2-evaluation-seed+))
+
+    (let* ((team (load-best-team best-team-path))
+           (score (cl-gym:cl-gym-validate-team
+                   team
+                   gym-environment-name
+                   (random 9999999))))
+      (emit-message
+       (format nil
+               "Validation finished. Env=~A BestTeam=~A Score=~A"
+               gym-environment-name
+               best-team-path
+               score))
+      score)))

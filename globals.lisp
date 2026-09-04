@@ -7,6 +7,9 @@
   "The number of registers that a program has access to during execution.
    This is declared as a constant for optimization speed.")
 
+(defconstant +cage2-evaluation-seed+ 153
+  "Python random seed used by the official CAGE2 evaluation protocol.")
+
 (defconstant +inf+ most-positive-fixnum)
 
 (defvar *running* nil
