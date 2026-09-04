@@ -32,7 +32,10 @@
 	   (let ((new-team (%make-team
 			    :id (format nil "TEAM-~A-~A" (who-am-i) (funcall *team-id-generator*))
 			    :type (getf data :type)
-			    :references (if is-root 0 1))))
+			    :references (if is-root 0 1)
+			    ;; Avoid creating throwaway random learners. Fresh-process
+			    ;; deserialization must not depend on training parameters.
+			    :learners nil)))
 	     (setf (gethash id registry) new-team)
 	     ;; Now fill the learners
 	     (setf (team-learners new-team)
