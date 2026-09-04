@@ -40,6 +40,12 @@ search and turn this flag back on.")
 (defvar *validation-running* nil
   "True while a validation worker owns the Python/Gym execution path.")
 
+(defvar *current-gym-environment-name* nil
+  "Gym environment used by the current search, recorded in checkpoints.")
+
+(defvar *current-search-seed* nil
+  "Resolved integer seed used by the current search, recorded in checkpoints.")
+
 (defvar *generation* 1
   "Generation counter.")
 
