@@ -176,6 +176,18 @@ The Gymnasium bridge currently used in this project is available here:
 
 https://github.com/PopcornBoat/custom-gym-for-bes
 
+With the `cage2-mini` bridge integration, online CAGE2 training can use the
+faster backend by selecting one of:
+
+- `Cage2Mini-b_line-100-v0`
+- `Cage2Mini-meander-100-v0`
+- `Cage2Mini-sleep-100-v0`
+
+These environments retain BES's semantic `[target, response, option]` policy
+interface. The bridge translates it to the concrete `0..144` action consumed
+by `cage2-mini`. The existing `Cage2-*` environments remain available for
+official-CybORG validation.
+
 ---
 
 ## 5. Python Interpreter Management

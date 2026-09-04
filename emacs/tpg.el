@@ -292,7 +292,10 @@
               "Cage2-b_line-100-v0"
               "Cage2-meander-100-v0"
               "Cage2-sleep-100-v0"
-              "Cage3SharedPolicy-v0"  
+              "Cage2Mini-b_line-100-v0"
+              "Cage2Mini-meander-100-v0"
+              "Cage2Mini-sleep-100-v0"
+              "Cage3SharedPolicy-v0"
               "Hopper-v5" "Walker2d-v5" "HalfCheetah-v5" "Acrobot-v1" "LunarLander-v3" "MountainCar-v0" "CartPole-v1"))
    ;;("-F" "Dataset Name" "*dataset=")
    ]
@@ -376,6 +379,9 @@
                '("Cage2-b_line-100-v0"
                  "Cage2-meander-100-v0"
                  "Cage2-sleep-100-v0"
+                 "Cage2Mini-b_line-100-v0"
+                 "Cage2Mini-meander-100-v0"
+                 "Cage2Mini-sleep-100-v0"
                  "Cage3SharedPolicy-v0"
                  "CartPole-v1")
                nil
