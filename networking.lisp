@@ -9,6 +9,53 @@
 (defvar *server-running* nil
   "When NIL, server loops will exit.")
 
+(defvar *operation-state-lock*
+  (bt:make-lock "BES operation state")
+  "Serializes search/validation lifecycle transitions across request threads.")
+
+(defun node-operation-busy-p ()
+  "Return true while a search is active or validation is running."
+  (bt:with-lock-held (*operation-state-lock*)
+    (or *search-active* *validation-running*)))
+
+(defun begin-search-operation ()
+  "Atomically claim this node for a search and enable its run loop."
+  (bt:with-lock-held (*operation-state-lock*)
+    (unless (or *search-active* *validation-running*)
+      (setf *search-active* t
+            *running* t)
+      t)))
+
+(defun finish-search-operation ()
+  "Mark the search worker as completely stopped."
+  (bt:with-lock-held (*operation-state-lock*)
+    (setf *running* nil
+          *search-active* nil)))
+
+(defun begin-validation-operation ()
+  "Atomically claim this node for validation without enabling search loops."
+  (bt:with-lock-held (*operation-state-lock*)
+    (unless (or *search-active* *validation-running*)
+      (setf *validation-running* t)
+      t)))
+
+(defun finish-validation-operation ()
+  "Release this node after validation finishes."
+  (bt:with-lock-held (*operation-state-lock*)
+    (setf *validation-running* nil)))
+
+(defun request-search-stop ()
+  "Request search cancellation while keeping the node busy until worker exit.
+
+Return :REQUESTED, :ALREADY-REQUESTED, or :NO-SEARCH."
+  (bt:with-lock-held (*operation-state-lock*)
+    (cond
+      ((not *search-active*) :no-search)
+      ((not *running*) :already-requested)
+      (t
+       (setf *running* nil)
+       :requested))))
+
 (defparameter *telemetry-ip* "127.0.0.1"
   "IP address of the Emacs client receiving telemetry.")
 
@@ -316,8 +363,8 @@ return their fixed configured addresses."
 
 (defun handle-start-search (msg)
   "Validate a start-search request, configure globals, and begin searching."
-  (when *running*
-    (emit-error "A search is already running on this node.")
+  (when (node-operation-busy-p)
+    (emit-error "This node is already running or stopping a search, or running validation.")
     (return-from handle-start-search))
 
   (let ((mode (getf msg :mode))
@@ -411,6 +458,10 @@ return their fixed configured addresses."
          seed)
 
         (progn
+          (unless (begin-search-operation)
+            (emit-error "This node became busy before the search could start.")
+            (return-from handle-start-search))
+
           (set-global-parameters
            population-size
            num-observations
@@ -434,8 +485,6 @@ return their fixed configured addresses."
            batch-size
            online-fitness-episodes
            :checkpoint-directory checkpoint-directory)
-
-          (setf *running* t)
 
           (push
            (bt:make-thread
@@ -464,14 +513,17 @@ return their fixed configured addresses."
                           seed))
 
                      (error (c)
-                       (setf *running* nil)
                        (emit-error
                         (format nil "Search crashed: ~A" c))))
 
-                (setf *running* nil)
-
                 (when lparallel:*kernel*
-                  (lparallel:end-kernel))))
+                  (ignore-errors
+                    (lparallel:end-kernel))
+                  (setf lparallel:*kernel* nil))
+
+                (finish-search-operation)
+                (emit-message
+                 (format nil "Search stopped on island ~A" (who-am-i)))))
             :name "search-thread")
            *server-threads*))
 
@@ -480,8 +532,8 @@ return their fixed configured addresses."
 
 (defun handle-resume-search (msg)
   "Warm-start a search from a saved best-team file."
-  (when *running*
-    (emit-error "A search is already running on this node.")
+  (when (node-operation-busy-p)
+    (emit-error "This node is already running or stopping a search, or running validation.")
     (return-from handle-resume-search))
 
   (let ((mode (getf msg :mode))
@@ -554,6 +606,10 @@ return their fixed configured addresses."
          seed)
 
         (progn
+          (unless (begin-search-operation)
+            (emit-error "This node became busy before the resumed search could start.")
+            (return-from handle-resume-search))
+
           (set-global-parameters
            population-size
            num-observations
@@ -577,8 +633,6 @@ return their fixed configured addresses."
            batch-size
            online-fitness-episodes
            :checkpoint-directory checkpoint-directory)
-
-          (setf *running* t)
 
           (push
            (bt:make-thread
@@ -608,16 +662,19 @@ return their fixed configured addresses."
                           best-team-path))
 
                      (error (c)
-                       (setf *running* nil)
                        (emit-error
                         (format nil
                                 "Warm-start resume crashed: ~A"
                                 c))))
 
-                (setf *running* nil)
-
                 (when lparallel:*kernel*
-                  (lparallel:end-kernel))))
+                  (ignore-errors
+                    (lparallel:end-kernel))
+                  (setf lparallel:*kernel* nil))
+
+                (finish-search-operation)
+                (emit-message
+                 (format nil "Search stopped on island ~A" (who-am-i)))))
             :name "warm-start-resume-thread")
            *server-threads*))
 
@@ -625,12 +682,16 @@ return their fixed configured addresses."
          "The resume-search parameters provided are invalid."))))
 
 (defun handle-stop-search ()
-  "When a request is received to stop a running search, set *running* to NIL."
-  (unless *running*
-    (emit-error "There is no search currently running on this node to stop.")
-    (return-from handle-stop-search))
-  (emit-message (format nil "Search stopped on island ~A~%" (who-am-i)))
-  (setf *running* nil))
+  "Request cancellation; the search worker reports when it has actually exited."
+  (case (request-search-stop)
+    (:requested
+     (emit-message
+      (format nil "Search stop requested on island ~A" (who-am-i))))
+    (:already-requested
+     (emit-message
+      (format nil "Search stop already requested on island ~A" (who-am-i))))
+    (:no-search
+     (emit-error "There is no active search on this node to stop."))))
 				   
 (defun start-server ()
   "Start the server for this island."
@@ -698,14 +759,16 @@ return their fixed configured addresses."
       (bt:destroy-thread thread)))
 
   (setf *server-threads* nil)
+  (finish-search-operation)
+  (finish-validation-operation)
   (format t "Server stopped.~%"))
   
 
 
 (defun handle-validate-best-team (msg)
   "Run validation for a saved best team."
-  (when *running*
-    (emit-error "Cannot validate while a search is running on this node.")
+  (when (node-operation-busy-p)
+    (emit-error "Cannot validate while a search is running or stopping, or another validation is active.")
     (return-from handle-validate-best-team))
 
   (let ((best-team-path (getf msg :best-team-path))
@@ -718,7 +781,9 @@ return their fixed configured addresses."
       (emit-error "No best-team-path provided for validation.")
       (return-from handle-validate-best-team))
 
-    (setf *running* t)
+    (unless (begin-validation-operation)
+      (emit-error "This node became busy before validation could start.")
+      (return-from handle-validate-best-team))
 
     (push
      (bt:make-thread
@@ -733,6 +798,6 @@ return their fixed configured addresses."
                (error (c)
                  (emit-error
                   (format nil "Validation crashed: ~A" c))))
-          (setf *running* nil)))
+          (finish-validation-operation)))
       :name "validation-thread")
      *server-threads*)))

@@ -22,11 +22,23 @@
 (defconstant +global-target+ 0
   "Target value representing the global Monitor action.")
 
+(defconstant +cage2-evaluation-seed+ 153
+  "Python random seed used by the official CAGE2 evaluation protocol.")
+
 (defconstant +inf+ most-positive-fixnum)
 
 (defvar *running* nil
-  "This is enabled when a search is started by a TCP connection
-  and disabled when a search is stopped also by a TCP connection.")
+  "When true, the active search should continue evolving.
+
+Setting this to NIL requests cancellation.  *SEARCH-ACTIVE* remains true until
+the search worker has actually exited, so validation cannot race a stopping
+search and turn this flag back on.")
+
+(defvar *search-active* nil
+  "True from search worker launch until that worker has completely exited.")
+
+(defvar *validation-running* nil
+  "True while a validation worker owns the Python/Gym execution path.")
 
 (defvar *generation* 1
   "Generation counter.")
