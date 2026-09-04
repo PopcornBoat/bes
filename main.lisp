@@ -61,18 +61,33 @@ not an error and therefore is not converted into a bad-team fitness result."
 (defun online-fitness (team gym-environment-name)
   "Evaluate TEAM over *ONLINE-FITNESS-EPISODES* complete episodes.
 
-The returned fitness is the mean episode reward."
+The returned fitness is the mean episode reward. CAGE2 teams are always
+evaluated on the same deterministic episode batch rooted at seed 153. This
+makes a checkpoint's score replayable and gives every candidate common random
+numbers. The dynamic Lisp random-state binding also keeps rollout seed
+generation from consuming the evolutionary random stream."
   (unless (and (integerp *online-fitness-episodes*)
                (> *online-fitness-episodes* 0))
     (error "*ONLINE-FITNESS-EPISODES* must be a positive integer."))
 
-  (arithmetic-mean
-   (loop repeat *online-fitness-episodes*
-         do (abort-search-if-requested)
-         collect
-         (cl-gym:rollout team
-                         gym-environment-name
-                         (random 9999999)))))
+  (let* ((cage2-p (cl-gym:cage2-environment-p gym-environment-name))
+         (*random-state*
+           (if cage2-p
+               (sb-ext:seed-random-state +cage2-evaluation-seed+)
+               *random-state*)))
+    ;; Official CybORG consumes Python's process-wide RANDOM stream. Reset it
+    ;; once per candidate evaluation, not once per episode, so a fixed policy
+    ;; sees a repeatable advancing sequence rather than one repeated episode.
+    (when cage2-p
+      (cl-gym:seed-python-random +cage2-evaluation-seed+))
+
+    (arithmetic-mean
+     (loop repeat *online-fitness-episodes*
+           do (abort-search-if-requested)
+           collect
+           (cl-gym:rollout team
+                           gym-environment-name
+                           (random 9999999))))))
             	  
 (defun make-fitness-function (&key gym-environment-name dataset-name)
   (cond
@@ -290,11 +305,6 @@ through serialization/deserialization and save it to disk."
           *current-gym-environment-name* gym-environment-name
           *current-search-seed* seed)
 
-    ;; CybORG uses Python's process-wide random generator.  Seed it once so an
-    ;; explicitly seeded BES run controls both evolution and environment noise.
-    (when (cl-gym:cage2-environment-p gym-environment-name)
-      (cl-gym:seed-python-random seed))
-
     (catch 'search-stop-requested
       (setf *teams* nil)
       (setf *generation* 1)
@@ -336,16 +346,33 @@ through serialization/deserialization and save it to disk."
   "Return true when saved FITNESS can be retained for this resumed search.
 
 Known environment or fitness-episode metadata must match.  Missing provenance
-is accepted for manually upgraded legacy checkpoints."
+is accepted for non-CAGE2 checkpoints. CAGE2 also requires the reproducible
+fixed-batch protocol tag."
   (and (numberp fitness)
        (let ((saved-environment
                (getf metadata :gym-environment-name))
              (saved-episodes
-               (getf metadata :online-fitness-episodes)))
+               (getf metadata :online-fitness-episodes))
+             (saved-protocol
+               (getf metadata :fitness-evaluation-protocol)))
          (and (or (null saved-environment)
                   (equal saved-environment gym-environment-name))
               (or (null saved-episodes)
-                  (= saved-episodes *online-fitness-episodes*))))))
+                  (= saved-episodes *online-fitness-episodes*))
+              ;; Old CAGE2 checkpoint scores were assigned from an advancing,
+              ;; process-global random stream and therefore cannot be replayed.
+              ;; Only retain scores produced by the fixed common seed batch.
+              (or (not (cl-gym:cage2-environment-p gym-environment-name))
+                  (eq saved-protocol
+                      +cage2-online-fitness-protocol+))))))
+
+(defun fitness-values-equivalent-p (left right)
+  "Return true when two replayed fitness values agree to floating-point noise."
+  (and (numberp left)
+       (numberp right)
+       (<= (abs (- (coerce left 'double-float)
+                   (coerce right 'double-float)))
+           1.0d-9)))
 
 (defun initialize-best-from-current-population
        (loaded-best-team &optional saved-best-fitness)
@@ -368,6 +395,15 @@ behavior, but report accurately whether the loaded or random team won."
     (let ((generation-best-team (car best-entry))
           (generation-best-fitness (cdr best-entry))
           (loaded-current-fitness (cdr loaded-entry)))
+      (when (and (numberp saved-best-fitness)
+                 (not (fitness-values-equivalent-p
+                       saved-best-fitness
+                       loaded-current-fitness)))
+        (error
+         "Warm-start checkpoint fitness did not replay: saved=~A current=~A. Refusing to hide a policy/evaluation mismatch."
+         saved-best-fitness
+         loaded-current-fitness))
+
       (cond
         ((numberp saved-best-fitness)
          (if (> generation-best-fitness saved-best-fitness)
@@ -424,9 +460,6 @@ normal evolution."
     (setf *random-state* captured-state
           *current-gym-environment-name* gym-environment-name
           *current-search-seed* seed)
-
-    (when (cl-gym:cage2-environment-p gym-environment-name)
-      (cl-gym:seed-python-random seed))
 
     (catch 'search-stop-requested
       ;; Fresh island-local state.
