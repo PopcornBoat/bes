@@ -1,0 +1,4 @@
+[submodule "vendor/cage2-mini"]
+	path = vendor/cage2-mini
+	url = https://github.com/PopcornBoat/cage2-mini.git
+	branch = lisp-port

@@ -23,7 +23,7 @@
   "Target value representing the global Monitor action.")
 
 (defconstant +cage2-evaluation-seed+ 153
-  "Python random seed used by the official CAGE2 evaluation protocol.")
+  "Root seed used by reproducible CAGE2 evaluation protocols.")
 
 (defconstant +cage2-online-fitness-protocol+ :fixed-episode-batch-153-v1
   "Version tag for reproducible CAGE2 online-fitness evaluation.")

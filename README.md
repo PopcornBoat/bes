@@ -190,7 +190,35 @@ official-CybORG validation.
 
 ---
 
-## 5. Python Interpreter Management
+## 5. Native Lisp CAGE2 Backend
+
+BES can train and validate without per-step Python/Py4CL2 communication by
+selecting the independent native backend:
+
+- `Cage2Lisp-b_line-100-v0`
+- `Cage2Lisp-meander-100-v0`
+- `Cage2Lisp-sleep-100-v0`
+
+The Lisp environment is pinned under `vendor/cage2-mini` and is loaded
+automatically with the BES ASDF system. Clone with submodules, or initialize an
+existing checkout:
+
+```powershell
+git submodule update --init --recursive
+```
+
+The training and resume menus expose the native environment names. The
+validation menu offers `cage2-lisp` alongside normal `cage2`. BES continues
+to use 52 observations and 11 semantic terminal targets; the native adapter
+translates each semantic output to one of the environment's 145 concrete
+actions.
+
+See [`docs/native-cage2.md`](docs/native-cage2.md) for setup, menu choices,
+resume semantics, validation, reproducibility, and tests.
+
+---
+
+## 6. Python Interpreter Management
 
 The framework supports switching between multiple Python environments directly from the Emacs interface.
 
@@ -214,7 +242,7 @@ This allows multiple CybORG codebases to coexist without compatibility issues.
 
 ---
 
-## 6. Improved Emacs Interface
+## 7. Improved Emacs Interface
 
 The Emacs frontend has been extended with several new utilities.
 
@@ -237,7 +265,7 @@ Interactive TAB completion is supported for:
 
 ---
 
-## 7. Dashboard Improvements
+## 8. Dashboard Improvements
 
 Additional runtime statistics have been added to the dashboard.
 
