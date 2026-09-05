@@ -78,7 +78,8 @@ generation from consuming the evolutionary random stream."
     ;; Official CybORG consumes Python's process-wide RANDOM stream. Reset it
     ;; once per candidate evaluation, not once per episode, so a fixed policy
     ;; sees a repeatable advancing sequence rather than one repeated episode.
-    (when cage2-p
+    (when (and cage2-p
+               (not (cl-gym:lisp-cage2-environment-p gym-environment-name)))
       (cl-gym:seed-python-random +cage2-evaluation-seed+))
 
     (arithmetic-mean
@@ -513,7 +514,8 @@ normal evolution."
            (if cage2-p
                (sb-ext:seed-random-state +cage2-evaluation-seed+)
                *random-state*)))
-    (when cage2-p
+    (when (and cage2-p
+               (not (cl-gym:lisp-cage2-environment-p gym-environment-name)))
       (cl-gym:seed-python-random +cage2-evaluation-seed+))
 
     (let* ((team (load-best-team best-team-path))

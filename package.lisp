@@ -26,6 +26,7 @@
            #:reset
            #:step
            #:cage2-environment-p
+           #:lisp-cage2-environment-p
            #:seed-python-random
            #:cl-gym-validate-team)
   (:documentation "A Gymnasium wrapper for CL-TPG."))
