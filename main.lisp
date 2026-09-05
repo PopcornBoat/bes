@@ -58,37 +58,63 @@ not an error and therefore is not converted into a bad-team fitness result."
   (unless *running*
     (throw 'search-stop-requested nil)))
 
-(defun online-fitness (team gym-environment-name)
-  "Evaluate TEAM over *ONLINE-FITNESS-EPISODES* complete episodes.
+(defun make-online-fitness-episode-seeds (&optional root-seed)
+  "Return one seed per online-fitness episode.
 
-The returned fitness is the mean episode reward. CAGE2 teams are always
-evaluated on the same deterministic episode batch rooted at seed 153. This
-makes a checkpoint's score replayable and gives every candidate common random
-numbers. The dynamic Lisp random-state binding also keeps rollout seed
-generation from consuming the evolutionary random stream."
+With ROOT-SEED, derive a reproducible seed bank without consuming the search
+random state. Without it, consume the search random state so each generation
+receives a new batch."
   (unless (and (integerp *online-fitness-episodes*)
                (> *online-fitness-episodes* 0))
     (error "*ONLINE-FITNESS-EPISODES* must be a positive integer."))
 
-  (let* ((cage2-p (cl-gym:cage2-environment-p gym-environment-name))
-         (*random-state*
-           (if cage2-p
-               (sb-ext:seed-random-state +cage2-evaluation-seed+)
-               *random-state*)))
-    ;; Official CybORG consumes Python's process-wide RANDOM stream. Reset it
-    ;; once per candidate evaluation, not once per episode, so a fixed policy
-    ;; sees a repeatable advancing sequence rather than one repeated episode.
-    (when (and cage2-p
-               (not (cl-gym:lisp-cage2-environment-p gym-environment-name)))
-      (cl-gym:seed-python-random +cage2-evaluation-seed+))
+  (let ((*random-state*
+          (if root-seed
+              (sb-ext:seed-random-state root-seed)
+              *random-state*)))
+    (loop repeat *online-fitness-episodes*
+          collect (random 9999999))))
 
-    (arithmetic-mean
-     (loop repeat *online-fitness-episodes*
-           do (abort-search-if-requested)
-           collect
-           (cl-gym:rollout team
-                           gym-environment-name
-                           (random 9999999))))))
+(defun cage2-fitness-on-seeds (team gym-environment-name episode-seeds)
+  "Evaluate TEAM on the exact CAGE2 EPISODE-SEEDS and return mean reward."
+  (arithmetic-mean
+   (loop for episode-seed in episode-seeds
+         do (abort-search-if-requested)
+         collect
+         (cl-gym:rollout team gym-environment-name episode-seed))))
+
+(defun cage2-reference-fitness (team gym-environment-name)
+  "Evaluate TEAM on the fixed checkpoint/reference seed bank rooted at 153."
+  (cage2-fitness-on-seeds
+   team
+   gym-environment-name
+   (make-online-fitness-episode-seeds +cage2-evaluation-seed+)))
+
+(defun online-fitness (team gym-environment-name)
+  "Evaluate TEAM over *ONLINE-FITNESS-EPISODES* complete episodes.
+
+Within one CAGE2 population evaluation, every candidate uses the same episode
+seed list. EVALUATE clears the list before each generation, so later
+generations receive new episodes instead of repeatedly training on the seed-153
+reference batch."
+  (unless (and (integerp *online-fitness-episodes*)
+               (> *online-fitness-episodes* 0))
+    (error "*ONLINE-FITNESS-EPISODES* must be a positive integer."))
+
+  (if (cl-gym:cage2-environment-p gym-environment-name)
+      (cage2-fitness-on-seeds
+       team
+       gym-environment-name
+       (or *online-fitness-episode-seeds*
+           (setf *online-fitness-episode-seeds*
+                 (make-online-fitness-episode-seeds))))
+      (arithmetic-mean
+       (loop repeat *online-fitness-episodes*
+             do (abort-search-if-requested)
+             collect
+             (cl-gym:rollout team
+                             gym-environment-name
+                             (random 9999999))))))
             	  
 (defun make-fitness-function (&key gym-environment-name dataset-name)
   (cond
@@ -130,6 +156,10 @@ generation from consuming the evolutionary random stream."
             
 (defun evaluate ()
   "Returns a list of (team . fitness), skipping and deleting bad teams."
+  ;; The first CAGE2 team lazily creates a seed list after this reset. Every
+  ;; root team reads that same list; the next population evaluation gets a new
+  ;; list generated from the search random state.
+  (setf *online-fitness-episode-seeds* nil)
   (let* ((results
            (mapcar (lambda (team)
                      (abort-search-if-requested)
@@ -177,6 +207,15 @@ through serialization/deserialization and save it to disk."
          (generation-best-team
            (car best-entry))
 
+         (historical-candidate-fitness
+           (if (and *current-gym-environment-name*
+                    (cl-gym:cage2-environment-p
+                     *current-gym-environment-name*))
+               (cage2-reference-fitness
+                generation-best-team
+                *current-gym-environment-name*)
+               generation-best))
+
          (population-mean
            (arithmetic-mean fitness-values))
 
@@ -206,20 +245,21 @@ through serialization/deserialization and save it to disk."
     ;; ------------------------------------------------------------
 
     (when (or (null *best-fitness*)
-              (> generation-best *best-fitness*))
+              (> historical-candidate-fitness *best-fitness*))
 
       (let ((frozen-best-team
               (deep-copy-team-via-serialization
                generation-best-team)))
 
-        (setf *best-fitness* generation-best
+        (setf *best-fitness* historical-candidate-fitness
               *best-team* frozen-best-team)
 
         (emit-message
          (format nil
-                 "NEW GLOBAL BEST: generation=~A fitness=~A. "
+                 "NEW GLOBAL BEST: generation=~A reference-fitness=~A training-fitness=~A. "
                  *generation*
-                 *best-fitness*))
+                 *best-fitness*
+                 generation-best))
 
         ;; Save immediately, before reproduce/mutation/deletion.
         (when *checkpoint-directory*
@@ -348,7 +388,7 @@ through serialization/deserialization and save it to disk."
 
 Known environment or fitness-episode metadata must match.  Missing provenance
 is accepted for non-CAGE2 checkpoints. CAGE2 also requires the reproducible
-fixed-batch protocol tag."
+reference-fitness protocol tag."
   (and (numberp fitness)
        (let ((saved-environment
                (getf metadata :gym-environment-name))
@@ -360,9 +400,8 @@ fixed-batch protocol tag."
                   (equal saved-environment gym-environment-name))
               (or (null saved-episodes)
                   (= saved-episodes *online-fitness-episodes*))
-              ;; Old CAGE2 checkpoint scores were assigned from an advancing,
-              ;; process-global random stream and therefore cannot be replayed.
-              ;; Only retain scores produced by the fixed common seed batch.
+              ;; Only retain CAGE2 scores produced by the current fixed
+              ;; checkpoint/reference bank. Older protocols are re-baselined.
               (or (not (cl-gym:cage2-environment-p gym-environment-name))
                   (eq saved-protocol
                       +cage2-online-fitness-protocol+))))))
@@ -379,10 +418,9 @@ fixed-batch protocol tag."
        (loaded-best-team &optional saved-best-fitness)
   "Evaluate the warm-start population and initialize historical-best state.
 
-When SAVED-BEST-FITNESS is available, the loaded graph and that score establish
-a floor: a worse re-evaluation or random team cannot overwrite the checkpoint.
-Legacy checkpoints without fitness metadata retain the previous re-baselining
-behavior, but report accurately whether the loaded or random team won."
+Generation scores use a new shared training batch. Historical-best comparisons
+use the fixed reference seed bank, so a resumed checkpoint remains replayable
+while training continues on changing episodes."
   (let* ((scores (evaluate))
          (best-entry (and scores
                           (first (sort (copy-list scores) #'> :key #'cdr))))
@@ -393,58 +431,65 @@ behavior, but report accurately whether the loaded or random team won."
     (unless loaded-entry
       (error "Warm-start evaluation did not include the loaded best team."))
 
-    (let ((generation-best-team (car best-entry))
-          (generation-best-fitness (cdr best-entry))
-          (loaded-current-fitness (cdr loaded-entry)))
+    (let* ((generation-best-team (car best-entry))
+           (generation-best-fitness (cdr best-entry))
+           (loaded-current-fitness (cdr loaded-entry))
+           (cage2-p
+             (and *current-gym-environment-name*
+                  (cl-gym:cage2-environment-p
+                   *current-gym-environment-name*)))
+           (loaded-reference-fitness
+             (if cage2-p
+                 (cage2-reference-fitness
+                  loaded-best-team
+                  *current-gym-environment-name*)
+                 loaded-current-fitness))
+           (generation-reference-fitness
+             (if (eq generation-best-team loaded-best-team)
+                 loaded-reference-fitness
+                 (if cage2-p
+                     (cage2-reference-fitness
+                      generation-best-team
+                      *current-gym-environment-name*)
+                     generation-best-fitness))))
       (when (and (numberp saved-best-fitness)
                  (not (fitness-values-equivalent-p
                        saved-best-fitness
-                       loaded-current-fitness)))
+                       loaded-reference-fitness)))
         (error
-         "Warm-start checkpoint fitness did not replay: saved=~A current=~A. Refusing to hide a policy/evaluation mismatch."
+         "Warm-start checkpoint reference fitness did not replay: saved=~A current=~A. Refusing to hide a policy/evaluation mismatch."
          saved-best-fitness
-         loaded-current-fitness))
+         loaded-reference-fitness))
 
-      (cond
-        ((numberp saved-best-fitness)
-         (if (> generation-best-fitness saved-best-fitness)
-             (progn
-               (setf *best-team*
-                       (deep-copy-team-via-serialization generation-best-team)
-                     *best-fitness* generation-best-fitness)
-               (emit-message
-                (format nil
-                        "Warm-start: current population beat saved historical fitness. saved=~A current=~A loaded-current=~A"
-                        saved-best-fitness
-                        generation-best-fitness
-                        loaded-current-fitness))
-               (when *checkpoint-directory*
-                 (save-best-team)))
-             (progn
-               (setf *best-team*
-                       (deep-copy-team-via-serialization loaded-best-team)
-                     *best-fitness* saved-best-fitness)
-               (emit-message
-                (format nil
-                        "Warm-start: retained loaded historical best. saved=~A loaded-current=~A generation-best=~A"
-                        saved-best-fitness
-                        loaded-current-fitness
-                        generation-best-fitness)))))
+      (let* ((loaded-baseline
+               (or saved-best-fitness loaded-reference-fitness))
+             (generation-won-p
+               (> generation-reference-fitness loaded-baseline))
+             (chosen-team
+               (if generation-won-p
+                   generation-best-team
+                   loaded-best-team))
+             (chosen-fitness
+               (if generation-won-p
+                   generation-reference-fitness
+                   loaded-baseline)))
+        (setf *best-team*
+                (deep-copy-team-via-serialization chosen-team)
+              *best-fitness* chosen-fitness)
 
-        (t
-         (let ((loaded-won-p (eq generation-best-team loaded-best-team)))
-           (setf *best-team*
-                   (deep-copy-team-via-serialization generation-best-team)
-                 *best-fitness* generation-best-fitness)
-           (emit-message
-            (if loaded-won-p
-                (format nil
-                        "Warm-start legacy checkpoint: loaded team won re-baselining. fitness=~A"
-                        generation-best-fitness)
-                (format nil
-                        "Warm-start legacy checkpoint: random team won re-baselining. random=~A loaded=~A"
-                        generation-best-fitness
-                        loaded-current-fitness)))))))
+        (emit-message
+         (format nil
+                 "Warm-start reference comparison: retained=~A saved=~A loaded-reference=~A generation-training=~A generation-reference=~A"
+                 (if generation-won-p :generation-best :loaded-best)
+                 saved-best-fitness
+                 loaded-reference-fitness
+                 generation-best-fitness
+                 generation-reference-fitness))
+
+        ;; Rewrite legacy/old-protocol checkpoints immediately with the current
+        ;; replayable reference score, or save a better generation candidate.
+        (when *checkpoint-directory*
+          (save-best-team))))
 
     scores))
 
@@ -514,10 +559,6 @@ normal evolution."
            (if cage2-p
                (sb-ext:seed-random-state +cage2-evaluation-seed+)
                *random-state*)))
-    (when (and cage2-p
-               (not (cl-gym:lisp-cage2-environment-p gym-environment-name)))
-      (cl-gym:seed-python-random +cage2-evaluation-seed+))
-
     (let* ((team (load-best-team best-team-path))
            (score (cl-gym:cl-gym-validate-team
                    team

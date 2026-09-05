@@ -9,7 +9,7 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 3
+(defconstant +best-team-checkpoint-version+ 4
   "Current version of the best-team checkpoint envelope.")
 
 (defun checkpoint-path (directory filename)

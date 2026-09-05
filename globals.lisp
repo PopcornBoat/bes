@@ -25,8 +25,9 @@
 (defconstant +cage2-evaluation-seed+ 153
   "Root seed used by reproducible CAGE2 evaluation protocols.")
 
-(defconstant +cage2-online-fitness-protocol+ :fixed-episode-batch-153-v1
-  "Version tag for reproducible CAGE2 online-fitness evaluation.")
+(defconstant +cage2-online-fitness-protocol+
+  :shared-generation-seeds-reference-153-v2
+  "Version tag for generation-shared CAGE2 fitness plus fixed reference scoring.")
 
 (defconstant +inf+ most-positive-fixnum)
 
@@ -143,6 +144,9 @@ search and turn this flag back on.")
 
 A value of 1 reproduces the original BES/TPG behaviour.
 Larger values reduce fitness variance by averaging multiple rollouts.")
+
+(defvar *online-fitness-episode-seeds* nil
+  "Episode seeds shared by all CAGE2 candidates in the current evaluation batch.")
 
 (defvar *best-team* nil
   "Best root team seen so far.")

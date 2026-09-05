@@ -90,9 +90,9 @@
 (defun seed-python-random (seed)
   "Seed Python's process-wide random generator once with integer SEED.
 
-Official CAGE2 evaluation uses random.seed(153) before running its episode
-sequence.  Seeding once here preserves that advancing sequence; reseeding every
-episode would instead repeat the same stochastic trajectory."
+This remains available for callers that need process-wide Python seeding.
+Normal CAGE2 fitness now supplies a distinct explicit seed to each environment
+reset instead."
   (unless (integerp seed)
     (error "Python random seed must be an integer, got ~S." seed))
   (py4cl2:pyexec "import random")
