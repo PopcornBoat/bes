@@ -272,6 +272,8 @@
             "*env=none"
            
             "*population-size=160"
+            "*num-observations=52"
+            "*num-actions=11"
             "*init-num-learners=3"
             "*max-num-learners=inf"
             "*migration-interval=50"
@@ -285,12 +287,18 @@
   ["Evaluation"
    ("-M" "Evaluation Mode" "--mode="
     :choices ("online" "offline"))
-   ("-G" "Gymnasium Environment Name" "*env="
+   ("-G" "Online Environment" "*env="
     :choices ("none" 
               "Cage2-b_line-100-v0"
               "Cage2-meander-100-v0"
               "Cage2-sleep-100-v0"
-              "Cage3SharedPolicy-v0"  
+              "Cage2Mini-b_line-100-v0"
+              "Cage2Mini-meander-100-v0"
+              "Cage2Mini-sleep-100-v0"
+              "Cage2Lisp-b_line-100-v0"
+              "Cage2Lisp-meander-100-v0"
+              "Cage2Lisp-sleep-100-v0"
+              "Cage3SharedPolicy-v0"
               "Hopper-v5" "Walker2d-v5" "HalfCheetah-v5" "Acrobot-v1" "LunarLander-v3" "MountainCar-v0" "CartPole-v1"))
    ;;("-F" "Dataset Name" "*dataset=")
    ]
@@ -370,10 +378,16 @@
          (env
           (if (eq mode :online)
               (completing-read
-               "Gymnasium environment: "
+               "Online environment: "
                '("Cage2-b_line-100-v0"
                  "Cage2-meander-100-v0"
                  "Cage2-sleep-100-v0"
+                 "Cage2Mini-b_line-100-v0"
+                 "Cage2Mini-meander-100-v0"
+                 "Cage2Mini-sleep-100-v0"
+                 "Cage2Lisp-b_line-100-v0"
+                 "Cage2Lisp-meander-100-v0"
+                 "Cage2Lisp-sleep-100-v0"
                  "Cage3SharedPolicy-v0"
                  "CartPole-v1")
                nil
@@ -398,7 +412,7 @@
           (string-to-number
            (read-string
             "Number of actions: "
-            "145")))
+            "11")))
 
          (population-size
           (string-to-number
@@ -926,13 +940,16 @@
          (environment-str
           (completing-read
            "Validation environment: "
-           '("cage2" "cage3")
+           '("cage2" "cage2-lisp" "cage3")
            nil t
            "cage2"))
          (environment
-          (if (string= environment-str "cage2") :cage2 :cage3))
+          (pcase environment-str
+            ("cage2" :cage2)
+            ("cage2-lisp" :cage2-lisp)
+            ("cage3" :cage3)))
          (mode-str
-          (if (eq environment :cage2)
+          (if (memq environment '(:cage2 :cage2-lisp))
               (completing-read
                "CAGE2 validation mode: "
                '("single-red-full" "single-red-100")
@@ -946,7 +963,7 @@
          (validation-mode
           (intern (concat ":" mode-str)))
          (red-agent-name
-          (when (eq environment :cage2)
+          (when (memq environment '(:cage2 :cage2-lisp))
             (completing-read
              "CAGE2 red agent: "
              '("b_line" "meander" "sleep")
@@ -954,7 +971,7 @@
              "b_line")))
          (episodes
           (cond
-           ((and (eq environment :cage2)
+           ((and (memq environment '(:cage2 :cage2-lisp))
                  (eq validation-mode :single-red-100))
             (string-to-number
              (read-string "Episodes: " "1")))

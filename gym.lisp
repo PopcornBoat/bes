@@ -62,20 +62,112 @@
           observation))
 
 (defun cage2-environment-p (environment-name)
-  "Return true when ENVIRONMENT-NAME identifies a CAGE2 bridge environment."
+  "Return true when ENVIRONMENT-NAME identifies any CAGE2 backend."
   (and (stringp environment-name)
        (search "Cage2" environment-name)))
+
+(defparameter *lisp-cage2-environments*
+  '(("Cage2Lisp-b_line-30-v0" :b-line 30)
+    ("Cage2Lisp-b_line-50-v0" :b-line 50)
+    ("Cage2Lisp-b_line-100-v0" :b-line 100)
+    ("Cage2Lisp-meander-30-v0" :meander 30)
+    ("Cage2Lisp-meander-50-v0" :meander 50)
+    ("Cage2Lisp-meander-100-v0" :meander 100)
+    ("Cage2Lisp-sleep-30-v0" :sleep 30)
+    ("Cage2Lisp-sleep-50-v0" :sleep 50)
+    ("Cage2Lisp-sleep-100-v0" :sleep 100))
+  "Native Lisp CAGE2 environment names and their red-agent/step settings.")
+
+(defun lisp-cage2-environment-spec (environment-name)
+  "Return (RED-AGENT STEPS) for a native Lisp CAGE2 name, or NIL."
+  (rest (assoc environment-name *lisp-cage2-environments* :test #'string=)))
+
+(defun lisp-cage2-environment-p (environment-name)
+  "Return true only for a registered native Lisp CAGE2 environment."
+  (and (stringp environment-name)
+       (not (null (lisp-cage2-environment-spec environment-name)))))
 
 (defun seed-python-random (seed)
   "Seed Python's process-wide random generator once with integer SEED.
 
 Official CAGE2 evaluation uses random.seed(153) before running its episode
-sequence. Seeding once per evaluation preserves that advancing sequence;
-reseeding every episode would instead repeat one stochastic trajectory."
+sequence.  Seeding once here preserves that advancing sequence; reseeding every
+episode would instead repeat the same stochastic trajectory."
   (unless (integerp seed)
     (error "Python random seed must be an integer, got ~S." seed))
   (py4cl2:pyexec "import random")
   (py4cl2:pycall "random.seed" seed))
+
+(defun semantic-response-index (response)
+  "Return the Python bridge index for a BES semantic host RESPONSE."
+  (case response
+    (:analyse 0)
+    (:remove 1)
+    (:restore 2)
+    (:decoy 3)
+    (otherwise nil)))
+
+(defun semantic-action->cage2-input (action)
+  "Convert a BES SEMANTIC-ACTION into py4cl2-friendly integer input.
+
+The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
+:MONITOR fallbacks canonicalize to (0 0 0). Non-Decoy responses use option 0."
+  (let* ((target (cl-tpg:semantic-action-target action))
+         (response (cl-tpg:semantic-action-response action))
+         (option (cl-tpg:semantic-action-option action))
+         (response-index (semantic-response-index response)))
+    (cond
+      ((or (not (integerp target))
+           (< target cl-tpg:+global-target+)
+           (>= target cl-tpg:+num-semantic-targets+)
+           (= target cl-tpg:+global-target+)
+           (eq response :monitor)
+           (null response-index))
+       (list cl-tpg:+global-target+ 0 0))
+      ((eq response :decoy)
+       (if (and (integerp option) (<= 0 option 7))
+           (list target response-index option)
+           (list cl-tpg:+global-target+ 0 0)))
+      (t
+       (list target response-index 0)))))
+
+(defun execute-policy-action (root-team observation environment-name)
+  "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
+  (if (cage2-environment-p environment-name)
+      (semantic-action->cage2-input
+       (cl-tpg:execute-team-semantic root-team observation))
+      (cl-tpg:execute-team root-team observation)))
+
+(defun semantic-action->cage2-id (action)
+  "Convert a BES semantic action directly to a concrete CAGE2 action ID."
+  (cage2-mini:semantic-action-id
+   (cl-tpg:semantic-action-target action)
+   (cl-tpg:semantic-action-response action)
+   (or (cl-tpg:semantic-action-option action) 0)))
+
+(defun rollout-lisp-cage2 (root-team environment-name seed)
+  "Run one complete episode in native Lisp without Python or Py4CL2."
+  (destructuring-bind (red-agent max-steps)
+      (or (lisp-cage2-environment-spec environment-name)
+          (error "Unknown native Lisp CAGE2 environment: ~S" environment-name))
+    ;; Environment and conversion buffer are local to the rollout. Evaluation
+    ;; threads must never share the mutable state of an environment.
+    (let ((environment
+            (cage2-mini:make-environment
+             :red-agent red-agent
+             :max-steps max-steps
+             :compatibility :cage2))
+          (observation-buffer
+            (make-array 52 :element-type 'double-float)))
+      (nth-value
+       0
+       (cage2-mini:run-episode
+        environment
+        (lambda (observation)
+          (semantic-action->cage2-id
+           (cl-tpg:execute-team-semantic root-team observation)))
+        :seed seed
+        :observation-buffer observation-buffer)))))
 
 (defun make (environment-name &key (video-path nil))
   "Makes a new Gymnasium environment."
@@ -98,7 +190,7 @@ reseeding every episode would instead repeat one stochastic trajectory."
       (py4cl2:pymethod env "step" action)
     (values (normalize-obs obs) rew term trunc info)))
 
-(defun rollout (root-team environment-name seed &key (video-path nil))
+(defun rollout-python (root-team environment-name seed &key (video-path nil))
   "Run one complete episode.
 
 Supports:
@@ -121,7 +213,10 @@ Supports:
                do (let ((action
                           (if (shared-policy-observation-p observation)
                               (shared-policy-actions root-team observation)
-                              (cl-tpg:execute-team root-team observation))))
+                              (execute-policy-action
+                               root-team
+                               observation
+                               environment-name))))
                     (multiple-value-bind (obs rew term trunc info)
                         (step env action)
                       (declare (ignore info))
@@ -135,6 +230,15 @@ Supports:
                    (probe-file "rl-video-episode-0.mp4"))
           (rename-file "rl-video-episode-0.mp4" video-path))))
     episode-reward))
+
+(defun rollout (root-team environment-name seed &key (video-path nil))
+  "Dispatch a rollout to native Lisp or the existing Python Gym path."
+  (if (lisp-cage2-environment-p environment-name)
+      (progn
+        (when video-path
+          (error "Native Lisp CAGE2 does not support video recording."))
+        (rollout-lisp-cage2 root-team environment-name seed))
+      (rollout-python root-team environment-name seed :video-path video-path)))
 
 (defun cl-gym-validate-team (team gym-environment-name &optional seed)
   "Run TEAM in a validation Gym environment.

@@ -4,6 +4,68 @@
   (type :atomic)
   (action (random *num-actions*)))
 
+(defstruct semantic-action
+  "Structured BES policy output for the hierarchical CAGE2 action space.
+
+TARGET is the terminal learner's atomic target integer. Host RESPONSE is one
+of :ANALYSE, :REMOVE, :RESTORE, or :DECOY. :MONITOR is used only as a defensive
+fallback. OPTION is NIL except for :DECOY, where it is an integer from 0
+through 7. The Python bridge converts this semantic representation into a
+concrete CAGE2 action."
+  target
+  response
+  option)
+
+(defparameter *semantic-target-names*
+  #(:global :defender :enterprise0 :enterprise1 :enterprise2
+    :op-server0 :user0 :user1 :user2 :user3 :user4)
+  "Names corresponding to terminal target values 0 through 10.")
+
+(defparameter *semantic-response-types*
+  #(:analyse :remove :restore :decoy)
+  "Host response types decoded from the final terminal learner's registers.")
+
+(defun decode-register-index (value category-count)
+  "Map a finite numeric register VALUE deterministically into a category.
+Return NIL when VALUE cannot be decoded safely."
+  (handler-case
+      (mod (floor (abs value)) category-count)
+    (arithmetic-error () nil)
+    (type-error () nil)))
+
+(defun make-semantic-action-from-terminal (target registers)
+  "Decode TARGET and final terminal learner REGISTERS into a semantic action.
+
+GLOBAL always means Monitor. Host responses use +RESPONSE-REGISTER+; a Decoy
+also uses +DECOY-OPTION-REGISTER+. Invalid register values safely fall back to
+Monitor. Atomic terminal actions represent targets, not complete CAGE2 actions."
+  (if (= target +global-target+)
+      (make-semantic-action :target target :response :monitor :option nil)
+      (let* ((response-index
+               (decode-register-index
+                (aref registers +response-register+)
+                (length *semantic-response-types*)))
+             (response
+               (and response-index
+                    (aref *semantic-response-types* response-index))))
+        (cond
+          ((null response)
+           (make-semantic-action
+            :target target :response :monitor :option nil))
+          ((eq response :decoy)
+           (let ((option
+                   (decode-register-index
+                    (aref registers +decoy-option-register+)
+                    8)))
+             (if option
+                 (make-semantic-action
+                  :target target :response response :option option)
+                 (make-semantic-action
+                  :target target :response :monitor :option nil))))
+          (t
+           (make-semantic-action
+            :target target :response response :option nil))))))
+
 (defun serialize-action (action seen)
   `(:type ,(action-type action)
     :action ,(let ((action (action-action action)))

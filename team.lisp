@@ -61,16 +61,50 @@
     (setf (team-references target-team) 0)
     (setf (team-type target-team) :root)))
 
+(defun execute-team-to-terminal (team observation)
+  "Traverse TEAM and return the terminal winner and its registers.
+
+Every learner program executes once per visited team and bids through register
+0 as before. A winning team-reference action recursively continues traversal.
+Only the learner that finally wins with an atomic target contributes registers
+to the semantic policy output; intermediate winners' registers are discarded."
+  (let* ((evaluations
+           (mapcar
+            (lambda (learner)
+              (multiple-value-bind (learner-bid registers)
+                  (bid learner observation)
+                (list learner learner-bid registers)))
+            (team-learners team)))
+         (winning-evaluation
+           (alexandria:extremum evaluations #'> :key #'second))
+         (winner (first winning-evaluation))
+         (registers (third winning-evaluation))
+         (act (learner-action winner)))
+    (if (eq (action-type act) :atomic)
+        (values winner registers)
+        (execute-team-to-terminal (action-action act) observation))))
+
 (defun execute-team (team observation)
-  "Executes the TPG graph starting at TEAM.
-   This follows the action of the learner with the highest bid."
-  (let* ((learners (team-learners team))
-	 (winner (alexandria:extremum learners #'>
-				      :key (lambda (l) (bid l observation)))))
-    (let ((act (learner-action winner)))
-      (if (eq (action-type act) :atomic)
-	  (action-action act)
-	  (execute-team (action-action act) observation)))))
+  "Execute TEAM and return the final terminal learner's atomic target.
+
+This compatibility API retains the former integer return shape. Atomic values
+now represent targets when *NUM-ACTIONS* is configured to 11."
+  (multiple-value-bind (terminal-learner registers)
+      (execute-team-to-terminal team observation)
+    (declare (ignore registers))
+    (action-action (learner-action terminal-learner))))
+
+(defun execute-team-semantic (team observation)
+  "Execute TEAM and return a SEMANTIC-ACTION.
+
+The terminal learner's atomic action supplies the target, while registers from
+that same learner supply the response type and optional decoy option. The
+Python bridge must later translate this output into a concrete CAGE2 action."
+  (multiple-value-bind (terminal-learner registers)
+      (execute-team-to-terminal team observation)
+    (make-semantic-action-from-terminal
+     (action-action (learner-action terminal-learner))
+     registers)))
 
 (defun execute-team-on-dataset (team dataset)
   "Batch executes a team across all the observations in DATASET."
