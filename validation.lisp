@@ -17,12 +17,11 @@
                  (- n 1))))))
 
 (defun seed-cage2-evaluation ()
-  "Initialize CAGE2 validation randomness using the official seed.
+  "Report initialization of the deterministic CAGE2 episode-seed sequence.
 
-The official protocol calls Python random.seed(153) once before evaluation.
-The caller dynamically binds the Lisp generator to the same seed so per-rollout
-Gym seeds are reproducible without changing randomness after validation."
-  (cl-gym:seed-python-random +cage2-evaluation-seed+)
+The caller binds the Lisp generator to 153 and supplies each derived seed to the
+environment reset. Python and native Lisp backends therefore receive identical
+per-episode seed inputs without changing randomness after validation."
   (emit-message
    (format nil
            "CAGE2 validation random seed initialized to ~A."
@@ -178,7 +177,7 @@ CAGE3 MODE:
            (if cage2-p
                (sb-ext:seed-random-state +cage2-evaluation-seed+)
                *random-state*)))
-    (when (eq environment :cage2)
+    (when cage2-p
       (seed-cage2-evaluation))
 
     (let ((team (load-best-team best-team-path)))
