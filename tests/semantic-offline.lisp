@@ -86,4 +86,77 @@
          nil))
    "changed semantic dataset forces re-baselining"))
 
+(let* ((cl-tpg::*num-actions* 11)
+       (cl-tpg::*num-observations* 54)
+       (form
+         (list :transition
+               :observation (loop repeat 54 collect 0)
+               :semantic-action '(8 3 4)
+               :representable t
+               :reward 0
+               :terminated nil
+               :truncated nil))
+       (dataset
+         (cl-tpg::convert-semantic-stream-to-dataset
+          form
+          (make-string-input-stream "")
+          "/tmp/context.lisp")))
+  (check-semantic-offline
+   (= (length (aref (cl-tpg::observations dataset) 0)) 54)
+   "semantic loader accepts configured 54-input observations"))
+
+(let ((cl-tpg::*offline-reference-dataset* t)
+      (cl-tpg::*current-dataset-fingerprint* '(:same t))
+      (cl-tpg::*num-observations* 54))
+  (check-semantic-offline
+   (not (cl-tpg::checkpoint-fitness-comparable-p
+         0.75d0
+         (list :fitness-evaluation-protocol
+               cl-tpg::+semantic-offline-fitness-protocol+
+               :dataset-fingerprint '(:same t)
+               :num-observations 52)
+         nil))
+   "observation-width mismatch forces checkpoint re-baselining"))
+
+(let* ((base
+         (make-array 52
+                     :element-type 'double-float
+                     :initial-contents
+                     (loop for index below 52
+                           collect (coerce index 'double-float))))
+       (context
+         (cl-gym::cage2-context-observation base 17 29)))
+  (check-semantic-offline (= (length context) 54)
+                          "validation context observation width")
+  (check-semantic-offline
+   (loop for index below 52
+         always (= (aref base index) (aref context index)))
+   "validation context preserves base observation")
+  (check-semantic-offline
+   (and (= (aref context 52) 17.0d0)
+        (= (aref context 53) 29.0d0))
+   "validation appends raw episode and step indices"))
+
+(let ((original-rollout (symbol-function 'cl-gym:rollout))
+      (seen-indices nil))
+  (unwind-protect
+       (progn
+         (setf (symbol-function 'cl-gym:rollout)
+               (lambda (team environment seed
+                        &key video-path episode-index)
+                 (declare (ignore team environment seed video-path))
+                 (push episode-index seen-indices)
+                 0.0d0))
+         (cl-tpg::run-validation-rollouts
+          nil "Cage2-b_line-30-v0" 3)
+         (check-semantic-offline
+          (equal (nreverse seen-indices) '(0 1 2))
+          "CAGE2 validation propagates zero-based episode indices")
+         (setf seen-indices nil)
+         (cl-tpg::run-validation-rollouts nil "CartPole-v1" 2)
+         (check-semantic-offline
+          (equal seen-indices '(nil nil))
+          "non-CAGE2 validation does not add episode context"))
+    (setf (symbol-function 'cl-gym:rollout) original-rollout)))
+
 (format t "~D semantic offline checks passed.~%" *semantic-offline-checks*)

@@ -131,11 +131,46 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
       (t
        (list target response-index 0)))))
 
-(defun execute-policy-action (root-team observation environment-name)
+(defun cage2-context-observation (observation episode-index step-index)
+  "Append raw validation EPISODE-INDEX and STEP-INDEX to a CAGE2 observation.
+
+The collector uses the same zero-based values at positions 52 and 53. This is
+branch-local capability-test behavior; the Python environment remains unchanged."
+  (unless (and (typep observation '(simple-array double-float (*)))
+               (= (length observation)
+                  cl-tpg::+cage2-base-observation-size+))
+    (error "Expected a ~D-value CAGE2 observation, got ~S."
+           cl-tpg::+cage2-base-observation-size+
+           observation))
+  (unless (and (integerp episode-index) (>= episode-index 0)
+               (integerp step-index) (>= step-index 0))
+    (error "CAGE2 context indices must be non-negative integers, got ~S/~S."
+           episode-index
+           step-index))
+  (let ((context-observation
+          (make-array cl-tpg::+cage2-context-observation-size+
+                      :element-type 'double-float)))
+    (replace context-observation observation)
+    (setf (aref context-observation
+                cl-tpg::+cage2-base-observation-size+)
+            (coerce episode-index 'double-float)
+          (aref context-observation
+                (1+ cl-tpg::+cage2-base-observation-size+))
+            (coerce step-index 'double-float))
+    context-observation))
+
+(defun execute-policy-action
+       (root-team observation environment-name
+        &key episode-index step-index)
   "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
   (if (cage2-environment-p environment-name)
       (semantic-action->cage2-input
-       (cl-tpg:execute-team-semantic root-team observation))
+       (cl-tpg:execute-team-semantic
+        root-team
+        (if (and episode-index step-index)
+            (cage2-context-observation
+             observation episode-index step-index)
+            observation)))
       (cl-tpg:execute-team root-team observation)))
 
 (defun semantic-action->cage2-id (action)
@@ -145,7 +180,8 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
    (cl-tpg:semantic-action-response action)
    (or (cl-tpg:semantic-action-option action) 0)))
 
-(defun rollout-lisp-cage2 (root-team environment-name seed)
+(defun rollout-lisp-cage2
+       (root-team environment-name seed &key episode-index)
   "Run one complete episode in native Lisp without Python or Py4CL2."
   (destructuring-bind (red-agent max-steps)
       (or (lisp-cage2-environment-spec environment-name)
@@ -158,14 +194,23 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
              :max-steps max-steps
              :compatibility :cage2))
           (observation-buffer
-            (make-array 52 :element-type 'double-float)))
+            (make-array cl-tpg::+cage2-base-observation-size+
+                        :element-type 'double-float))
+          (step-index 0))
       (nth-value
        0
        (cage2-mini:run-episode
         environment
         (lambda (observation)
-          (semantic-action->cage2-id
-           (cl-tpg:execute-team-semantic root-team observation)))
+          (prog1
+              (semantic-action->cage2-id
+               (cl-tpg:execute-team-semantic
+                root-team
+                (if episode-index
+                    (cage2-context-observation
+                     observation episode-index step-index)
+                    observation)))
+            (incf step-index)))
         :seed seed
         :observation-buffer observation-buffer)))))
 
@@ -190,7 +235,9 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
       (py4cl2:pymethod env "step" action)
     (values (normalize-obs obs) rew term trunc info)))
 
-(defun rollout-python (root-team environment-name seed &key (video-path nil))
+(defun rollout-python
+       (root-team environment-name seed
+        &key (video-path nil) episode-index)
   "Run one complete episode.
 
 Supports:
@@ -216,7 +263,9 @@ Supports:
                               (execute-policy-action
                                root-team
                                observation
-                               environment-name))))
+                               environment-name
+                               :episode-index episode-index
+                               :step-index timestep))))
                     (multiple-value-bind (obs rew term trunc info)
                         (step env action)
                       (declare (ignore info))
@@ -231,14 +280,20 @@ Supports:
           (rename-file "rl-video-episode-0.mp4" video-path))))
     episode-reward))
 
-(defun rollout (root-team environment-name seed &key (video-path nil))
+(defun rollout
+       (root-team environment-name seed
+        &key (video-path nil) episode-index)
   "Dispatch a rollout to native Lisp or the existing Python Gym path."
   (if (lisp-cage2-environment-p environment-name)
       (progn
         (when video-path
           (error "Native Lisp CAGE2 does not support video recording."))
-        (rollout-lisp-cage2 root-team environment-name seed))
-      (rollout-python root-team environment-name seed :video-path video-path)))
+        (rollout-lisp-cage2
+         root-team environment-name seed :episode-index episode-index))
+      (rollout-python
+       root-team environment-name seed
+       :video-path video-path
+       :episode-index episode-index)))
 
 (defun cl-gym-validate-team (team gym-environment-name &optional seed)
   "Run TEAM in a validation Gym environment.

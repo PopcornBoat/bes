@@ -9,7 +9,7 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 5
+(defconstant +best-team-checkpoint-version+ 6
   "Current version of the best-team checkpoint envelope.")
 
 (defun checkpoint-path (directory filename)
@@ -25,7 +25,7 @@
        (team fitness &key generation gym-environment-name
                           online-fitness-episodes search-seed
                           fitness-evaluation-protocol dataset-name
-                          dataset-fingerprint)
+                          dataset-fingerprint num-observations)
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   `(:checkpoint-version ,+best-team-checkpoint-version+
     :fitness ,fitness
@@ -36,6 +36,7 @@
     :fitness-evaluation-protocol ,fitness-evaluation-protocol
     :dataset-name ,dataset-name
     :dataset-fingerprint ,dataset-fingerprint
+    :num-observations ,num-observations
     :team ,(serialize-team team (make-hash-table :test #'equal))))
 
 (defun versioned-best-team-checkpoint-p (data)
@@ -48,7 +49,7 @@
        (team fitness path &key generation gym-environment-name
                                online-fitness-episodes search-seed
                                fitness-evaluation-protocol dataset-name
-                               dataset-fingerprint)
+                               dataset-fingerprint num-observations)
   "Write TEAM, FITNESS, and provenance metadata to PATH."
   (ensure-directories-exist path)
 
@@ -70,7 +71,8 @@
            :search-seed search-seed
            :fitness-evaluation-protocol fitness-evaluation-protocol
            :dataset-name dataset-name
-           :dataset-fingerprint dataset-fingerprint)
+           :dataset-fingerprint dataset-fingerprint
+           :num-observations num-observations)
          :stream out))))
 
   path)
@@ -90,6 +92,7 @@
    :search-seed *current-search-seed*
    :dataset-name *current-dataset-name*
    :dataset-fingerprint *current-dataset-fingerprint*
+   :num-observations *num-observations*
    :fitness-evaluation-protocol
    (cond
      ((cl-gym:cage2-environment-p *current-gym-environment-name*)
@@ -136,7 +139,7 @@ return NIL for FITNESS and METADATA."
        (path fitness &key output-path generation gym-environment-name
                           online-fitness-episodes search-seed
                           fitness-evaluation-protocol dataset-name
-                          dataset-fingerprint)
+                          dataset-fingerprint num-observations)
   "Add fitness metadata to a legacy best-team checkpoint.
 
 OUTPUT-PATH defaults to PATH.  Supplying a different path is recommended when
@@ -155,7 +158,8 @@ preserving the original legacy file."
      :search-seed search-seed
      :fitness-evaluation-protocol fitness-evaluation-protocol
      :dataset-name dataset-name
-     :dataset-fingerprint dataset-fingerprint)
+     :dataset-fingerprint dataset-fingerprint
+     :num-observations num-observations)
     (emit-message
      (format nil
              "Best-team checkpoint metadata written: ~A fitness=~A"

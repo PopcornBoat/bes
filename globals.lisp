@@ -19,6 +19,12 @@
 (defconstant +num-semantic-targets+ 11
   "Number of targets in the hierarchical CAGE2 policy output.")
 
+(defconstant +cage2-base-observation-size+ 52
+  "Number of values supplied by the standard CAGE2 observation wrapper.")
+
+(defconstant +cage2-context-observation-size+ 54
+  "CAGE2 observation size after appending episode and step indices.")
+
 (defconstant +global-target+ 0
   "Target value representing the global Monitor action.")
 

@@ -301,6 +301,20 @@ Legacy atomic-action datasets retain their original loading and accuracy
 behavior. Reward-based offline fitness and richer state inputs remain future
 work.
 
+### Episode/step context capability test
+
+The `episode-step-observations` branch can train on a derived 54-input dataset:
+the original 52 CAGE2 values followed by raw episode index and raw step index.
+Set `Number of Observations` to `54`, keep `Number of Actions` at `11`, and
+select the derived `_train.lisp` file. Use a fresh checkpoint directory.
+
+This layout is an experimental policy contract. On this branch only, CAGE2
+validation appends its zero-based episode index and zero-based rollout step to
+the original 52 values before executing the team. In `single-red-full`, the
+episode index resets to zero for each 30-, 50-, and 100-step block, matching the
+collector's per-horizon indexing. The Python and native environments themselves
+remain unchanged. Normal online training still uses the base 52-value contract.
+
 ---
 
 # Current Research Status

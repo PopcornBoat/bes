@@ -555,9 +555,14 @@ the same train/reference file fingerprint."
              (saved-protocol
                (getf metadata :fitness-evaluation-protocol))
              (saved-dataset-fingerprint
-               (getf metadata :dataset-fingerprint)))
+               (getf metadata :dataset-fingerprint))
+             (saved-num-observations
+               (getf metadata :num-observations)))
          (and (or (null saved-environment)
                   (equal saved-environment gym-environment-name))
+              (or (null saved-num-observations)
+                  (and (integerp saved-num-observations)
+                       (= saved-num-observations *num-observations*)))
               (cond
                 ((cl-gym:cage2-environment-p gym-environment-name)
                  (and (or (null saved-episodes)
