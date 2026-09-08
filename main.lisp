@@ -20,6 +20,125 @@
 	     count (= actual predicted))
        (length actuals))))
 
+(defun semantic-response-index (response)
+  "Return the dataset integer for a decoded semantic RESPONSE, or NIL."
+  (case response
+    (:analyse 0)
+    (:remove 1)
+    (:restore 2)
+    (:decoy 3)
+    (otherwise nil)))
+
+(defun semantic-action-label-matches-p (prediction label)
+  "Compare PREDICTION with a canonical (target response option) LABEL.
+
+GLOBAL requires only the target. Host non-Decoy labels require target and
+response; Decoy additionally requires the option. This mirrors the runtime
+semantic contract and never penalizes fields ignored by the bridge."
+  (destructuring-bind (target response option) label
+    (and (= (semantic-action-target prediction) target)
+         (or (= target +global-target+)
+             (let ((predicted-response
+                     (semantic-response-index
+                      (semantic-action-response prediction))))
+               (and predicted-response
+                    (= predicted-response response)
+                    (or (/= response 3)
+                        (let ((predicted-option
+                                (semantic-action-option prediction)))
+                          (and (integerp predicted-option)
+                               (= predicted-option option))))))))))
+
+(defun semantic-accuracy (team dataset &optional indices)
+  "Return strict hierarchical semantic accuracy for TEAM on DATASET.
+
+When INDICES is supplied, evaluate only those rows. Sampling remains outside
+this function so an entire population can share exactly the same batch."
+  (let ((correct 0)
+        (count 0)
+        (observations (observations dataset))
+        (labels (actions dataset)))
+    (labels ((score-row (index)
+               (when (semantic-action-label-matches-p
+                      (execute-team-semantic team (aref observations index))
+                      (aref labels index))
+                 (incf correct))
+               (incf count)))
+      (if indices
+          (loop for index across indices do (score-row index))
+          (dotimes (index (dataset-size dataset))
+            (score-row index))))
+    (if (zerop count)
+        0.0d0
+        (/ (coerce correct 'double-float)
+           (coerce count 'double-float)))))
+
+(defun make-uniform-dataset-indices (dataset)
+  "Return an unbalanced uniform sample without replacement, or NIL for all rows."
+  (let ((size (dataset-size dataset)))
+    (unless (> size 0)
+      (error "Cannot sample an empty semantic dataset."))
+    (unless (and (integerp *batch-size*) (> *batch-size* 0))
+      (error "*BATCH-SIZE* must be a positive integer."))
+    (when (< *batch-size* size)
+      (let ((chosen (make-hash-table :test #'eql))
+            (indices (make-array *batch-size* :element-type 'fixnum)))
+        (loop until (= (hash-table-count chosen) *batch-size*)
+              do (setf (gethash (random size) chosen) t))
+        (let ((position 0))
+          (maphash (lambda (index ignored)
+                     (declare (ignore ignored))
+                     (setf (aref indices position) index)
+                     (incf position))
+                   chosen))
+        (sort indices #'<)))))
+
+(defun semantic-offline-training-fitness (team)
+  "Evaluate TEAM on the uniform row batch shared by this generation."
+  (unless *offline-training-dataset*
+    (error "Semantic offline training dataset is not configured."))
+  (unless *offline-fitness-batch-indices*
+    (setf *offline-fitness-batch-indices*
+          (or (make-uniform-dataset-indices *offline-training-dataset*)
+              :all)))
+  (semantic-accuracy
+   team
+   *offline-training-dataset*
+   (unless (eq *offline-fitness-batch-indices* :all)
+     *offline-fitness-batch-indices*)))
+
+(defun semantic-offline-reference-fitness (team)
+  "Evaluate TEAM on the complete fixed held-out semantic dataset."
+  (unless *offline-reference-dataset*
+    (error "Semantic offline reference dataset is not configured."))
+  (semantic-accuracy team *offline-reference-dataset*))
+
+(defun semantic-validation-dataset-path (training-path)
+  "Infer the sibling validation path from a semantic training dataset path."
+  (let* ((path (pathname training-path))
+         (name (pathname-name path))
+         (suffix "_train")
+         (validation-name
+           (if (and (>= (length name) (length suffix))
+                    (string= suffix
+                             (subseq name (- (length name)
+                                             (length suffix)))))
+               (concatenate 'string
+                            (subseq name 0 (- (length name) (length suffix)))
+                            "_val")
+               (concatenate 'string name "_val"))))
+    (make-pathname :name validation-name :defaults path)))
+
+(defun dataset-file-fingerprint (dataset)
+  "Return a portable name/byte-size identity for DATASET's source file."
+  (let ((path (pathname (dataset-source-path dataset))))
+    (list :name (file-namestring path)
+          :bytes (with-open-file
+                     (stream path
+                             :direction :input
+                             :element-type '(unsigned-byte 8))
+                   (file-length stream)))))
+
 (defun arithmetic-mean (values)
   "Return the arithmetic mean of VALUES as a double-float."
   (if (null values)
@@ -119,15 +238,44 @@ reference batch."
 (defun make-fitness-function (&key gym-environment-name dataset-name)
   (cond
     (gym-environment-name
+     (setf *offline-training-dataset* nil
+           *offline-reference-dataset* nil
+           *offline-fitness-batch-indices* nil
+           *current-dataset-fingerprint* nil)
      (setf *fitness-fn*
            (lambda (team)
              (online-fitness team gym-environment-name))))
 
     (dataset-name
      (let ((dataset (load-dataset dataset-name)))
-       (setf *fitness-fn*
-             (lambda (team)
-               (accuracy team dataset)))))
+       (if (eq (dataset-action-format dataset) :semantic)
+           (let* ((reference-path
+                    (semantic-validation-dataset-path
+                     (dataset-source-path dataset)))
+                  (reference-file (probe-file reference-path)))
+             (unless reference-file
+               (error "Semantic validation dataset not found: ~A"
+                      (namestring reference-path)))
+             (let ((reference-dataset (load-dataset reference-file)))
+               (unless (eq (dataset-action-format reference-dataset) :semantic)
+                 (error "Semantic validation path contains a legacy dataset: ~A"
+                        (namestring reference-file)))
+               (setf *offline-training-dataset* dataset
+                     *offline-reference-dataset* reference-dataset
+                     *offline-fitness-batch-indices* nil
+                     *current-dataset-fingerprint*
+                       (list :training (dataset-file-fingerprint dataset)
+                             :reference
+                             (dataset-file-fingerprint reference-dataset))
+                     *fitness-fn* #'semantic-offline-training-fitness)))
+           (progn
+             (setf *offline-training-dataset* nil
+                   *offline-reference-dataset* nil
+                   *offline-fitness-batch-indices* nil
+                   *current-dataset-fingerprint* nil)
+             (setf *fitness-fn*
+                   (lambda (team)
+                     (accuracy team dataset)))))))
 
     (t
      (error "Neither GYM-ENVIRONMENT-NAME nor DATASET-NAME was supplied."))))
@@ -159,7 +307,8 @@ reference batch."
   ;; The first CAGE2 team lazily creates a seed list after this reset. Every
   ;; root team reads that same list; the next population evaluation gets a new
   ;; list generated from the search random state.
-  (setf *online-fitness-episode-seeds* nil)
+  (setf *online-fitness-episode-seeds* nil
+        *offline-fitness-batch-indices* nil)
   (let* ((results
            (mapcar (lambda (team)
                      (abort-search-if-requested)
@@ -173,6 +322,17 @@ reference batch."
     (dolist (team bad-teams)
       (delete-team team))
     good-results))
+
+(defun current-reference-fitness (team training-fitness)
+  "Return TEAM's comparable historical score for the active fitness protocol."
+  (cond
+    ((and *current-gym-environment-name*
+          (cl-gym:cage2-environment-p *current-gym-environment-name*))
+     (cage2-reference-fitness team *current-gym-environment-name*))
+    (*offline-reference-dataset*
+     (semantic-offline-reference-fitness team))
+    (t
+     training-fitness)))
 
 (defun select (scores)
   "Remove GAP percent of the population by removing the worst teams.
@@ -208,13 +368,9 @@ through serialization/deserialization and save it to disk."
            (car best-entry))
 
          (historical-candidate-fitness
-           (if (and *current-gym-environment-name*
-                    (cl-gym:cage2-environment-p
-                     *current-gym-environment-name*))
-               (cage2-reference-fitness
-                generation-best-team
-                *current-gym-environment-name*)
-               generation-best))
+           (current-reference-fitness
+            generation-best-team
+            generation-best))
 
          (population-mean
            (arithmetic-mean fitness-values))
@@ -344,7 +500,8 @@ through serialization/deserialization and save it to disk."
          (captured-state (sb-ext:seed-random-state seed)))
     (setf *random-state* captured-state
           *current-gym-environment-name* gym-environment-name
-          *current-search-seed* seed)
+          *current-search-seed* seed
+          *current-dataset-name* (and (eq mode :offline) dataset-name))
 
     (catch 'search-stop-requested
       (setf *teams* nil)
@@ -387,24 +544,33 @@ through serialization/deserialization and save it to disk."
   "Return true when saved FITNESS can be retained for this resumed search.
 
 Known environment or fitness-episode metadata must match.  Missing provenance
-is accepted for non-CAGE2 checkpoints. CAGE2 also requires the reproducible
-reference-fitness protocol tag."
+is accepted for legacy non-CAGE2 checkpoints. CAGE2 requires its reproducible
+seed protocol. Semantic offline checkpoints require the current protocol and
+the same train/reference file fingerprint."
   (and (numberp fitness)
        (let ((saved-environment
                (getf metadata :gym-environment-name))
              (saved-episodes
                (getf metadata :online-fitness-episodes))
              (saved-protocol
-               (getf metadata :fitness-evaluation-protocol)))
+               (getf metadata :fitness-evaluation-protocol))
+             (saved-dataset-fingerprint
+               (getf metadata :dataset-fingerprint)))
          (and (or (null saved-environment)
                   (equal saved-environment gym-environment-name))
-              (or (null saved-episodes)
-                  (= saved-episodes *online-fitness-episodes*))
-              ;; Only retain CAGE2 scores produced by the current fixed
-              ;; checkpoint/reference bank. Older protocols are re-baselined.
-              (or (not (cl-gym:cage2-environment-p gym-environment-name))
-                  (eq saved-protocol
-                      +cage2-online-fitness-protocol+))))))
+              (cond
+                ((cl-gym:cage2-environment-p gym-environment-name)
+                 (and (or (null saved-episodes)
+                          (= saved-episodes *online-fitness-episodes*))
+                      (eq saved-protocol
+                          +cage2-online-fitness-protocol+)))
+                (*offline-reference-dataset*
+                 (and (eq saved-protocol
+                          +semantic-offline-fitness-protocol+)
+                      (equal saved-dataset-fingerprint
+                             *current-dataset-fingerprint*)))
+                (t
+                 t))))))
 
 (defun fitness-values-equivalent-p (left right)
   "Return true when two replayed fitness values agree to floating-point noise."
@@ -419,8 +585,8 @@ reference-fitness protocol tag."
   "Evaluate the warm-start population and initialize historical-best state.
 
 Generation scores use a new shared training batch. Historical-best comparisons
-use the fixed reference seed bank, so a resumed checkpoint remains replayable
-while training continues on changing episodes."
+use the active fixed CAGE2 seed bank or held-out semantic dataset, so a resumed
+checkpoint remains replayable while training continues on changing batches."
   (let* ((scores (evaluate))
          (best-entry (and scores
                           (first (sort (copy-list scores) #'> :key #'cdr))))
@@ -434,24 +600,16 @@ while training continues on changing episodes."
     (let* ((generation-best-team (car best-entry))
            (generation-best-fitness (cdr best-entry))
            (loaded-current-fitness (cdr loaded-entry))
-           (cage2-p
-             (and *current-gym-environment-name*
-                  (cl-gym:cage2-environment-p
-                   *current-gym-environment-name*)))
            (loaded-reference-fitness
-             (if cage2-p
-                 (cage2-reference-fitness
-                  loaded-best-team
-                  *current-gym-environment-name*)
-                 loaded-current-fitness))
+             (current-reference-fitness
+              loaded-best-team
+              loaded-current-fitness))
            (generation-reference-fitness
              (if (eq generation-best-team loaded-best-team)
                  loaded-reference-fitness
-                 (if cage2-p
-                     (cage2-reference-fitness
-                      generation-best-team
-                      *current-gym-environment-name*)
-                     generation-best-fitness))))
+                 (current-reference-fitness
+                  generation-best-team
+                  generation-best-fitness))))
       (when (and (numberp saved-best-fitness)
                  (not (fitness-values-equivalent-p
                        saved-best-fitness
@@ -505,7 +663,8 @@ normal evolution."
          (captured-state (sb-ext:seed-random-state seed)))
     (setf *random-state* captured-state
           *current-gym-environment-name* gym-environment-name
-          *current-search-seed* seed)
+          *current-search-seed* seed
+          *current-dataset-name* (and (eq mode :offline) dataset-name))
 
     (catch 'search-stop-requested
       ;; Fresh island-local state.

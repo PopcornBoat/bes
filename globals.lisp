@@ -29,6 +29,10 @@
   :shared-generation-seeds-reference-153-v2
   "Version tag for generation-shared CAGE2 fitness plus fixed reference scoring.")
 
+(defconstant +semantic-offline-fitness-protocol+
+  :semantic-exact-shared-uniform-reference-v1
+  "Version tag for unbalanced semantic imitation with a fixed held-out reference set.")
+
 (defconstant +inf+ most-positive-fixnum)
 
 (defvar *running* nil
@@ -147,6 +151,21 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 
 (defvar *online-fitness-episode-seeds* nil
   "Episode seeds shared by all CAGE2 candidates in the current evaluation batch.")
+
+(defvar *offline-training-dataset* nil
+  "Semantic dataset used for generation training batches.")
+
+(defvar *offline-reference-dataset* nil
+  "Fixed held-out semantic dataset used to compare historical best teams.")
+
+(defvar *offline-fitness-batch-indices* nil
+  "Uniform row indices shared by all semantic-offline candidates in one generation.")
+
+(defvar *current-dataset-name* nil
+  "Dataset requested for the current offline search.")
+
+(defvar *current-dataset-fingerprint* nil
+  "Portable file-name/size identity for the current semantic train/validation pair.")
 
 (defvar *best-team* nil
   "Best root team seen so far.")

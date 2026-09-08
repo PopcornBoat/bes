@@ -280,11 +280,26 @@ These statistics simplify long-running evolutionary experiments.
 
 ---
 
-## Notes
+## Offline semantic imitation
 
-The original offline imitation-learning workflow provided by **cl-tpg** is currently preserved.
+BES accepts the line-oriented `cage2-semantic-v1` datasets produced by the
+CAGE2 collector. Start an offline search with the `_train.lisp` file, 52
+observations, and 11 actions. BES automatically loads the sibling `_val.lisp`
+file as the fixed reference dataset. For example,
+`cage2_bline_semantic_train.lisp` is paired with
+`cage2_bline_semantic_val.lisp`.
 
-Research on reward-based offline fitness and additional offline learning strategies is ongoing but has **not** yet been integrated into the main evolutionary workflow.
+Each generation uses one uniform, unbalanced training-row sample shared by all
+candidates. Semantic accuracy follows the bridge contract: GLOBAL compares only
+the target; host actions compare target and response; Decoy additionally
+compares its option. The complete held-out file supplies the stable reference
+fitness used for best-team selection and checkpoint replay. Checkpoints record
+the semantic fitness protocol and dataset file fingerprints, so a resume against
+different files is re-baselined rather than compared to an incompatible score.
+
+Legacy atomic-action datasets retain their original loading and accuracy
+behavior. Reward-based offline fitness and richer state inputs remain future
+work.
 
 ---
 
@@ -295,7 +310,7 @@ Current research focuses on applying BES/TPG to autonomous cyber defence using t
 Currently implemented components include:
 
 - Online evolutionary training
-- Offline imitation learning (original implementation)
+- Offline imitation learning for legacy atomic and CAGE2 semantic datasets
 - Automatic best-team checkpointing
 - Warm-start resume search
 - Validation framework
