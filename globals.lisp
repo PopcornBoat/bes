@@ -19,6 +19,16 @@
 (defconstant +num-semantic-targets+ 11
   "Number of targets in the hierarchical CAGE2 policy output.")
 
+(defconstant +cage2-raw-observation-size+ 52
+  "Number of raw values produced by the official CAGE2 ChallengeWrapper.")
+
+(defconstant +cage2-scan-state-size+ 10
+  "Number of episode-local host scan-state values appended by the bridge.")
+
+(defconstant +cage2-observation-size+
+  (+ +cage2-raw-observation-size+ +cage2-scan-state-size+)
+  "CAGE2 policy input size after bridge-side scan-state augmentation.")
+
 (defconstant +global-target+ 0
   "Target value representing the global Monitor action.")
 

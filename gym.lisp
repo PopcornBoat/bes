@@ -113,8 +113,14 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
 (defun execute-policy-action (root-team observation environment-name)
   "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
   (if (cage2-environment-p environment-name)
-      (semantic-action->cage2-input
-       (cl-tpg:execute-team-semantic root-team observation))
+      (progn
+        (unless (= (length observation) cl-tpg::+cage2-observation-size+)
+          (error
+           "Expected ~D bridge-augmented CAGE2 observations, got ~D. Update/install the scan-state custom-gym-for-bes bridge."
+           cl-tpg::+cage2-observation-size+
+           (length observation)))
+        (semantic-action->cage2-input
+         (cl-tpg:execute-team-semantic root-team observation)))
       (cl-tpg:execute-team root-team observation)))
 
 (defun make (environment-name &key (video-path nil))

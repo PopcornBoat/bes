@@ -10,6 +10,10 @@
   (unless condition
     (error "Semantic offline check failed: ~A" description)))
 
+(check-semantic-offline
+ (= cl-tpg::+cage2-observation-size+ 62)
+ "CAGE2 bridge observation size includes ten scan states")
+
 (flet ((matches (prediction label)
          (cl-tpg::semantic-action-label-matches-p prediction label)))
   (check-semantic-offline
