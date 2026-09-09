@@ -828,7 +828,7 @@
                        (:instruction-count ,instruction-count)
                        (:max-team-size ,max-team-size)
                        (:max-program-size ,max-program-size)))
-        (setq data (plist-put data (first entry) (second entry))))
+        (setq data (plist-put data (car entry) (cadr entry))))
       data)
     tpg-data)))
 
