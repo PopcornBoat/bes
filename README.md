@@ -176,49 +176,7 @@ The Gymnasium bridge currently used in this project is available here:
 
 https://github.com/PopcornBoat/custom-gym-for-bes
 
-With the `cage2-mini` bridge integration, online CAGE2 training can use the
-faster backend by selecting one of:
-
-- `Cage2Mini-b_line-100-v0`
-- `Cage2Mini-meander-100-v0`
-- `Cage2Mini-sleep-100-v0`
-
-These environments retain BES's semantic `[target, response, option]` policy
-interface. The bridge translates it to the concrete `0..144` action consumed
-by `cage2-mini`. The existing `Cage2-*` environments remain available for
-official-CybORG validation.
-
----
-
-## 5. Native Lisp CAGE2 Backend
-
-BES can train and validate without per-step Python/Py4CL2 communication by
-selecting the independent native backend:
-
-- `Cage2Lisp-b_line-100-v0`
-- `Cage2Lisp-meander-100-v0`
-- `Cage2Lisp-sleep-100-v0`
-
-The Lisp environment is pinned under `vendor/cage2-mini` and is loaded
-automatically with the BES ASDF system. Clone with submodules, or initialize an
-existing checkout:
-
-```powershell
-git submodule update --init --recursive
-```
-
-The training and resume menus expose the native environment names. The
-validation menu offers `cage2-lisp` alongside normal `cage2`. BES continues
-to use 52 observations and 11 semantic terminal targets; the native adapter
-translates each semantic output to one of the environment's 145 concrete
-actions.
-
-See [`docs/native-cage2.md`](docs/native-cage2.md) for setup, menu choices,
-resume semantics, validation, reproducibility, and tests.
-
----
-
-## 6. Python Interpreter Management
+## 5. Python Interpreter Management
 
 The framework supports switching between multiple Python environments directly from the Emacs interface.
 
@@ -242,7 +200,7 @@ This allows multiple CybORG codebases to coexist without compatibility issues.
 
 ---
 
-## 7. Improved Emacs Interface
+## 6. Improved Emacs Interface
 
 The Emacs frontend has been extended with several new utilities.
 
@@ -265,7 +223,7 @@ Interactive TAB completion is supported for:
 
 ---
 
-## 8. Dashboard Improvements
+## 7. Dashboard Improvements
 
 Additional runtime statistics have been added to the dashboard.
 
@@ -283,6 +241,10 @@ These statistics simplify long-running evolutionary experiments.
 ## Notes
 
 The original offline imitation-learning workflow provided by **cl-tpg** is currently preserved.
+
+Offline runs require finite learner and program limits; the Emacs defaults are
+11 learners per team and 128 instructions per program to prevent unbounded
+policy growth and GC exhaustion.
 
 Research on reward-based offline fitness and additional offline learning strategies is ongoing but has **not** yet been integrated into the main evolutionary workflow.
 
