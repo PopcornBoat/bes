@@ -272,7 +272,7 @@
             "*env=none"
            
             "*population-size=160"
-            "*num-observations=52"
+            "*num-observations=62"
             "*num-actions=11"
             "*init-num-learners=3"
             "*max-num-learners=32"
@@ -394,7 +394,7 @@
           (string-to-number
            (read-string
             "Number of observations: "
-            "52")))
+            "62")))
 
          (num-actions
           (string-to-number
