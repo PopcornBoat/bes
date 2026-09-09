@@ -13,12 +13,20 @@
 			   collect (make-team))))
 
 (defun accuracy (team dataset)
-  (let ((predictions (execute-team-on-dataset team dataset))
-	(actuals (actions dataset)))
-    (/ (loop for actual across actuals
-	  for predicted in predictions
-	     count (= actual predicted))
-       (length actuals))))
+  "Evaluate atomic-action accuracy without retaining all predictions."
+  (let ((correct 0)
+        (count 0))
+    (loop for observation across (observations dataset)
+          for actual across (actions dataset)
+          do (when (and *search-active*
+                        (zerop (logand count 255)))
+               (abort-search-if-requested))
+             (when (= actual (execute-team team observation))
+               (incf correct))
+             (incf count))
+    (if (zerop count)
+        0
+        (/ correct count))))
 
 (defun arithmetic-mean (values)
   "Return the arithmetic mean of VALUES as a double-float."
