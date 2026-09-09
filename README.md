@@ -238,10 +238,25 @@ These statistics simplify long-running evolutionary experiments.
 
 ---
 
+## CAGE2 scan-state observations
+
+The official CAGE2 bridge supplies 62 policy inputs: the original 52-value
+observation followed by ten episode-local scan-history values in target order:
+Defender, Enterprise0-2, Op_Server0, and User0-4. `0` means unseen, `1` means
+scanned previously, and `2` identifies the most recently detected scan. The
+bridge initializes the state to zero, consumes and maintains it throughout one
+episode, and clears it at the episode boundary. BES receives the completed
+62-value vector and performs no CAGE2-specific state extraction itself.
+
+Online training, offline collection, and validation must all use the same
+scan-state bridge version. Episode and step indices are not included.
+
+---
+
 ## Offline semantic imitation
 
 BES accepts the line-oriented `cage2-semantic-v1` datasets produced by the
-CAGE2 collector. Start an offline search with the `_train.lisp` file, 52
+CAGE2 collector. Start an offline search with the `_train.lisp` file, 62
 observations, and 11 actions. BES automatically loads the sibling `_val.lisp`
 file as the fixed reference dataset. For example,
 `cage2_bline_semantic_train.lisp` is paired with
@@ -275,22 +290,6 @@ incompatible score.
 Legacy atomic-action datasets retain their original loading and accuracy
 behavior. Reward-based offline fitness and richer state inputs remain future
 work.
-
-### Episode/step context capability test
-
-The `episode-step-observations` branch can train on a derived 54-input dataset:
-the original 52 CAGE2 values followed by raw episode index and raw step index.
-Set `Number of Observations` to `54`, keep `Number of Actions` at `11`, and
-select the derived `_train.lisp` file. Use a fresh checkpoint directory.
-The start and resume prompts default to 54 observations on this branch. If you
-switch back to normal online training, explicitly restore the value to 52.
-
-This layout is an experimental policy contract. On this branch only, CAGE2
-validation appends its zero-based episode index and zero-based rollout step to
-the original 52 values before executing the team. In `single-red-full`, the
-episode index resets to zero for each 30-, 50-, and 100-step block, matching the
-collector's per-horizon indexing. The Python environment itself remains
-unchanged. Normal online training still uses the base 52-value contract.
 
 ---
 

@@ -272,7 +272,7 @@
             "*env=none"
            
             "*population-size=160"
-            "*num-observations=54"
+            "*num-observations=62"
             "*num-actions=11"
             "*init-num-learners=3"
             "*max-num-learners=32"
@@ -280,7 +280,7 @@
             "*batch-size=1000"
             "*online-fitness-episodes=5"
             "*seed=random"
-            "--mode=offline")
+            "--mode=online")
   ["Island"
     ("-I" "Island" "--island="
     :choices ("all" "0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15"))]
@@ -394,7 +394,7 @@
           (string-to-number
            (read-string
             "Number of observations: "
-            "54")))
+            "62")))
 
          (num-actions
           (string-to-number

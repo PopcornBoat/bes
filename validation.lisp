@@ -27,18 +27,11 @@ Python environment reset without changing randomness after validation."
            +cage2-evaluation-seed+)))
 
 (defun run-validation-rollouts (team gym-environment-name episodes)
-  "Run TEAM in GYM-ENVIRONMENT-NAME for EPISODES episodes.
-
-On this capability-test branch, CAGE2 validation appends the zero-based episode
-index here and the rollout's zero-based step index to each 52-value observation."
-  (loop for episode-index below episodes
+  "Run TEAM in GYM-ENVIRONMENT-NAME for EPISODES episodes."
+  (loop repeat episodes
         collect (cl-gym:rollout team
                                 gym-environment-name
-                                (random 9999999)
-                                :episode-index
-                                (and (cl-gym:cage2-environment-p
-                                      gym-environment-name)
-                                     episode-index))))
+                                (random 9999999))))
 
 (defun emit-validation-result (label scores)
   "Emit one validation result line."
@@ -178,9 +171,10 @@ CAGE3 MODE:
       (seed-cage2-evaluation)
       (emit-message
        (format nil
-               "CAGE2 validation context enabled: ~D base observations + episode index + step index = ~D inputs."
-               +cage2-base-observation-size+
-               +cage2-context-observation-size+)))
+               "CAGE2 scan-state observations enabled: ~D raw + ~D scan-state = ~D inputs."
+               +cage2-raw-observation-size+
+               +cage2-scan-state-size+
+               +cage2-observation-size+)))
 
     (let ((team (load-best-team best-team-path)))
       (emit-message

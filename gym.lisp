@@ -110,46 +110,17 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
       (t
        (list target response-index 0)))))
 
-(defun cage2-context-observation (observation episode-index step-index)
-  "Append raw validation EPISODE-INDEX and STEP-INDEX to a CAGE2 observation.
-
-The collector uses the same zero-based values at positions 52 and 53. This is
-branch-local capability-test behavior; the Python environment remains unchanged."
-  (unless (and (typep observation '(simple-array double-float (*)))
-               (= (length observation)
-                  cl-tpg::+cage2-base-observation-size+))
-    (error "Expected a ~D-value CAGE2 observation, got ~S."
-           cl-tpg::+cage2-base-observation-size+
-           observation))
-  (unless (and (integerp episode-index) (>= episode-index 0)
-               (integerp step-index) (>= step-index 0))
-    (error "CAGE2 context indices must be non-negative integers, got ~S/~S."
-           episode-index
-           step-index))
-  (let ((context-observation
-          (make-array cl-tpg::+cage2-context-observation-size+
-                      :element-type 'double-float)))
-    (replace context-observation observation)
-    (setf (aref context-observation
-                cl-tpg::+cage2-base-observation-size+)
-            (coerce episode-index 'double-float)
-          (aref context-observation
-                (1+ cl-tpg::+cage2-base-observation-size+))
-            (coerce step-index 'double-float))
-    context-observation))
-
-(defun execute-policy-action
-       (root-team observation environment-name
-        &key episode-index step-index)
+(defun execute-policy-action (root-team observation environment-name)
   "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
   (if (cage2-environment-p environment-name)
-      (semantic-action->cage2-input
-       (cl-tpg:execute-team-semantic
-        root-team
-        (if (and episode-index step-index)
-            (cage2-context-observation
-             observation episode-index step-index)
-            observation)))
+      (progn
+        (unless (= (length observation) cl-tpg::+cage2-observation-size+)
+          (error
+           "Expected ~D bridge-augmented CAGE2 observations, got ~D. Update/install the scan-state custom-gym-for-bes bridge."
+           cl-tpg::+cage2-observation-size+
+           (length observation)))
+        (semantic-action->cage2-input
+         (cl-tpg:execute-team-semantic root-team observation)))
       (cl-tpg:execute-team root-team observation)))
 
 (defun make (environment-name &key (video-path nil))
@@ -173,9 +144,7 @@ branch-local capability-test behavior; the Python environment remains unchanged.
       (py4cl2:pymethod env "step" action)
     (values (normalize-obs obs) rew term trunc info)))
 
-(defun rollout-python
-       (root-team environment-name seed
-        &key (video-path nil) episode-index)
+(defun rollout-python (root-team environment-name seed &key (video-path nil))
   "Run one complete episode.
 
 Supports:
@@ -201,9 +170,7 @@ Supports:
                               (execute-policy-action
                                root-team
                                observation
-                               environment-name
-                               :episode-index episode-index
-                               :step-index timestep))))
+                               environment-name))))
                     (multiple-value-bind (obs rew term trunc info)
                         (step env action)
                       (declare (ignore info))
@@ -218,14 +185,9 @@ Supports:
           (rename-file "rl-video-episode-0.mp4" video-path))))
     episode-reward))
 
-(defun rollout
-       (root-team environment-name seed
-        &key (video-path nil) episode-index)
+(defun rollout (root-team environment-name seed &key (video-path nil))
   "Run a rollout through the Python Gymnasium bridge."
-  (rollout-python
-   root-team environment-name seed
-   :video-path video-path
-   :episode-index episode-index))
+  (rollout-python root-team environment-name seed :video-path video-path))
 
 (defun cl-gym-validate-team (team gym-environment-name &optional seed)
   "Run TEAM in a validation Gym environment.
