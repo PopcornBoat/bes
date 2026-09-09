@@ -68,31 +68,40 @@ Every learner program executes once per visited team and bids through register
 0 as before. A winning team-reference action recursively continues traversal.
 Only the learner that finally wins with an atomic target contributes registers
 to the semantic policy output; intermediate winners' registers are discarded."
-  (labels ((traverse (current visited)
+  (labels ((traverse (current visited depth)
+             (when (>= depth +max-team-traversal-depth+)
+               (error "TPG traversal exceeded the ~D-team safety limit."
+                      +max-team-traversal-depth+))
              (when (member current visited :test #'eq)
                (error "Cycle encountered while executing TPG at team ~A."
                       (team-id current)))
              (let ((winner nil)
                    (winning-bid nil)
-                   (winning-registers nil))
+                   (winning-registers
+                     (make-array +num-registers+
+                                 :element-type 'double-float))
+                   (register-buffer
+                     (make-array +num-registers+
+                                 :element-type 'double-float)))
                ;; Retain only the current winner instead of allocating an
                ;; evaluation triple and list for every learner on every row.
                (dolist (learner (team-learners current))
                  (multiple-value-bind (learner-bid registers)
-                     (bid learner observation)
+                     (bid learner observation register-buffer)
                    (when (or (null winner)
                              (> learner-bid winning-bid))
                      (setf winner learner
-                           winning-bid learner-bid
-                           winning-registers registers))))
+                           winning-bid learner-bid)
+                     (replace winning-registers registers))))
                (unless winner
                  (error "Cannot execute empty team ~A." (team-id current)))
                (let ((act (learner-action winner)))
                  (if (eq (action-type act) :atomic)
                      (values winner winning-registers)
                      (traverse (action-action act)
-                               (cons current visited)))))))
-    (traverse team nil)))
+                               (cons current visited)
+                               (1+ depth)))))))
+    (traverse team nil 0)))
 
 (defun execute-team (team observation)
   "Execute TEAM and return the final terminal learner's atomic target.
@@ -146,6 +155,54 @@ Python bridge must later translate this output into a concrete CAGE2 action."
 		       (traverse (action-action act))))))))
       (traverse team))
     (alexandria:hash-table-keys visited)))
+
+(defun teams-complexity (teams)
+  "Return team, learner, instruction, max-team, and max-program counts."
+  (let ((team-count 0)
+        (learner-count 0)
+        (instruction-count 0)
+        (max-team-size 0)
+        (max-program-size 0))
+    (dolist (team teams)
+      (let ((team-size (length (team-learners team))))
+        (incf team-count)
+        (incf learner-count team-size)
+        (setf max-team-size (max max-team-size team-size))
+        (dolist (learner (team-learners team))
+          (let ((program-size
+                  (length
+                   (program-instructions (learner-program learner)))))
+            (incf instruction-count program-size)
+            (setf max-program-size
+                  (max max-program-size program-size))))))
+    (values team-count learner-count instruction-count
+            max-team-size max-program-size)))
+
+(defun team-complexity (team)
+  "Return complexity counts for the graph reachable from TEAM."
+  (teams-complexity (closure team)))
+
+(defun policy-complexity-key (team)
+  "Return a lexicographic parsimony key for TEAM's reachable graph."
+  (multiple-value-bind
+        (teams learners instructions max-team max-program)
+      (team-complexity team)
+    (declare (ignore max-team max-program))
+    (list instructions learners teams)))
+
+(defun emit-policy-limit-warning (team)
+  "Warn when a loaded policy already exceeds the configured hard limits."
+  (multiple-value-bind
+        (teams learners instructions max-team max-program)
+      (team-complexity team)
+    (when (or (> max-team *max-num-learners*)
+              (> max-program *max-program-size*))
+      (emit-message
+       (format nil
+               "Warm-start policy exceeds configured limits: teams=~D learners=~D instructions=~D max-team=~D/~D max-program=~D/~D. Existing structure is preserved, but future additions obey the limits."
+               teams learners instructions
+               max-team *max-num-learners*
+               max-program *max-program-size*)))))
 
 (defun creates-cycle-p (current-team target-team)
   "Returns T if the target-team has a path back to current-team."

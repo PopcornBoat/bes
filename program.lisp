@@ -27,19 +27,24 @@
     (make-program
      :instructions (copy-program-instructions instructions))))
 
-(defun execute-program (program observations)
+(defun execute-program (program observations &optional register-buffer)
   "Given an encoded program and a double-array of OBSERVATIONS
-  representing the state. Execute the program and return its
-  registers."
+  representing the state. Execute the program and return its registers.
+
+When REGISTER-BUFFER is supplied, reset and reuse it to avoid allocating one
+register vector for every learner bid."
   (declare (optimize (speed 3) (safety 0) (debug 0))
 	   (type (simple-array double-float (*)) observations)
            (type program program))
   (let* ((instructions (program-instructions program))
-         (registers (make-array +num-registers+
-                               :element-type 'double-float
-                               :initial-element 0.0d0)))
+         (registers
+           (or register-buffer
+               (make-array +num-registers+
+                           :element-type 'double-float
+                           :initial-element 0.0d0))))
     (declare (type (simple-array double-float (*)) registers)
              (type (vector t *) instructions))
+    (fill registers 0.0d0)
     
     (loop for ins across instructions do
       (let* ((op   (instruction-op ins))

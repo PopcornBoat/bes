@@ -17,14 +17,15 @@
 		:program (deserialize-program (getf data :program))
 		:action (deserialize-action (getf data :action) registry)))
 
-(defun bid (learner observations)
+(defun bid (learner observations &optional register-buffer)
   "Execute LEARNER and return its bid and register array as two values.
 
 +BID-REGISTER+ remains the confidence bid. The second value lets traversal
 preserve the final terminal winner's registers without executing it twice;
 existing callers that consume only the primary bid value remain compatible."
   (let ((registers
-          (execute-program (learner-program learner) observations)))
+          (execute-program
+           (learner-program learner) observations register-buffer)))
     (values (aref registers +bid-register+) registers)))
 
 (defun clone-learner (learner)
