@@ -242,9 +242,17 @@ These statistics simplify long-running evolutionary experiments.
 
 The original offline imitation-learning workflow provided by **cl-tpg** is currently preserved.
 
-Offline runs require finite learner and program limits; the Emacs defaults are
-11 learners per team and 128 instructions per program to prevent unbounded
-policy growth and GC exhaustion.
+Online and offline runs require finite learner and program limits. The Emacs
+defaults use hard ceilings of 32 learners per team and 256 instructions per
+program. Growth pressure begins tapering above soft thresholds of 11 learners
+and 128 instructions, while every size below the hard ceiling remains
+reachable.
+
+Above each soft threshold, the corresponding addition probability follows an
+inverse-square taper. Exact fitness ties prefer fewer instructions, then fewer
+learners, then fewer reachable teams; a policy with better fitness is never
+discarded merely because it is larger. The dashboard reports population
+complexity, and oversized warm-start policies are preserved with a warning.
 
 Research on reward-based offline fitness and additional offline learning strategies is ongoing but has **not** yet been integrated into the main evolutionary workflow.
 

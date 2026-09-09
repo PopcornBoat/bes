@@ -115,7 +115,8 @@ The special key :LOCAL always resolves dynamically to the current machine IP.")
         population-median
         population-worst
         generation
-        &key online-fitness-episodes)
+        &key online-fitness-episodes team-count learner-count
+          instruction-count max-team-size max-program-size)
   "Send generation-level and population-level fitness statistics
 to the telemetry client."
   (let ((payload
@@ -138,6 +139,12 @@ to the telemetry client."
 
              :online-fitness-episodes
              ,online-fitness-episodes
+
+             :team-count ,team-count
+             :learner-count ,learner-count
+             :instruction-count ,instruction-count
+             :max-team-size ,max-team-size
+             :max-program-size ,max-program-size
 
              :from
              ,island-id
@@ -397,11 +404,10 @@ return their fixed configured addresses."
 
     (format t "~S~%" msg)
 
-    (when (and (eq mode :offline)
-               (or (eq max-num-learners :inf)
-                   (eq max-program-size :inf)))
+    (when (or (eq max-num-learners :inf)
+              (eq max-program-size :inf))
       (emit-error
-       "Offline training requires finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
+       "Online and offline training require finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
       (return-from handle-start-search))
 
     (emit-message
@@ -578,11 +584,10 @@ return their fixed configured addresses."
       (emit-error "No best-team-path provided for resume-search.")
       (return-from handle-resume-search))
 
-    (when (and (eq mode :offline)
-               (or (eq max-num-learners :inf)
-                   (eq max-program-size :inf)))
+    (when (or (eq max-num-learners :inf)
+              (eq max-program-size :inf))
       (emit-error
-       "Offline training requires finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
+       "Online and offline training require finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
       (return-from handle-resume-search))
 
     (unless checkpoint-directory
