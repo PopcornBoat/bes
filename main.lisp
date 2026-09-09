@@ -59,6 +59,12 @@ this function so an entire population can share exactly the same batch."
         (observations (observations dataset))
         (labels (actions dataset)))
     (labels ((score-row (index)
+               ;; Reference scoring can cover tens of thousands of rows. Check
+               ;; periodically so a stop request does not wait for the complete
+               ;; held-out dataset to finish.
+               (when (and *search-active*
+                          (zerop (logand count 255)))
+                 (abort-search-if-requested))
                (when (semantic-action-label-matches-p
                       (execute-team-semantic team (aref observations index))
                       (aref labels index))

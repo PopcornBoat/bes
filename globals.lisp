@@ -105,7 +105,7 @@ search and turn this flag back on.")
 
 (defparameter *max-program-size* 
   "The maximum number of instructions in a program.
-   Recommended value: inf")
+   Recommended value: 128 for offline semantic training.")
 
 (defparameter *p-add-instr* 
   "The probability that a new instruction is added when mutating a program.
@@ -141,7 +141,7 @@ search and turn this flag back on.")
   "The number of generations to wait between sending migrants.")
 
 (defparameter *batch-size* 1000
-  "The number of generations to wait between sending migrants.")
+  "The number of dataset rows sampled per offline generation.")
 
 (defparameter *online-fitness-episodes* 1
   "Number of complete episodes used to evaluate one team in online mode.
