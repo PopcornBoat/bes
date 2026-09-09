@@ -238,10 +238,25 @@ These statistics simplify long-running evolutionary experiments.
 
 ---
 
+## CAGE2 scan-state observations
+
+The official CAGE2 bridge supplies 62 policy inputs: the original 52-value
+observation followed by ten episode-local scan-history values in target order:
+Defender, Enterprise0-2, Op_Server0, and User0-4. `0` means unseen, `1` means
+scanned previously, and `2` identifies the most recently detected scan. The
+bridge initializes the state to zero, consumes and maintains it throughout one
+episode, and clears it at the episode boundary. BES receives the completed
+62-value vector and performs no CAGE2-specific state extraction itself.
+
+Online training, offline collection, and validation must all use the same
+scan-state bridge version. Episode and step indices are not included.
+
+---
+
 ## Offline semantic imitation
 
 BES accepts the line-oriented `cage2-semantic-v1` datasets produced by the
-CAGE2 collector. Start an offline search with the `_train.lisp` file, 52
+CAGE2 collector. Start an offline search with the `_train.lisp` file, 62
 observations, and 11 actions. BES automatically loads the sibling `_val.lisp`
 file as the fixed reference dataset. For example,
 `cage2_bline_semantic_train.lisp` is paired with

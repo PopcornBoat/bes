@@ -355,12 +355,12 @@ return their fixed configured addresses."
 	 (:offline (and dataset-name
 			(not (eq dataset-name :none))
 			(eq gym-environment-name :none))))
-       ;; The semantic CAGE2 bridge requires 52 observations and 11 targets.
+       ;; The semantic CAGE2 bridge supplies 52 raw values plus ten scan states.
        (or (not (and (stringp gym-environment-name)
                      (search "Cage2" gym-environment-name)))
            (and (integerp num-observations)
                 (integerp num-actions)
-                (= num-observations 52)
+                (= num-observations +cage2-observation-size+)
                 (= num-actions +num-semantic-targets+)))))
 
 (defun who-am-i ()
