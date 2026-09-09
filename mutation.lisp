@@ -2,9 +2,24 @@
 
 (in-package :cl-tpg)
 
-(defun add-instruction-p ()
-  "Returns T with *p-add* likelihood."
-  (coin-flip *p-add-instr*))
+(defun soft-growth-probability (base-probability current-size soft-size)
+  "Reduce growth pressure smoothly above SOFT-SIZE without forbidding growth.
+
+The inverse-square taper keeps every size below the hard limit reachable, but
+causes additions and deletions to approach neutral expected drift rather than
+allowing permanent positive bloat pressure."
+  (if (<= current-size soft-size)
+      base-probability
+      (* base-probability
+         (expt (/ (coerce soft-size 'double-float)
+                  (coerce current-size 'double-float))
+               2))))
+
+(defun add-instruction-p (current-size)
+  "Return true using soft-limited instruction-addition pressure."
+  (coin-flip
+   (soft-growth-probability
+    *p-add-instr* current-size *soft-program-size*)))
 
 (defun delete-instruction-p ()
   "Returns T with *p-del* likelihood."
@@ -99,7 +114,8 @@
   "Mutate a program by adding/deleting/swapping instructions
    or mutating constants with likelihood *p-mut*."
   (when (mutate-program-p)
-    (when (add-instruction-p)
+    (when (add-instruction-p
+           (length (program-instructions program)))
       (add-instruction program))
     (when (delete-instruction-p)
       (delete-instruction program))
@@ -110,9 +126,11 @@
   program)
   					; team mutations
 
-(defun add-learner-p ()
-  "Returns T with likelihood *p-add*."
-  (coin-flip *p-add*))
+(defun add-learner-p (current-size)
+  "Return true using soft-limited learner-addition pressure."
+  (coin-flip
+   (soft-growth-probability
+    *p-add* current-size *soft-num-learners*)))
 
 (defun delete-learner-p ()
   "Returns T with likelihood *p-del*."
@@ -200,7 +218,7 @@
   "Mutate a team by swapping the actions of two randomly chosen learners,
    or by adding learners, by removing learners, changing learners' actions
    or by mutating the learners' programs."
-  (when (add-learner-p)
+  (when (add-learner-p (length (team-learners team)))
     (add-learner team))
   (when (delete-learner-p)
     (delete-learner team))

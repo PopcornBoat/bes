@@ -182,6 +182,35 @@ reference batch."
       (delete-team team))
     good-results))
 
+(defun current-reference-fitness (team training-fitness)
+  "Return TEAM's comparable historical score for the active fitness protocol."
+  (if (not (and *current-gym-environment-name*
+                (cl-gym:cage2-environment-p
+                 *current-gym-environment-name*)))
+        training-fitness
+        (let ((started (get-internal-real-time)))
+          (emit-message
+           (format nil
+                   "Generation ~D CAGE2 reference evaluation started."
+                   *generation*))
+          (let ((result (cage2-reference-fitness
+                         team *current-gym-environment-name*)))
+            (emit-message
+             (format nil
+                     "Generation ~D CAGE2 reference evaluation finished in ~,2F seconds."
+                     *generation*
+                     (/ (- (get-internal-real-time) started)
+                        (coerce internal-time-units-per-second
+                                'double-float))))
+            result)))))
+
+(defun complexity-key-less-p (left right)
+  "Return true when lexicographic complexity key LEFT is smaller than RIGHT."
+  (loop for left-value in left
+        for right-value in right
+        when (< left-value right-value) do (return t)
+        when (> left-value right-value) do (return nil)
+        finally (return nil)))
 (defun select (scores)
   "Remove GAP percent of the population by removing the worst teams.
 
@@ -192,8 +221,22 @@ through serialization/deserialization and save it to disk."
   (unless scores
     (error "Cannot select from an empty score list."))
 
-  (let* ((sorted
-           (sort (copy-list scores) #'> :key #'cdr))
+  (let* ((complexities (make-hash-table :test #'eq))
+         (sorted
+           (progn
+             (dolist (entry scores)
+               (setf (gethash (car entry) complexities)
+                     (policy-complexity-key (car entry))))
+             (stable-sort
+              (copy-list scores)
+              (lambda (left right)
+                (let ((left-fitness (cdr left))
+                      (right-fitness (cdr right)))
+                  (if (= left-fitness right-fitness)
+                      (complexity-key-less-p
+                       (gethash (car left) complexities)
+                       (gethash (car right) complexities))
+                      (> left-fitness right-fitness)))))))
 
          (fitness-values
            (mapcar #'cdr sorted))
@@ -216,13 +259,8 @@ through serialization/deserialization and save it to disk."
            (car best-entry))
 
          (historical-candidate-fitness
-           (if (and *current-gym-environment-name*
-                    (cl-gym:cage2-environment-p
-                     *current-gym-environment-name*))
-               (cage2-reference-fitness
-                generation-best-team
-                *current-gym-environment-name*)
-               generation-best))
+           (current-reference-fitness
+            generation-best-team generation-best))
 
          (population-mean
            (arithmetic-mean fitness-values))
@@ -277,16 +315,24 @@ through serialization/deserialization and save it to disk."
     ;; Telemetry
     ;; ------------------------------------------------------------
 
-    (emit-fitness-scores
-     (who-am-i)
-     generation-best
-     *best-fitness*
-     population-mean
-     population-median
-     population-worst
-     *generation*
-     :online-fitness-episodes
-     *online-fitness-episodes*)
+    (multiple-value-bind
+          (team-count learner-count instruction-count
+           max-team-size max-program-size)
+        (teams-complexity *teams*)
+      (emit-fitness-scores
+       (who-am-i)
+       generation-best
+       *best-fitness*
+       population-mean
+       population-median
+       population-worst
+       *generation*
+       :online-fitness-episodes *online-fitness-episodes*
+       :team-count team-count
+       :learner-count learner-count
+       :instruction-count instruction-count
+       :max-team-size max-team-size
+       :max-program-size max-program-size))
 
     ;; ------------------------------------------------------------
     ;; Selection
@@ -534,6 +580,7 @@ normal evolution."
             (loaded-best-team saved-best-fitness checkpoint-metadata)
           (load-best-team best-team-path)
         (inject-loaded-best-team-into-population loaded-best-team)
+        (emit-policy-limit-warning loaded-best-team)
 
         (let ((comparable-fitness
                 (and (checkpoint-fitness-comparable-p
