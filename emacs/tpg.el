@@ -262,7 +262,7 @@
             "*p-act=0.2"
             "*p-swap=0.1"
             "*init-program-size=100"
-            "*max-program-size=128"
+            "*max-program-size=256"
             "*gap=0.5"
             "*p-add-instr=0.9"
             "*p-del-instr=0.5"
@@ -275,7 +275,7 @@
             "*num-observations=54"
             "*num-actions=11"
             "*init-num-learners=3"
-            "*max-num-learners=11"
+            "*max-num-learners=32"
             "*migration-interval=50"
             "*batch-size=1000"
             "*online-fitness-episodes=5"
@@ -418,7 +418,7 @@
           (string-to-number-or-inf
            (read-string
             "Maximum number of learners: "
-            "11")))
+            "32")))
 
          (p-add
           (string-to-number
@@ -466,7 +466,7 @@
           (string-to-number-or-inf
            (read-string
             "Maximum program size: "
-            "128")))
+            "256")))
 
          (p-add-instr
           (string-to-number
@@ -650,6 +650,11 @@
          ("Worst" 12 t)
          ("Fit Eps" 8 t)
          ("Generation" 10 t)
+         ("Teams" 7 t)
+         ("Learners" 9 t)
+         ("Instrs" 10 t)
+         ("Max Team" 10 t)
+         ("Max Prog" 10 t)
          ("CPU" 8 t)
          ("Mem" 8 t)])
 
@@ -719,6 +724,16 @@
                    (plist-get data :generation)
                    "-"))
 
+          (format "%s" (or (plist-get data :team-count) "-"))
+
+          (format "%s" (or (plist-get data :learner-count) "-"))
+
+          (format "%s" (or (plist-get data :instruction-count) "-"))
+
+          (format "%s" (or (plist-get data :max-team-size) "-"))
+
+          (format "%s" (or (plist-get data :max-program-size) "-"))
+
           (format "%.1f"
                   (or
                    (plist-get data :cpu)
@@ -765,7 +780,13 @@
         (plist-get msg :ONLINE-FITNESS-EPISODES))
 
        (generation
-        (plist-get msg :GENERATION)))
+        (plist-get msg :GENERATION))
+
+       (team-count (plist-get msg :TEAM-COUNT))
+       (learner-count (plist-get msg :LEARNER-COUNT))
+       (instruction-count (plist-get msg :INSTRUCTION-COUNT))
+       (max-team-size (plist-get msg :MAX-TEAM-SIZE))
+       (max-program-size (plist-get msg :MAX-PROGRAM-SIZE)))
 
    (puthash
 
@@ -800,10 +821,15 @@
 
    (puthash
     from-id
-    (plist-put
-     (gethash from-id tpg-data)
-     :generation
-     generation)
+    (let ((data (gethash from-id tpg-data)))
+      (dolist (entry `((:generation ,generation)
+                       (:team-count ,team-count)
+                       (:learner-count ,learner-count)
+                       (:instruction-count ,instruction-count)
+                       (:max-team-size ,max-team-size)
+                       (:max-program-size ,max-program-size)))
+        (setq data (plist-put data (first entry) (second entry))))
+      data)
     tpg-data)))
 
        ((eq type :MESSAGE)

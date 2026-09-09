@@ -31,6 +31,9 @@
 (defconstant +cage2-evaluation-seed+ 153
   "Root seed used by reproducible CAGE2 evaluation protocols.")
 
+(defconstant +max-team-traversal-depth+ 128
+  "Defensive execution-depth ceiling for malformed or pathological TPGs.")
+
 (defconstant +cage2-online-fitness-protocol+
   :shared-generation-seeds-reference-153-v2
   "Version tag for generation-shared CAGE2 fitness plus fixed reference scoring.")
@@ -78,7 +81,10 @@ search and turn this flag back on.")
 
 (defparameter *max-num-learners* 
   "The maximum number of learners that a team may have.
-   Recommended: num-actions.")
+   Recommended hard limit: 32.")
+
+(defparameter *soft-num-learners* 11
+  "Team size above which learner-addition pressure gradually decreases.")
 
 (defparameter *p-add* 
   "The probability that a new learner is added to a team during mutation.
@@ -111,7 +117,10 @@ search and turn this flag back on.")
 
 (defparameter *max-program-size* 
   "The maximum number of instructions in a program.
-   Recommended value: 128 for offline semantic training.")
+   Recommended hard limit: 256.")
+
+(defparameter *soft-program-size* 128
+  "Program size above which instruction-addition pressure gradually decreases.")
 
 (defparameter *p-add-instr* 
   "The probability that a new instruction is added when mutating a program.

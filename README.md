@@ -251,9 +251,23 @@ Each generation uses one uniform, unbalanced training-row sample shared by all
 candidates. Semantic accuracy follows the bridge contract: GLOBAL compares only
 the target; host actions compare target and response; Decoy additionally
 compares its option. The complete held-out file supplies the stable reference
-fitness used for best-team selection and checkpoint replay. Offline runs require finite
-learner and program limits; the Emacs defaults are 11 learners per team and 128
-instructions per program to prevent unbounded policy growth and GC exhaustion.
+fitness used for best-team selection and checkpoint replay. Online and offline
+runs require finite learner and program limits. The Emacs defaults use hard
+ceilings of 32 learners per team and 256 instructions per program. Growth
+pressure begins tapering above soft thresholds of 11 learners and 128
+instructions, while every size below the hard ceiling remains reachable.
+This controls bloat and GC pressure without equating the 11 targets with the
+number of useful learner specializations.
+
+Above each soft threshold, the corresponding addition probability follows an
+inverse-square taper. Additions remain possible up to the hard ceiling, but
+their expected pressure approaches deletion pressure instead of producing
+permanent positive size drift. Exact fitness ties prefer the policy with fewer
+instructions, then fewer learners, then fewer reachable teams; a policy with
+better fitness is never discarded merely because it is larger. The dashboard
+reports population team, learner and instruction counts plus observed maximum
+team and program sizes. Warm-starting an older oversized policy emits a warning
+and preserves the policy rather than silently pruning it.
 Checkpoints record the semantic fitness protocol and dataset file fingerprints,
 so a resume against different files is re-baselined rather than compared to an
 incompatible score.
@@ -275,8 +289,8 @@ This layout is an experimental policy contract. On this branch only, CAGE2
 validation appends its zero-based episode index and zero-based rollout step to
 the original 52 values before executing the team. In `single-red-full`, the
 episode index resets to zero for each 30-, 50-, and 100-step block, matching the
-collector's per-horizon indexing. The Python and native environments themselves
-remain unchanged. Normal online training still uses the base 52-value contract.
+collector's per-horizon indexing. The Python environment itself remains
+unchanged. Normal online training still uses the base 52-value contract.
 
 ---
 
