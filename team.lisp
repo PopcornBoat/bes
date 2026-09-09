@@ -68,21 +68,31 @@ Every learner program executes once per visited team and bids through register
 0 as before. A winning team-reference action recursively continues traversal.
 Only the learner that finally wins with an atomic target contributes registers
 to the semantic policy output; intermediate winners' registers are discarded."
-  (let* ((evaluations
-           (mapcar
-            (lambda (learner)
-              (multiple-value-bind (learner-bid registers)
-                  (bid learner observation)
-                (list learner learner-bid registers)))
-            (team-learners team)))
-         (winning-evaluation
-           (alexandria:extremum evaluations #'> :key #'second))
-         (winner (first winning-evaluation))
-         (registers (third winning-evaluation))
-         (act (learner-action winner)))
-    (if (eq (action-type act) :atomic)
-        (values winner registers)
-        (execute-team-to-terminal (action-action act) observation))))
+  (labels ((traverse (current visited)
+             (when (member current visited :test #'eq)
+               (error "Cycle encountered while executing TPG at team ~A."
+                      (team-id current)))
+             (let ((winner nil)
+                   (winning-bid nil)
+                   (winning-registers nil))
+               ;; Retain only the current winner instead of allocating an
+               ;; evaluation triple and list for every learner on every row.
+               (dolist (learner (team-learners current))
+                 (multiple-value-bind (learner-bid registers)
+                     (bid learner observation)
+                   (when (or (null winner)
+                             (> learner-bid winning-bid))
+                     (setf winner learner
+                           winning-bid learner-bid
+                           winning-registers registers))))
+               (unless winner
+                 (error "Cannot execute empty team ~A." (team-id current)))
+               (let ((act (learner-action winner)))
+                 (if (eq (action-type act) :atomic)
+                     (values winner winning-registers)
+                     (traverse (action-action act)
+                               (cons current visited)))))))
+    (traverse team nil)))
 
 (defun execute-team (team observation)
   "Execute TEAM and return the final terminal learner's atomic target.

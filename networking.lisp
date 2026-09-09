@@ -397,6 +397,13 @@ return their fixed configured addresses."
 
     (format t "~S~%" msg)
 
+    (when (and (eq mode :offline)
+               (or (eq max-num-learners :inf)
+                   (eq max-program-size :inf)))
+      (emit-error
+       "Offline training requires finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
+      (return-from handle-start-search))
+
     (emit-message
      (format nil
              "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A online-fit-eps=~A checkpoint-dir=~A seed=~A"
@@ -569,6 +576,13 @@ return their fixed configured addresses."
 
     (unless best-team-path
       (emit-error "No best-team-path provided for resume-search.")
+      (return-from handle-resume-search))
+
+    (when (and (eq mode :offline)
+               (or (eq max-num-learners :inf)
+                   (eq max-program-size :inf)))
+      (emit-error
+       "Offline training requires finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
       (return-from handle-resume-search))
 
     (unless checkpoint-directory

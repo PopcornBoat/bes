@@ -262,7 +262,7 @@
             "*p-act=0.2"
             "*p-swap=0.1"
             "*init-program-size=100"
-            "*max-program-size=inf"
+            "*max-program-size=128"
             "*gap=0.5"
             "*p-add-instr=0.9"
             "*p-del-instr=0.5"
@@ -272,15 +272,15 @@
             "*env=none"
            
             "*population-size=160"
-            "*num-observations=52"
+            "*num-observations=54"
             "*num-actions=11"
             "*init-num-learners=3"
-            "*max-num-learners=inf"
+            "*max-num-learners=11"
             "*migration-interval=50"
             "*batch-size=1000"
             "*online-fitness-episodes=5"
             "*seed=random"
-            "--mode=online")
+            "--mode=offline")
   ["Island"
     ("-I" "Island" "--island="
     :choices ("all" "0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15"))]
@@ -292,12 +292,6 @@
               "Cage2-b_line-100-v0"
               "Cage2-meander-100-v0"
               "Cage2-sleep-100-v0"
-              "Cage2Mini-b_line-100-v0"
-              "Cage2Mini-meander-100-v0"
-              "Cage2Mini-sleep-100-v0"
-              "Cage2Lisp-b_line-100-v0"
-              "Cage2Lisp-meander-100-v0"
-              "Cage2Lisp-sleep-100-v0"
               "Cage3SharedPolicy-v0"
               "Hopper-v5" "Walker2d-v5" "HalfCheetah-v5" "Acrobot-v1" "LunarLander-v3" "MountainCar-v0" "CartPole-v1"))
    ;;("-F" "Dataset Name" "*dataset=")
@@ -382,12 +376,6 @@
                '("Cage2-b_line-100-v0"
                  "Cage2-meander-100-v0"
                  "Cage2-sleep-100-v0"
-                 "Cage2Mini-b_line-100-v0"
-                 "Cage2Mini-meander-100-v0"
-                 "Cage2Mini-sleep-100-v0"
-                 "Cage2Lisp-b_line-100-v0"
-                 "Cage2Lisp-meander-100-v0"
-                 "Cage2Lisp-sleep-100-v0"
                  "Cage3SharedPolicy-v0"
                  "CartPole-v1")
                nil
@@ -406,7 +394,7 @@
           (string-to-number
            (read-string
             "Number of observations: "
-            "52")))
+            "54")))
 
          (num-actions
           (string-to-number
@@ -430,7 +418,7 @@
           (string-to-number-or-inf
            (read-string
             "Maximum number of learners: "
-            "inf")))
+            "11")))
 
          (p-add
           (string-to-number
@@ -478,7 +466,7 @@
           (string-to-number-or-inf
            (read-string
             "Maximum program size: "
-            "inf")))
+            "128")))
 
          (p-add-instr
           (string-to-number
@@ -940,16 +928,15 @@
          (environment-str
           (completing-read
            "Validation environment: "
-           '("cage2" "cage2-lisp" "cage3")
+           '("cage2" "cage3")
            nil t
            "cage2"))
          (environment
           (pcase environment-str
             ("cage2" :cage2)
-            ("cage2-lisp" :cage2-lisp)
             ("cage3" :cage3)))
          (mode-str
-          (if (memq environment '(:cage2 :cage2-lisp))
+          (if (eq environment :cage2)
               (completing-read
                "CAGE2 validation mode: "
                '("single-red-full" "single-red-100")
@@ -963,7 +950,7 @@
          (validation-mode
           (intern (concat ":" mode-str)))
          (red-agent-name
-          (when (memq environment '(:cage2 :cage2-lisp))
+          (when (eq environment :cage2)
             (completing-read
              "CAGE2 red agent: "
              '("b_line" "meander" "sleep")
@@ -971,7 +958,7 @@
              "b_line")))
          (episodes
           (cond
-           ((and (memq environment '(:cage2 :cage2-lisp))
+           ((and (eq environment :cage2)
                  (eq validation-mode :single-red-100))
             (string-to-number
              (read-string "Episodes: " "1")))

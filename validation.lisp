@@ -20,8 +20,7 @@
   "Report initialization of the deterministic CAGE2 episode-seed sequence.
 
 The caller binds the Lisp generator to 153 and supplies each derived seed to the
-environment reset. Python and native Lisp backends therefore receive identical
-per-episode seed inputs without changing randomness after validation."
+Python environment reset without changing randomness after validation."
   (emit-message
    (format nil
            "CAGE2 validation random seed initialized to ~A."
@@ -74,16 +73,11 @@ index here and the rollout's zero-based step index to each 52-value observation.
           :total total
           :component-means means)))
 
-(defun cage2-validation-environment-name (backend red-agent-name steps)
-  "Build the selected official-Python or native-Lisp CAGE2 environment name."
-  (let ((prefix
-          (ecase backend
-            (:cage2 "Cage2")
-            (:cage2-lisp "Cage2Lisp"))))
-    (format nil "~A-~A-~A-v0" prefix red-agent-name steps)))
+(defun cage2-validation-environment-name (red-agent-name steps)
+  "Build an official Python CAGE2 environment name."
+  (format nil "Cage2-~A-~A-v0" red-agent-name steps))
 
-(defun validate-cage2-single-red-full
-       (team red-agent-name &optional (backend :cage2))
+(defun validate-cage2-single-red-full (team red-agent-name)
   "CAGE2 mode 1.
 
 Single selected red agent.
@@ -100,8 +94,7 @@ Outputs:
   (let ((results '()))
     (dolist (steps '(30 50 100))
       (let* ((env-name
-               (cage2-validation-environment-name
-                backend red-agent-name steps))
+               (cage2-validation-environment-name red-agent-name steps))
              (label (format nil "~A-~A" red-agent-name steps))
              (scores (run-validation-rollouts team env-name 1000)))
         (push (emit-validation-result label scores)
@@ -113,16 +106,14 @@ Outputs:
       (append ordered-results
               (list total-result)))))
 
-(defun validate-cage2-single-red-100
-       (team red-agent-name episodes &optional (backend :cage2))
+(defun validate-cage2-single-red-100 (team red-agent-name episodes)
   "CAGE2 mode 2.
 
 Single selected red agent.
 Runs:
   100 steps x EPISODES."
   (let* ((env-name
-           (cage2-validation-environment-name
-            backend red-agent-name 100))
+           (cage2-validation-environment-name red-agent-name 100))
          (label (format nil "~A-100" red-agent-name))
          (scores (run-validation-rollouts team env-name episodes))
          (result (emit-validation-result label scores))
@@ -160,7 +151,6 @@ The 500-step limit is encoded in the Python Gym environment."
 
 ENVIRONMENT:
   :cage2       official CAGE2 through Python/Py4CL2
-  :cage2-lisp  native Lisp cage2-mini
   :cage3
 
 CAGE2 MODE:
@@ -179,7 +169,7 @@ CAGE3 MODE:
   :custom-eps
     Requires EPISODES.
     Runs 500 steps, EPISODES eps."
-  (let* ((cage2-p (member environment '(:cage2 :cage2-lisp)))
+  (let* ((cage2-p (eq environment :cage2))
          (*random-state*
            (if cage2-p
                (sb-ext:seed-random-state +cage2-evaluation-seed+)
@@ -203,18 +193,17 @@ CAGE3 MODE:
                episodes))
 
       (ecase environment
-        ((:cage2 :cage2-lisp)
+        (:cage2
          (unless red-agent-name
            (error "CAGE2 validation requires RED-AGENT-NAME."))
          (ecase mode
            (:single-red-full
-            (validate-cage2-single-red-full
-             team red-agent-name environment))
+            (validate-cage2-single-red-full team red-agent-name))
            (:single-red-100
             (unless episodes
               (error "CAGE2 :SINGLE-RED-100 requires EPISODES."))
             (validate-cage2-single-red-100
-             team red-agent-name episodes environment))))
+             team red-agent-name episodes))))
 
         (:cage3
          (ecase mode

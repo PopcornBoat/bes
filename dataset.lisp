@@ -94,8 +94,12 @@ teacher action cannot be represented are skipped rather than silently relabelled
                      (progn
                        (unless (and (listp observation)
                                     (= (length observation) *num-observations*))
-                         (error "Expected ~D observations, got ~S"
-                                *num-observations* observation))
+                         (error
+                          "Expected ~D observations, but the semantic dataset row has ~A. Configure Number of Observations to match the dataset."
+                          *num-observations*
+                          (if (listp observation)
+                              (length observation)
+                              (type-of observation))))
                        (unless (valid-semantic-action-label-p action)
                          (error "Invalid semantic action label: ~S" action))
                        (unless (numberp reward)
