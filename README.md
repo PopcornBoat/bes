@@ -238,6 +238,18 @@ These statistics simplify long-running evolutionary experiments.
 
 ---
 
+## Search failure diagnostics
+
+Dashboard telemetry is best-effort and cannot terminate training. The most
+recent UDP/dashboard problem remains available as `*last-telemetry-error*`.
+An unhandled search-worker error is preserved in `*last-search-failure*` with
+its generation, condition type, message, and pre-unwind backtrace. The same
+record is appended to `search-errors.log` in the active checkpoint directory,
+so it remains available even when the dashboard cannot receive the report.
+Both variables are reset appropriately when a new search begins.
+
+---
+
 ## CAGE2 scan-state observations
 
 The official CAGE2 bridge supplies 62 policy inputs: the original 52-value
