@@ -86,7 +86,10 @@ allowing permanent positive bloat pressure."
     (let* ((instructions (program-instructions program))
 	   (instructions-with-constants
 	     (remove-if-not #'instruction-has-constant-p instructions)))
-      (when instructions-with-constants
+	;; REMOVE-IF-NOT preserves the vector type.  An empty result is therefore
+	;; #(), which is true in Common Lisp, rather than NIL.  Test its length so
+	;; unary/observation-only programs do not call RANDOM-CHOICE on #().
+      (when (plusp (length instructions-with-constants))
 	(let* ((instr (random-choice instructions-with-constants))
 	       (slots (remove nil
 			      (list (when (eq (instruction-src1-type instr) :const)
