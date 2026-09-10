@@ -61,6 +61,12 @@ search and turn this flag back on.")
 (defvar *validation-running* nil
   "True while a validation worker owns the Python/Gym execution path.")
 
+(defvar *last-search-failure* nil
+  "Diagnostic plist for the most recent unhandled search-worker error.")
+
+(defvar *last-telemetry-error* nil
+  "Diagnostic plist for the most recent non-fatal telemetry failure.")
+
 (defvar *current-gym-environment-name* nil
   "Gym environment used by the current search, recorded in checkpoints.")
 
