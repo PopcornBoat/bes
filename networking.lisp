@@ -9,6 +9,9 @@
 (defvar *server-running* nil
   "When NIL, server loops will exit.")
 
+(defvar *cached-island-id* nil
+  "Last successfully resolved island ID, avoiding repeated route discovery.")
+
 (defvar *operation-state-lock*
   (bt:make-lock "BES operation state")
   "Serializes search/validation lifecycle transitions across request threads.")
@@ -23,7 +26,9 @@
   (bt:with-lock-held (*operation-state-lock*)
     (unless (or *search-active* *validation-running*)
       (setf *search-active* t
-            *running* t)
+            *running* t
+            *last-search-failure* nil
+            *last-telemetry-error* nil)
       t)))
 
 (defun finish-search-operation ()
@@ -100,12 +105,92 @@ The special key :LOCAL always resolves dynamically to the current machine IP.")
     (15 . (5 10 11 14)))
   "This is a 3x5 toroidal grid. Each island has 4 adjacent neighbours wrapping around if necessary.")
 
+(defun note-telemetry-error (condition)
+  "Record CONDITION locally without allowing observability to stop a search."
+  (setf *last-telemetry-error*
+        (list :generation *generation*
+              :timestamp (get-universal-time)
+              :condition-type (type-of condition)
+              :message (princ-to-string condition)))
+  (format *error-output*
+          "~&[BES TELEMETRY WARNING] generation=~D: ~A~%"
+          *generation*
+          condition)
+  (force-output *error-output*)
+  nil)
+
 (defun notify-telemetry (msg)
-  "Fire and forget a message over UDP to the telemetry client."
-  (let ((socket (usocket:socket-connect *telemetry-ip* 8080 :protocol :datagram)))
-    (unwind-protect
-	 (usocket:socket-send socket msg (length msg))
-      (usocket:socket-close socket))))
+  "Best-effort UDP telemetry; failures are recorded but never stop learning."
+  (handler-case
+      (let ((socket
+              (usocket:socket-connect
+               *telemetry-ip* 8080 :protocol :datagram)))
+        (unwind-protect
+             (usocket:socket-send socket msg (length msg))
+          (usocket:socket-close socket)))
+    (error (condition)
+      (note-telemetry-error condition))))
+
+(defun capture-search-backtrace ()
+  "Capture the current stack while an unhandled search error is still active."
+  #+sbcl
+  (with-output-to-string (stream)
+    (sb-debug:print-backtrace :stream stream :count 100))
+  #-sbcl
+  "Backtrace capture is unavailable on this Lisp implementation.")
+
+(defun record-search-failure (label condition backtrace)
+  "Persist an unhandled search CONDITION for post-mortem inspection."
+  (setf *last-search-failure*
+        (list :label label
+              :generation *generation*
+              :timestamp (get-universal-time)
+              :condition-type (type-of condition)
+              :message (princ-to-string condition)
+              :backtrace backtrace))
+  (format *error-output*
+          "~&[BES SEARCH FAILURE] ~A generation=~D: ~A~%~A~%"
+          label *generation* condition backtrace)
+  (force-output *error-output*)
+  (when *checkpoint-directory*
+    (handler-case
+        (let ((path
+                (merge-pathnames
+                 "search-errors.log"
+                 (uiop:ensure-directory-pathname
+                  (pathname *checkpoint-directory*)))))
+          (ensure-directories-exist path)
+          (with-open-file
+              (stream path
+                      :direction :output
+                      :if-exists :append
+                      :if-does-not-exist :create)
+            (format stream "~&~S~%" *last-search-failure*)
+            (force-output stream)))
+      (error (log-condition)
+        (format *error-output*
+                "~&[BES SEARCH FAILURE] Could not write diagnostic log: ~A~%"
+                log-condition)
+        (force-output *error-output*))))
+  *last-search-failure*)
+
+(defun call-with-recorded-search-failure (label thunk)
+  "Call THUNK, preserving any unhandled error and its pre-unwind backtrace."
+  (let ((captured-backtrace nil))
+    (handler-case
+        (handler-bind
+            ((error
+               (lambda (condition)
+                 (declare (ignore condition))
+                 (unless captured-backtrace
+                   (setf captured-backtrace
+                         (capture-search-backtrace))))))
+          (funcall thunk))
+      (error (condition)
+        (record-search-failure label condition captured-backtrace)
+        (emit-error
+         (format nil "~A crashed: ~A" label condition))
+        nil))))
 			 
 (defun emit-fitness-scores
        (island-id
@@ -156,11 +241,18 @@ to the telemetry client."
              ,(get-universal-time)))))
     (notify-telemetry payload)))
 
+(defun telemetry-island-id ()
+  "Return the island ID for telemetry, or :UNKNOWN if discovery fails."
+  (handler-case
+      (or (who-am-i) :unknown)
+    (error (condition)
+      (note-telemetry-error condition)
+      :unknown)))
+
 (defun emit-heartbeat ()
   "On a regular interval *heartbeat-interval*, send a heartbeat message
    to the telemetry client and additionally send CPU and memory usage."
-  (let* ((ip-address (get-local-ip))
-	 (island-id (lookup-island-id-by-ip ip-address))
+  (let* ((island-id (telemetry-island-id))
 	 (payload (prin1-to-string
 		  `(:type :heartbeat
 		    :from ,island-id
@@ -214,8 +306,7 @@ return their fixed configured addresses."
 
 (defun emit-error (message)
   "An error has occurred, notify the telemetry client."
-  (let* ((ip (get-local-ip))
-	 (island-id (lookup-island-id-by-ip ip))
+  (let* ((island-id (telemetry-island-id))
 	 (payload (prin1-to-string
 		   `(:type :error
 		     :from ,island-id
@@ -225,8 +316,7 @@ return their fixed configured addresses."
 
 (defun emit-message (message)
   "Sends a message to the telemetry client log."
-  (let* ((ip (get-local-ip))
-	 (island-id (lookup-island-id-by-ip ip))
+  (let* ((island-id (telemetry-island-id))
 	 (payload (prin1-to-string
 		   `(:type :message
 		     :from ,island-id
@@ -365,8 +455,12 @@ return their fixed configured addresses."
 
 (defun who-am-i ()
   "Returns the island ID of the currently running server."
-  (let ((ip-address (get-local-ip)))
-    (lookup-island-id-by-ip ip-address)))
+  (or *cached-island-id*
+      (let* ((ip-address (get-local-ip))
+             (island-id (lookup-island-id-by-ip ip-address)))
+        (unless island-id
+          (error "Local IP ~A is not mapped to an island." ip-address))
+        (setf *cached-island-id* island-id))))
 
 (defun handle-start-search (msg)
   "Validate a start-search request, configure globals, and begin searching."
@@ -503,12 +597,14 @@ return their fixed configured addresses."
            (bt:make-thread
             (lambda ()
               (unwind-protect
-                   (handler-case
-                       (progn
+                   (call-with-recorded-search-failure
+                    "Search"
+                    (lambda ()
+                      (progn
                          (emit-message
                           (format nil
                                   "Search started on island ~A"
-                                  (who-am-i)))
+                                  (telemetry-island-id)))
 
                          (when *checkpoint-directory*
                            (emit-message
@@ -523,11 +619,7 @@ return their fixed configured addresses."
                           mode
                           gym-environment-name
                           dataset-name
-                          seed))
-
-                     (error (c)
-                       (emit-error
-                        (format nil "Search crashed: ~A" c))))
+                          seed))))
 
                 (when lparallel:*kernel*
                   (ignore-errors
@@ -536,7 +628,9 @@ return their fixed configured addresses."
 
                 (finish-search-operation)
                 (emit-message
-                 (format nil "Search stopped on island ~A" (who-am-i)))))
+                 (format nil
+                         "Search stopped on island ~A"
+                         (telemetry-island-id)))))
             :name "search-thread")
            *server-threads*))
 
@@ -657,12 +751,14 @@ return their fixed configured addresses."
            (bt:make-thread
             (lambda ()
               (unwind-protect
-                   (handler-case
-                       (progn
+                   (call-with-recorded-search-failure
+                    "Warm-start resume"
+                    (lambda ()
+                      (progn
                          (emit-message
                           (format nil
                                   "Warm-start resume started on island ~A from best team: ~A"
-                                  (who-am-i)
+                                  (telemetry-island-id)
                                   best-team-path))
 
                          (emit-message
@@ -678,13 +774,7 @@ return their fixed configured addresses."
                           gym-environment-name
                           dataset-name
                           seed
-                          best-team-path))
-
-                     (error (c)
-                       (emit-error
-                        (format nil
-                                "Warm-start resume crashed: ~A"
-                                c))))
+                          best-team-path))))
 
                 (when lparallel:*kernel*
                   (ignore-errors
@@ -693,7 +783,9 @@ return their fixed configured addresses."
 
                 (finish-search-operation)
                 (emit-message
-                 (format nil "Search stopped on island ~A" (who-am-i)))))
+                 (format nil
+                         "Search stopped on island ~A"
+                         (telemetry-island-id)))))
             :name "warm-start-resume-thread")
            *server-threads*))
 
