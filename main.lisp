@@ -320,7 +320,7 @@ through serialization/deserialization and save it to disk."
            max-team-size max-program-size)
         (teams-complexity *teams*)
       (emit-fitness-scores
-       (who-am-i)
+       (telemetry-island-id)
        generation-best
        *best-fitness*
        population-mean
