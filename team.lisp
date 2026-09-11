@@ -117,11 +117,10 @@ now represent targets when the factored action contract is enabled."
 (defun execute-team-semantic (team observation)
   "Execute TEAM and return a SEMANTIC-ACTION from the final terminal learner.
 
-New policies carry categorical target and response genes. Legacy numeric
-checkpoints retain their register-decoded response behavior. Only registers
-from the final terminal learner can contribute a transitional decoy option;
-intermediate team-reference winners are never used. The Python bridge converts
-the semantic result into a concrete environment action."
+New policies carry categorical target and response genes; the Python bridge
+resolves DECOY using its agreement-ordered table. Legacy numeric checkpoints
+retain their final-terminal-register response and option behavior. Intermediate
+team-reference winners never contribute registers."
   (multiple-value-bind (terminal-learner registers)
       (execute-team-to-terminal team observation)
     (make-semantic-action-from-terminal

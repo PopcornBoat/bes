@@ -84,10 +84,10 @@ Monitor. This path preserves historical numeric-action checkpoints."
 (defun make-semantic-action-from-factored-terminal (payload registers)
   "Convert categorical PAYLOAD into the current semantic policy result.
 
-TARGET and RESPONSE are explicit genes. Until the ordered decoy resolver is
-introduced, the final terminal learner's decoy register continues to supply an
-option so this incremental commit remains compatible with the current bridge
-and offline fitness. GLOBAL always maps to Monitor."
+TARGET and RESPONSE are explicit genes. The environment bridge resolves DECOY
+through the host's ordered option table, so new factored actions do not emit an
+option. GLOBAL always maps to Monitor."
+  (declare (ignore registers))
   (let ((target (factored-action-primary payload))
         (response-index (factored-action-secondary payload)))
     (cond
@@ -98,18 +98,8 @@ and offline fitness. GLOBAL always maps to Monitor."
        (make-semantic-action :target target :response :monitor :option nil))
       (t
        (let ((response (aref *semantic-response-types* response-index)))
-         (if (eq response :decoy)
-             (let ((option
-                     (decode-register-index
-                      (aref registers +decoy-option-register+)
-                      8)))
-               (if option
-                   (make-semantic-action
-                    :target target :response response :option option)
-                   (make-semantic-action
-                    :target target :response :monitor :option nil)))
-             (make-semantic-action
-              :target target :response response :option nil)))))))
+         (make-semantic-action
+          :target target :response response :option nil))))))
 
 (defun make-semantic-action-from-terminal (payload registers)
   "Decode a final terminal learner PAYLOAD into a SEMANTIC-ACTION.

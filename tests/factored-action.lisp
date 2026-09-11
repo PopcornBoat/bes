@@ -69,6 +69,19 @@
             (null (semantic-action-option semantic)))
        "Categorical semantic decoding failed: ~S" semantic))
 
+    (let* ((registers (make-array +num-registers+
+                                  :element-type 'double-float
+                                  :initial-element 7.0d0))
+           (semantic
+             (make-semantic-action-from-terminal
+              (make-factored-action :primary 8 :secondary 3)
+              registers)))
+      (assert-factored-action-test
+       (and (= (semantic-action-target semantic) 8)
+            (eq (semantic-action-response semantic) :decoy)
+            (null (semantic-action-option semantic)))
+       "Factored Decoy should defer option selection: ~S" semantic))
+
     ;; Numeric payloads retain the old register decoder for historical files.
     (let ((registers (make-array +num-registers+
                                  :element-type 'double-float

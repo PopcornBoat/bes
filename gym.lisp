@@ -89,8 +89,10 @@ reset instead."
 (defun semantic-action->cage2-input (action)
   "Convert a BES SEMANTIC-ACTION into py4cl2-friendly integer input.
 
-The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
-:MONITOR fallbacks canonicalize to (0 0 0). Non-Decoy responses use option 0."
+New factored policies emit (TARGET RESPONSE), allowing the Python bridge to
+resolve DECOY with its agreement-ordered option table. Legacy checkpoints can
+still emit (TARGET RESPONSE OPTION), preserving their explicit decoy option.
+GLOBAL and defensive :MONITOR fallbacks canonicalize to (0 0)."
   (let* ((target (cl-tpg:semantic-action-target action))
          (response (cl-tpg:semantic-action-response action))
          (option (cl-tpg:semantic-action-option action))
@@ -102,13 +104,13 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
            (= target cl-tpg:+global-target+)
            (eq response :monitor)
            (null response-index))
-       (list cl-tpg:+global-target+ 0 0))
+       (list cl-tpg:+global-target+ 0))
       ((eq response :decoy)
        (if (and (integerp option) (<= 0 option 7))
            (list target response-index option)
-           (list cl-tpg:+global-target+ 0 0)))
+           (list target response-index)))
       (t
-       (list target response-index 0)))))
+       (list target response-index))))
 
 (defun execute-policy-action (root-team observation environment-name)
   "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
