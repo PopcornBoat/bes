@@ -8,6 +8,7 @@
   :components ((:file "package")
 	       (:file "helpers")
 	       (:file "globals")
+	       (:file "agreement")
 	       (:file "instruction")
 	       (:file "program")
 	       (:file "action")
