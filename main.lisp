@@ -29,12 +29,13 @@
     (:decoy 3)
     (otherwise nil)))
 
-(defun semantic-action-label-matches-p (prediction label)
+(defun semantic-action-label-matches-p (prediction label &optional decoy-mask)
   "Compare PREDICTION with a canonical (target response option) LABEL.
 
 GLOBAL requires only the target. Host non-Decoy labels require target and
-response; Decoy additionally requires the option. This mirrors the runtime
-semantic contract and never penalizes fields ignored by the bridge."
+response. A new factored Decoy is resolved through the agreement order and the
+row's DECOY-MASK; a legacy prediction with an explicit option retains its old
+comparison. This mirrors the online bridge contract."
   (destructuring-bind (target response option) label
     (and (= (semantic-action-target prediction) target)
          (or (= target +global-target+)
@@ -45,7 +46,9 @@ semantic contract and never penalizes fields ignored by the bridge."
                     (= predicted-response response)
                     (or (/= response 3)
                         (let ((predicted-option
-                                (semantic-action-option prediction)))
+                                (or (semantic-action-option prediction)
+                                    (first-available-decoy-option
+                                     target decoy-mask))))
                           (and (integerp predicted-option)
                                (= predicted-option option))))))))))
 
@@ -57,7 +60,8 @@ this function so an entire population can share exactly the same batch."
   (let ((correct 0)
         (count 0)
         (observations (observations dataset))
-        (labels (actions dataset)))
+        (labels (actions dataset))
+        (decoy-masks (dataset-decoy-masks dataset)))
     (labels ((score-row (index)
                ;; Reference scoring can cover tens of thousands of rows. Check
                ;; periodically so a stop request does not wait for the complete
@@ -67,7 +71,8 @@ this function so an entire population can share exactly the same batch."
                  (abort-search-if-requested))
                (when (semantic-action-label-matches-p
                       (execute-team-semantic team (aref observations index))
-                      (aref labels index))
+                      (aref labels index)
+                      (aref decoy-masks index))
                  (incf correct))
                (incf count)))
       (if indices
@@ -618,7 +623,9 @@ the same train/reference file fingerprint."
              (saved-protocol
                (getf metadata :fitness-evaluation-protocol))
              (saved-dataset-fingerprint
-               (getf metadata :dataset-fingerprint)))
+               (getf metadata :dataset-fingerprint))
+             (saved-agreement-signature
+               (getf metadata :action-agreement-signature)))
          (and (or (null saved-environment)
                   (equal saved-environment gym-environment-name))
               (cond
@@ -626,12 +633,16 @@ the same train/reference file fingerprint."
                  (and (or (null saved-episodes)
                           (= saved-episodes *online-fitness-episodes*))
                       (eq saved-protocol
-                          +cage2-online-fitness-protocol+)))
+                          +cage2-online-fitness-protocol+)
+                      (equal saved-agreement-signature
+                             (action-agreement-signature))))
                 (*offline-reference-dataset*
                  (and (eq saved-protocol
                           +semantic-offline-fitness-protocol+)
                       (equal saved-dataset-fingerprint
-                             *current-dataset-fingerprint*)))
+                             *current-dataset-fingerprint*)
+                      (equal saved-agreement-signature
+                             (action-agreement-signature))))
                 (t
                  t))))))
 

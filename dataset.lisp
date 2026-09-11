@@ -6,6 +6,8 @@
   (rewards (make-array 0 :element-type 'double-float) :type (simple-array double-float (*)))
   (terminations (make-array 0 :element-type 'bit) :type simple-vector)
   (truncations (make-array 0 :element-type 'bit) :type simple-vector)
+  (teacher-actions (make-array 0) :type simple-vector)
+  (decoy-masks (make-array 0) :type simple-vector)
   (size 0 :type fixnum)
   (action-format :atomic :type keyword)
   source-path)
@@ -40,6 +42,8 @@
 		   :rewards rew-arr
 		   :terminations term-arr
 		   :truncations trunc-arr
+		   :teacher-actions (make-array count :initial-element nil)
+		   :decoy-masks (make-array count :initial-element 0)
 		   :size count
                    :action-format :atomic)))
 
@@ -63,6 +67,27 @@
               (<= 0 option)
               (< option 8)))))
 
+(defun append-decoy-availability (observation decoy-mask)
+  "Append exact host-major binary availability to a 62-value CAGE2 state.
+
+DECOY-MASK uses the collector convention: bit (host*8+option) is one after
+that option has been used. Policy values invert the bits so 1.0 means available
+and 0.0 means used, matching the online Python bridge."
+  (unless (= (length observation) +cage2-scan-observation-size+)
+    (error "Expected ~D scan-augmented values before decoy availability, got ~D."
+           +cage2-scan-observation-size+
+           (length observation)))
+  (unless (and (integerp decoy-mask) (not (minusp decoy-mask)))
+    (error "Invalid semantic dataset decoy mask: ~S" decoy-mask))
+  (let ((result (make-array +cage2-observation-size+
+                            :element-type 'double-float)))
+    (loop for value in observation
+          for index fixnum from 0
+          do (setf (aref result index) (coerce value 'double-float)))
+    (dotimes (bit +cage2-decoy-availability-size+ result)
+      (setf (aref result (+ +cage2-scan-observation-size+ bit))
+            (if (logbitp bit decoy-mask) 0.0d0 1.0d0)))))
+
 (defun convert-semantic-stream-to-dataset (first-form stream source-path)
   "Read cage2-semantic-v1 forms from STREAM into the in-memory dataset shape.
 
@@ -75,11 +100,18 @@ teacher action cannot be represented are skipped rather than silently relabelled
     (error "Semantic CAGE2 datasets require *NUM-ACTIONS*=~D, got ~S."
            +num-semantic-targets+
            *num-actions*))
+  (unless (= *num-observations* +cage2-observation-size+)
+    (error
+     "Factored CAGE2 datasets require Number of Observations=~D, got ~S."
+     +cage2-observation-size+
+     *num-observations*))
   (let ((observation-list nil)
         (action-list nil)
         (reward-list nil)
         (termination-list nil)
         (truncation-list nil)
+        (teacher-action-list nil)
+        (decoy-mask-list nil)
         (skipped 0))
     (labels ((consume (form)
                (unless (semantic-transition-form-p form)
@@ -88,15 +120,18 @@ teacher action cannot be represented are skipped rather than silently relabelled
                      (action (getf (rest form) :semantic-action))
                      (representable (getf (rest form) :representable))
                      (reward (getf (rest form) :reward))
+                     (teacher-action (getf (rest form) :teacher-action))
+                     (decoy-mask (getf (rest form) :decoy-mask-before 0))
                      (terminated (getf (rest form) :terminated))
                      (truncated (getf (rest form) :truncated)))
                  (if (and representable action)
                      (progn
                        (unless (and (listp observation)
-                                    (= (length observation) *num-observations*))
+                                    (= (length observation)
+                                       +cage2-scan-observation-size+))
                          (error
-                          "Expected ~D observations, but the semantic dataset row has ~A. Configure Number of Observations to match the dataset."
-                          *num-observations*
+                          "Expected ~D source observations, but the semantic dataset row has ~A."
+                          +cage2-scan-observation-size+
                           (if (listp observation)
                               (length observation)
                               (type-of observation))))
@@ -104,15 +139,15 @@ teacher action cannot be represented are skipped rather than silently relabelled
                          (error "Invalid semantic action label: ~S" action))
                        (unless (numberp reward)
                          (error "Invalid semantic dataset reward: ~S" reward))
-                       (push (make-array
-                              (length observation)
-                              :element-type 'double-float
-                              :initial-contents
-                              (mapcar (lambda (value)
-                                        (coerce value 'double-float))
-                                      observation))
+                       (unless (and (integerp teacher-action)
+                                    (<= 0 teacher-action 144))
+                         (error "Invalid semantic dataset teacher action: ~S"
+                                teacher-action))
+                       (push (append-decoy-availability observation decoy-mask)
                              observation-list)
                        (push (copy-list action) action-list)
+                       (push teacher-action teacher-action-list)
+                       (push decoy-mask decoy-mask-list)
                        (push (coerce reward 'double-float) reward-list)
                        (push (if terminated 1 0) termination-list)
                        (push (if truncated 1 0) truncation-list))
@@ -127,6 +162,8 @@ teacher action cannot be represented are skipped rather than silently relabelled
            (rewards (nreverse reward-list))
            (terminations (nreverse termination-list))
            (truncations (nreverse truncation-list))
+           (teacher-actions (nreverse teacher-action-list))
+           (decoy-masks (nreverse decoy-mask-list))
            (count (length observations))
            (obs-arr (make-array count :initial-contents observations))
            (act-arr (make-array count :initial-contents actions))
@@ -144,6 +181,10 @@ teacher action cannot be represented are skipped rather than silently relabelled
                      :rewards rew-arr
                      :terminations term-arr
                      :truncations trunc-arr
+                     :teacher-actions
+                       (make-array count :initial-contents teacher-actions)
+                     :decoy-masks
+                       (make-array count :initial-contents decoy-masks)
                      :size count
                      :action-format :semantic
                      :source-path source-path))))
@@ -177,6 +218,8 @@ teacher action cannot be represented are skipped rather than silently relabelled
    :rewards (subseq (rewards dataset) start end)
    :terminations (subseq (terminations dataset) start end)
    :truncations (subseq (truncations dataset) start end)
+   :teacher-actions (subseq (dataset-teacher-actions dataset) start end)
+   :decoy-masks (subseq (dataset-decoy-masks dataset) start end)
    :size (- end start)
    :action-format (dataset-action-format dataset)
    :source-path (dataset-source-path dataset)))

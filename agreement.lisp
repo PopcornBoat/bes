@@ -133,3 +133,39 @@
   "Return the cached CAGE2 agreement, loading the packaged default once."
   (or *action-agreement*
       (load-action-agreement (default-cage2-action-agreement-path))))
+
+(defun action-agreement-signature (&optional (agreement
+                                               (ensure-cage2-action-agreement)))
+  "Return a readably serializable signature of policy/environment ordering."
+  (flet ((vector-list (values)
+           (and values (coerce values 'list))))
+    (list
+     :schema (action-agreement-schema agreement)
+     :version (action-agreement-version agreement)
+     :targets (vector-list (action-agreement-target-names agreement))
+     :host-offsets (vector-list (action-agreement-host-offsets agreement))
+     :responses (vector-list (action-agreement-response-names agreement))
+     :action-ids
+       (list (action-agreement-monitor-action agreement)
+             (action-agreement-analyse-base agreement)
+             (action-agreement-remove-base agreement)
+             (action-agreement-restore-base agreement))
+     :decoys (vector-list (action-agreement-decoy-names agreement))
+     :decoy-bases (vector-list (action-agreement-decoy-bases agreement))
+     :decoy-orders
+       (loop for order across (action-agreement-decoy-orders agreement)
+             collect (vector-list order)))))
+
+(defun first-available-decoy-option (target decoy-mask)
+  "Resolve TARGET's first available option using the shared agreement order."
+  (when (and (integerp target)
+             (< +global-target+ target +num-semantic-targets+)
+             (integerp decoy-mask)
+             (not (minusp decoy-mask)))
+    (let* ((agreement (ensure-cage2-action-agreement))
+           (order (aref (action-agreement-decoy-orders agreement) target))
+           (option-count (length (action-agreement-decoy-names agreement)))
+           (host-index (1- target)))
+      (loop for option across order
+            unless (logbitp (+ (* host-index option-count) option) decoy-mask)
+              return option))))

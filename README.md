@@ -250,15 +250,17 @@ Both variables are reset appropriately when a new search begins.
 
 ---
 
-## CAGE2 scan-state observations
+## CAGE2 policy observations
 
-The official CAGE2 bridge supplies 62 policy inputs: the original 52-value
-observation followed by ten episode-local scan-history values in target order:
+The official CAGE2 bridge supplies 142 policy inputs: the original 52-value
+observation, ten episode-local scan-history values in target order, and 80
+binary decoy-availability values in host-major agreement order. Scan hosts are:
 Defender, Enterprise0-2, Op_Server0, and User0-4. `0` means unseen, `1` means
 scanned previously, and `2` identifies the most recently detected scan. The
 bridge initializes the state to zero, consumes and maintains it throughout one
-episode, and clears it at the episode boundary. BES receives the completed
-62-value vector and performs no CAGE2-specific state extraction itself.
+episode, and clears it at the episode boundary. Availability uses `1` for an
+unused option and `0` for a used option. BES receives the completed 142-value
+vector and performs no CAGE2-specific online state extraction itself.
 
 Online training, offline collection, and validation must all use the same
 scan-state bridge version. Episode and step indices are not included.
@@ -268,16 +270,17 @@ scan-state bridge version. Episode and step indices are not included.
 ## Offline semantic imitation
 
 BES accepts the line-oriented `cage2-semantic-v1` datasets produced by the
-CAGE2 collector. Start an offline search with the `_train.lisp` file, 62
-observations, and 11 actions. BES automatically loads the sibling `_val.lisp`
+CAGE2 collector. Start an offline search with the `_train.lisp` file, configure
+142 observations and 11 targets. BES expands the 62 values stored in each row
+with 80 binary availability values from `:decoy-mask-before`. BES automatically loads the sibling `_val.lisp`
 file as the fixed reference dataset. For example,
 `cage2_bline_semantic_train.lisp` is paired with
 `cage2_bline_semantic_val.lisp`.
 
 Each generation uses one uniform, unbalanced training-row sample shared by all
 candidates. Semantic accuracy follows the bridge contract: GLOBAL compares only
-the target; host actions compare target and response; Decoy additionally
-compares its option. The complete held-out file supplies the stable reference
+the target; host actions compare target and response; Decoy resolves the first
+available agreement option and compares it with the teacher option. The complete held-out file supplies the stable reference
 fitness used for best-team selection and checkpoint replay. Online and offline
 runs require finite learner and program limits. The Emacs defaults use hard
 ceilings of 32 learners per team and 256 instructions per program. Growth
@@ -295,9 +298,10 @@ better fitness is never discarded merely because it is larger. The dashboard
 reports population team, learner and instruction counts plus observed maximum
 team and program sizes. Warm-starting an older oversized policy emits a warning
 and preserves the policy rather than silently pruning it.
-Checkpoints record the semantic fitness protocol and dataset file fingerprints,
-so a resume against different files is re-baselined rather than compared to an
-incompatible score.
+Checkpoints record the semantic fitness protocol, dataset file fingerprints,
+and the complete action-agreement signature, so a resume against different
+files or mappings is re-baselined rather than compared to an incompatible
+score. The policy graph itself remains a full serialize/deserialize deep copy.
 
 Legacy atomic-action datasets retain their original loading and accuracy
 behavior. Reward-based offline fitness and richer state inputs remain future

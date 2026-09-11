@@ -11,8 +11,8 @@
     (error "Semantic offline check failed: ~A" description)))
 
 (check-semantic-offline
- (= cl-tpg::+cage2-observation-size+ 62)
- "CAGE2 bridge observation size includes ten scan states")
+ (= cl-tpg::+cage2-observation-size+ 142)
+ "CAGE2 policy observation includes scan and decoy availability")
 
 (flet ((matches (prediction label)
          (cl-tpg::semantic-action-label-matches-p prediction label)))
@@ -41,6 +41,36 @@
                   :target 8 :response :decoy :option 5)
                  '(8 3 4)))
    "Decoy option mismatch"))
+
+(let* ((orders (make-array 11 :initial-element nil))
+       (agreement
+         (cl-tpg::make-action-agreement
+          :decoy-orders orders)))
+  (setf (aref orders 8) #(1 6 0 4 2 3 5 7))
+  (let ((cl-tpg::*action-agreement* agreement))
+    (check-semantic-offline
+     (cl-tpg::semantic-action-label-matches-p
+      (cl-tpg::make-semantic-action
+       :target 8 :response :decoy :option nil)
+      '(8 3 1)
+      0)
+     "factored Decoy resolves first available agreement option")
+    (check-semantic-offline
+     (cl-tpg::semantic-action-label-matches-p
+      (cl-tpg::make-semantic-action
+       :target 8 :response :decoy :option nil)
+      '(8 3 6)
+      (ash 1 (+ (* 7 8) 1)))
+     "factored Decoy skips used agreement option")))
+
+(let* ((source (loop repeat 62 collect 0))
+       (expanded (cl-tpg::append-decoy-availability source 1)))
+  (check-semantic-offline (= (length expanded) 142)
+                          "offline observations expand to 142")
+  (check-semantic-offline (= (aref expanded 62) 0.0d0)
+                          "used decoy is unavailable")
+  (check-semantic-offline (= (aref expanded 63) 1.0d0)
+                          "unused decoy is available"))
 
 (check-semantic-offline
  (string=
@@ -74,10 +104,13 @@
            :reference (:name "val.lisp" :bytes 25)))
        (cl-tpg::*offline-reference-dataset* t)
        (cl-tpg::*current-dataset-fingerprint* fingerprint)
+       (agreement-signature
+         (cl-tpg::action-agreement-signature))
        (metadata
          (list :fitness-evaluation-protocol
                cl-tpg::+semantic-offline-fitness-protocol+
-               :dataset-fingerprint fingerprint)))
+               :dataset-fingerprint fingerprint
+               :action-agreement-signature agreement-signature)))
   (check-semantic-offline
    (cl-tpg::checkpoint-fitness-comparable-p 0.75d0 metadata nil)
    "matching semantic checkpoint provenance")

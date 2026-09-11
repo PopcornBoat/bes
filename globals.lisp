@@ -33,9 +33,16 @@ checkpoints can be loaded and gradually mutated into the new representation.")
 (defconstant +cage2-scan-state-size+ 10
   "Number of episode-local host scan-state values appended by the bridge.")
 
-(defconstant +cage2-observation-size+
+(defconstant +cage2-scan-observation-size+
   (+ +cage2-raw-observation-size+ +cage2-scan-state-size+)
-  "CAGE2 policy input size after bridge-side scan-state augmentation.")
+  "CAGE2 observation size after bridge-side scan-state augmentation.")
+
+(defconstant +cage2-decoy-availability-size+ 80
+  "Ten selected hosts times eight binary decoy availability values.")
+
+(defconstant +cage2-observation-size+
+  (+ +cage2-scan-observation-size+ +cage2-decoy-availability-size+)
+  "CAGE2 policy input size including scan and exact decoy availability state.")
 
 (defconstant +global-target+ 0
   "Target value representing the global Monitor action.")
@@ -47,12 +54,12 @@ checkpoints can be loaded and gradually mutated into the new representation.")
   "Defensive execution-depth ceiling for malformed or pathological TPGs.")
 
 (defconstant +cage2-online-fitness-protocol+
-  :shared-generation-seeds-reference-153-v2
-  "Version tag for generation-shared CAGE2 fitness plus fixed reference scoring.")
+  :factored-decoy-availability-shared-seeds-v3
+  "Version tag for factored CAGE2 decisions with explicit resolver state.")
 
 (defconstant +semantic-offline-fitness-protocol+
-  :semantic-exact-shared-uniform-reference-v1
-  "Version tag for unbalanced semantic imitation with a fixed held-out reference set.")
+  :factored-decoy-availability-reference-v2
+  "Version tag for agreement-resolved imitation with explicit decoy state.")
 
 (defconstant +inf+ most-positive-fixnum)
 
