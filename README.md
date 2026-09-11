@@ -221,6 +221,14 @@ Interactive TAB completion is supported for:
 - Saved best teams
 - Python interpreters
 
+File prompts are controller/target aware. TAB completes files that are visible
+to the Emacs controller, while paths that exist only on a remote island may be
+typed and submitted without a false local `must exist` rejection. Home-relative
+paths remain in `~/...` form so macOS does not rewrite them to `/Users/...`
+before sending them to a Linux island. If the suggested directory does not
+exist locally, completion starts at its nearest existing parent instead of
+failing when the prompt opens.
+
 ---
 
 ## 7. Dashboard Improvements

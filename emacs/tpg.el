@@ -56,22 +56,66 @@
       :inf
     (string-to-number string)))
 
+(defun tpg-nearest-existing-directory (path)
+  "Return the nearest existing local directory at or above PATH.
+
+PATH is often a suggestion for a different island. On macOS that target path
+may start with `/home', while the Emacs controller uses `/Users'. Completion
+must nevertheless begin in a real local directory."
+  (let ((candidate
+         (and path
+              (expand-file-name path))))
+    (when (and candidate
+               (not (file-directory-p candidate)))
+      (setq candidate
+            (file-name-directory
+             (directory-file-name candidate))))
+    (while (and candidate
+                (not (file-directory-p candidate)))
+      (let ((parent
+             (file-name-directory
+              (directory-file-name candidate))))
+        (setq candidate
+              (unless (or (null parent)
+                          (equal parent candidate))
+                parent))))
+    (or candidate
+        (and (file-directory-p default-directory)
+             default-directory)
+        (expand-file-name "~/"))))
+
+(defun tpg-portable-target-path (path &optional directory-p)
+  "Keep PATH portable when it is sent from Emacs to a Lisp island.
+
+In particular, convert the controller's home prefix back to `~/' instead of
+sending a macOS `/Users/NAME' path to a Linux island."
+  (let ((portable (abbreviate-file-name path)))
+    (if directory-p
+        (file-name-as-directory portable)
+      portable)))
+
 (defun tpg-read-file-path (prompt &optional default)
-  "Read a file path with minibuffer completion."
-  (expand-file-name
+  "Read a local or server-side file path with minibuffer completion.
+
+TAB completes paths visible to the Emacs controller. A path that exists only
+on the selected island can still be entered because local matching is not
+required; the island performs the authoritative file check."
+  (tpg-portable-target-path
    (read-file-name prompt
-                   (or default default-directory)
+                   (tpg-nearest-existing-directory
+                    (or default default-directory))
                    nil
-                   t)))
+                   nil)))
 
 (defun tpg-read-directory-path (prompt &optional default)
-  "Read a directory path with minibuffer completion."
-  (file-name-as-directory
-   (expand-file-name
-    (read-directory-name prompt
-                         (or default default-directory)
-                         nil
-                         t))))
+  "Read a local or server-side directory path with minibuffer completion."
+  (tpg-portable-target-path
+   (read-directory-name prompt
+                        (tpg-nearest-existing-directory
+                         (or default default-directory))
+                        nil
+                        nil)
+   t))
 
 (defun tpg-set-hamming-dataset ()
   "Select the semantic dataset used as the fixed Hamming reference space."
