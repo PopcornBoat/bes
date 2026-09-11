@@ -21,6 +21,12 @@
     ("10.100.202.59" . 15)) ;; ds-cmlm-19
   "The mapping between IP address and their island ID.")
 
+(defvar tpg-hamming-space-enabled nil
+  "Whether the next CAGE2 operation uses nearest-demonstration projection.")
+
+(defvar tpg-hamming-dataset-name nil
+  "Semantic training dataset used by the next Hamming-enabled operation.")
+
 (defun plist-to-cl-sexp (plist)
   "Format a plist as a Common Lisp readable s-expression with keywords."
   (concat "("
@@ -66,6 +72,59 @@
                          (or default default-directory)
                          nil
                          t))))
+
+(defun tpg-set-hamming-dataset ()
+  "Select the semantic dataset used as the fixed Hamming reference space."
+  (interactive)
+  (setq tpg-hamming-dataset-name
+        (tpg-read-file-path
+         "Hamming reference dataset: "
+         (or (and tpg-hamming-dataset-name
+                  (file-name-directory tpg-hamming-dataset-name))
+             "~/.datasets/")))
+  (message "[LOCAL] Hamming reference dataset: %s"
+           tpg-hamming-dataset-name))
+
+(defun tpg-toggle-hamming-space ()
+  "Toggle Hamming projection for operations requested after this command."
+  (interactive)
+  (if tpg-hamming-space-enabled
+      (setq tpg-hamming-space-enabled nil)
+    (unless tpg-hamming-dataset-name
+      (tpg-set-hamming-dataset))
+    (setq tpg-hamming-space-enabled t))
+  (message "[LOCAL] Hamming projection is %s%s"
+           (if tpg-hamming-space-enabled "ON" "OFF")
+           (if (and tpg-hamming-space-enabled tpg-hamming-dataset-name)
+               (format " (%s)" tpg-hamming-dataset-name)
+             "")))
+
+(defun tpg-hamming-menu-description ()
+  "Describe the Hamming setting that will be copied into the next request."
+  (format "Hamming Projection: %s"
+          (if tpg-hamming-space-enabled "ON" "OFF")))
+
+(defun tpg-add-hamming-settings (payload &optional fallback-dataset)
+  "Return PAYLOAD with the menu's fixed Hamming settings.
+
+FALLBACK-DATASET is used for an offline run only when no reference has been
+selected yet."
+  (when (and tpg-hamming-space-enabled
+             (null tpg-hamming-dataset-name)
+             fallback-dataset)
+    (setq tpg-hamming-dataset-name fallback-dataset))
+  (when (and tpg-hamming-space-enabled
+             (null tpg-hamming-dataset-name))
+    (user-error "Enable Hamming projection only after selecting its reference dataset"))
+  (setq payload
+        (plist-put payload
+                   :hamming-space-enabled
+                   (if tpg-hamming-space-enabled :enabled :disabled)))
+  (plist-put payload
+             :hamming-dataset-name
+             (if tpg-hamming-space-enabled
+                 tpg-hamming-dataset-name
+               :none)))
 
 (defun make-payload-from-transient-args (args)
   "Given a list of transient args, construct the TCP payload for starting searches."
@@ -200,6 +259,10 @@
           (plist-put payload :dataset-name dataset-name))
     (setq payload
           (plist-put payload :checkpoint-directory checkpoint-directory))
+    (setq payload
+          (tpg-add-hamming-settings
+           payload
+           (and (eq mode :offline) dataset-name)))
 
     (message "[LOCAL] Sending start-search request to islands %s at IPs %s."
              island-ids ip-addresses)
@@ -529,7 +592,7 @@
             (string-to-number seed-str)))
 
          (payload
-          `(:type :resume-search
+           `(:type :resume-search
             :mode ,mode
             :gym-environment-name ,env
             :dataset-name ,dataset
@@ -563,9 +626,19 @@
             :batch-size ,batch-size
             :online-fitness-episodes ,online-fitness-episodes
 
-            :checkpoint-directory ,checkpoint-dir
+             :checkpoint-directory ,checkpoint-dir
 
-            :seed ,seed)))
+             :hamming-space-enabled
+             ,(if tpg-hamming-space-enabled :enabled :disabled)
+             :hamming-dataset-name
+             ,(if tpg-hamming-space-enabled
+                  (or tpg-hamming-dataset-name
+                      (and (eq mode :offline) dataset)
+                      (user-error
+                       "Select a Hamming reference dataset before resuming"))
+                :none)
+
+             :seed ,seed)))
 
     (tpg-send-payload-to-island
      island-id
@@ -591,6 +664,10 @@
    ("R" "Resume Search" tpg-resume-search)
    ("V" "Validate Best Team" tpg-validate-best-team)
    ("D" "Stop a search" stop-search-menu)]
+
+  ["Hamming Projection (next operation)"
+   ("H" tpg-hamming-menu-description tpg-toggle-hamming-space)
+   ("F" "Set Reference Dataset" tpg-set-hamming-dataset)]
 
   ["Navigation"
    ("q" "Quit Menu" transient-quit-one)]
@@ -993,13 +1070,21 @@
             (string-to-number
              (read-string "Episodes: " "1")))
            (t :none)))
-         (payload
-          `(:type :validate-best-team
+          (payload
+           `(:type :validate-best-team
             :best-team-path ,best-team-path
             :environment ,environment
-            :validation-mode ,validation-mode
-            :red-agent-name ,(or red-agent-name :none)
-            :episodes ,episodes)))
+             :validation-mode ,validation-mode
+             :red-agent-name ,(or red-agent-name :none)
+             :episodes ,episodes
+             :hamming-space-enabled
+             ,(if tpg-hamming-space-enabled :enabled :disabled)
+             :hamming-dataset-name
+             ,(if tpg-hamming-space-enabled
+                  (or tpg-hamming-dataset-name
+                      (user-error
+                       "Select a Hamming reference dataset before validation"))
+                :none))))
 
     (tpg-send-payload-to-island
      island-id

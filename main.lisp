@@ -71,8 +71,10 @@ this function so an entire population can share exactly the same batch."
                (when (and *search-active*
                           (zerop (logand count 255)))
                  (abort-search-if-requested))
-               (when (semantic-action-label-matches-p
-                      (execute-team-semantic team (aref observations index))
+                (when (semantic-action-label-matches-p
+                       (execute-team-semantic
+                        team
+                        (policy-observation (aref observations index)))
                       (aref labels index)
                       (aref decoy-masks index)
                       (team-option-orders team))
@@ -258,6 +260,7 @@ reference batch."
            *offline-reference-dataset* nil
            *offline-fitness-batch-indices* nil
            *current-dataset-fingerprint* nil)
+     (configure-hamming-observation-space)
      (setf *fitness-fn*
            (lambda (team)
              (online-fitness team gym-environment-name))))
@@ -278,22 +281,25 @@ reference batch."
                (unless (eq (dataset-action-format reference-dataset) :semantic)
                  (error "Semantic validation path contains a legacy dataset: ~A"
                         (namestring reference-file)))
-               (setf *offline-training-dataset* dataset
+                (setf *offline-training-dataset* dataset
                      *offline-reference-dataset* reference-dataset
                      *offline-fitness-batch-indices* nil
                      *current-dataset-fingerprint*
                        (list :training (dataset-file-fingerprint dataset)
                              :reference
                              (dataset-file-fingerprint reference-dataset))
-                     *fitness-fn* #'semantic-offline-training-fitness)))
+                      *fitness-fn* #'semantic-offline-training-fitness)))
            (progn
              (setf *offline-training-dataset* nil
                    *offline-reference-dataset* nil
                    *offline-fitness-batch-indices* nil
                    *current-dataset-fingerprint* nil)
-             (setf *fitness-fn*
-                   (lambda (team)
-                     (accuracy team dataset)))))))
+              (setf *fitness-fn*
+                    (lambda (team)
+                      (accuracy team dataset)))))
+       (configure-hamming-observation-space
+        (and (eq (dataset-action-format dataset) :semantic)
+             dataset))))
 
     (t
      (error "Neither GYM-ENVIRONMENT-NAME nor DATASET-NAME was supplied."))))
@@ -627,11 +633,20 @@ the same train/reference file fingerprint."
                (getf metadata :fitness-evaluation-protocol))
              (saved-dataset-fingerprint
                (getf metadata :dataset-fingerprint))
-             (saved-agreement-signature
-               (getf metadata :action-agreement-signature)))
-         (and (or (null saved-environment)
-                  (equal saved-environment gym-environment-name))
-              (cond
+              (saved-agreement-signature
+                (getf metadata :action-agreement-signature))
+              (saved-hamming-enabled
+                (not (null (getf metadata :hamming-space-enabled))))
+              (saved-hamming-fingerprint
+                (getf metadata :hamming-dataset-fingerprint)))
+          (and (or (null saved-environment)
+                   (equal saved-environment gym-environment-name))
+               (eq saved-hamming-enabled
+                   (not (null *hamming-space-enabled*)))
+               (or (not *hamming-space-enabled*)
+                   (equal saved-hamming-fingerprint
+                          *current-hamming-dataset-fingerprint*))
+               (cond
                 ((cl-gym:cage2-environment-p gym-environment-name)
                  (and (or (null saved-episodes)
                           (= saved-episodes *online-fitness-episodes*))

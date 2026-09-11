@@ -61,6 +61,18 @@ checkpoints can be loaded and gradually mutated into the new representation.")
   :evolved-decoy-orders-reference-v3
   "Version tag for imitation using policy-owned option orders.")
 
+(defconstant +hamming-raw-mismatch-weight+ 40
+  "Integer weight for one raw-observation mismatch.")
+
+(defconstant +hamming-scan-mismatch-weight+ 104
+  "Integer weight for one scan-state mismatch.")
+
+(defconstant +hamming-availability-mismatch-weight+ 13
+  "Integer weight for one decoy-availability mismatch.")
+
+(defconstant +hamming-projection-cache-limit+ 50000
+  "Maximum number of unseen observations memoized during one operation.")
+
 (defconstant +inf+ most-positive-fixnum)
 
 (defvar *running* nil
@@ -206,6 +218,18 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 
 (defvar *current-dataset-fingerprint* nil
   "Portable file-name/size identity for the current semantic train/validation pair.")
+
+(defvar *hamming-space-enabled* nil
+  "When true, project unseen CAGE2 inputs onto a demonstrated observation.")
+
+(defvar *hamming-dataset-name* nil
+  "Semantic training dataset used to build the fixed Hamming reference space.")
+
+(defvar *hamming-observation-index* nil
+  "Read-only index of unique demonstrated observations for Hamming projection.")
+
+(defvar *current-hamming-dataset-fingerprint* nil
+  "Portable identity of the dataset backing the active Hamming projector.")
 
 (defvar *best-team* nil
   "Best root team seen so far.")

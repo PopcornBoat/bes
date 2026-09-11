@@ -167,13 +167,16 @@ CAGE3 MODE:
            (if cage2-p
                (sb-ext:seed-random-state +cage2-evaluation-seed+)
                *random-state*)))
+    (setf *factored-actions-enabled* cage2-p)
+    (configure-hamming-observation-space)
     (when cage2-p
       (seed-cage2-evaluation)
       (emit-message
        (format nil
-               "CAGE2 scan-state observations enabled: ~D raw + ~D scan-state = ~D inputs."
+               "CAGE2 observations enabled: ~D raw + ~D scan-state + ~D decoy availability = ~D inputs."
                +cage2-raw-observation-size+
                +cage2-scan-state-size+
+               +cage2-decoy-availability-size+
                +cage2-observation-size+)))
 
     (let ((team (load-best-team best-team-path)))

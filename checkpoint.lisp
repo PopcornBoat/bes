@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 8
-  "Checkpoint version adding policy-owned ordered option tables.")
+(defconstant +best-team-checkpoint-version+ 9
+  "Checkpoint version recording optional Hamming observation projection.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -24,8 +24,9 @@
 (defun make-best-team-checkpoint-data
        (team fitness &key generation gym-environment-name
                           online-fitness-episodes search-seed
-                          fitness-evaluation-protocol dataset-name
-                          dataset-fingerprint action-agreement-signature)
+                           fitness-evaluation-protocol dataset-name
+                           dataset-fingerprint action-agreement-signature
+                           hamming-space-enabled hamming-dataset-fingerprint)
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   `(:checkpoint-version ,+best-team-checkpoint-version+
     :fitness ,fitness
@@ -37,6 +38,8 @@
     :dataset-name ,dataset-name
     :dataset-fingerprint ,dataset-fingerprint
     :action-agreement-signature ,action-agreement-signature
+    :hamming-space-enabled ,hamming-space-enabled
+    :hamming-dataset-fingerprint ,hamming-dataset-fingerprint
     :team ,(serialize-team team (make-hash-table :test #'equal))))
 
 (defun versioned-best-team-checkpoint-p (data)
@@ -48,8 +51,9 @@
 (defun write-best-team-checkpoint
        (team fitness path &key generation gym-environment-name
                                online-fitness-episodes search-seed
-                               fitness-evaluation-protocol dataset-name
-                               dataset-fingerprint action-agreement-signature)
+                                fitness-evaluation-protocol dataset-name
+                                dataset-fingerprint action-agreement-signature
+                                hamming-space-enabled hamming-dataset-fingerprint)
   "Write TEAM, FITNESS, and provenance metadata to PATH."
   (ensure-directories-exist path)
 
@@ -72,7 +76,9 @@
            :fitness-evaluation-protocol fitness-evaluation-protocol
            :dataset-name dataset-name
            :dataset-fingerprint dataset-fingerprint
-           :action-agreement-signature action-agreement-signature)
+           :action-agreement-signature action-agreement-signature
+           :hamming-space-enabled hamming-space-enabled
+           :hamming-dataset-fingerprint hamming-dataset-fingerprint)
          :stream out))))
 
   path)
@@ -91,7 +97,9 @@
    :online-fitness-episodes *online-fitness-episodes*
    :search-seed *current-search-seed*
    :dataset-name *current-dataset-name*
-   :dataset-fingerprint *current-dataset-fingerprint*
+    :dataset-fingerprint *current-dataset-fingerprint*
+    :hamming-space-enabled *hamming-space-enabled*
+    :hamming-dataset-fingerprint *current-hamming-dataset-fingerprint*
    :action-agreement-signature
      (and *factored-actions-enabled* (action-agreement-signature))
    :fitness-evaluation-protocol
@@ -139,8 +147,9 @@ return NIL for FITNESS and METADATA."
 (defun upgrade-best-team-checkpoint
        (path fitness &key output-path generation gym-environment-name
                           online-fitness-episodes search-seed
-                          fitness-evaluation-protocol dataset-name
-                          dataset-fingerprint action-agreement-signature)
+                           fitness-evaluation-protocol dataset-name
+                           dataset-fingerprint action-agreement-signature
+                           hamming-space-enabled hamming-dataset-fingerprint)
   "Add fitness metadata to a legacy best-team checkpoint.
 
 OUTPUT-PATH defaults to PATH.  Supplying a different path is recommended when
@@ -160,7 +169,9 @@ preserving the original legacy file."
      :fitness-evaluation-protocol fitness-evaluation-protocol
      :dataset-name dataset-name
      :dataset-fingerprint dataset-fingerprint
-     :action-agreement-signature action-agreement-signature)
+     :action-agreement-signature action-agreement-signature
+     :hamming-space-enabled hamming-space-enabled
+     :hamming-dataset-fingerprint hamming-dataset-fingerprint)
     (emit-message
      (format nil
              "Best-team checkpoint metadata written: ~A fitness=~A"

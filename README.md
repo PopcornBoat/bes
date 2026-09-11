@@ -312,6 +312,35 @@ Legacy atomic-action datasets retain their original loading and accuracy
 behavior. Reward-based offline fitness and richer state inputs remain future
 work.
 
+## Optional Hamming observation projection
+
+The Emacs main menu has a `Hamming Projection (next operation)` section. Use
+`F` to select a semantic `_train.lisp` dataset, then `H` to switch projection
+on or off before starting, resuming, or validating. The selected setting and
+file are copied into the request, so changing the menu later cannot alter an
+active operation. Keep the switch off for the baseline run and turn it on for
+the comparison run using the same checkpoint and validation seeds.
+
+With projection enabled, exact demonstrated observations pass through
+unchanged. An unseen 142-value CAGE2 observation is replaced only for policy
+execution by its nearest unique demonstrated observation; the current Python
+environment state is not modified, and the TPG still chooses the action. Ties
+are deterministic and retain the first state encountered in the dataset.
+
+Distance is categorical, block-normalized weighted Hamming distance. The raw
+52 values contribute 50% of the maximum distance, the ten scan-history values
+25%, and the 80 decoy-availability values 25%. This prevents the large
+availability block from dominating merely because it has more fields. The
+equivalent integer mismatch weights are 40, 104, and 13 respectively.
+
+Offline training uses the selected training file as the reference space, so
+training rows normally take the exact fast path while unseen held-out rows are
+projected. Online training and CAGE2 validation stream the reference file once
+at operation setup and retain only unique observations. Hamming mode and the
+reference file fingerprint are recorded in checkpoints; a warm start with a
+different setting or reference file is re-baselined instead of comparing
+incompatible historical fitness values.
+
 ---
 
 # Current Research Status

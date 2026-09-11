@@ -383,7 +383,9 @@ return their fixed configured addresses."
                               migration-interval
                               batch-size
                               online-fitness-episodes
-                              &key checkpoint-directory)
+                              &key checkpoint-directory
+                                   hamming-space-enabled
+                                   hamming-dataset-name)
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -422,6 +424,11 @@ return their fixed configured addresses."
   (setf *online-fitness-episodes*
         online-fitness-episodes)
 
+  ;; These values are copied from the pre-run menu request. Later menu changes
+  ;; affect only the next operation, never an active training/validation run.
+  (setf *hamming-space-enabled* (not (null hamming-space-enabled))
+        *hamming-dataset-name* hamming-dataset-name)
+
   (setf *checkpoint-directory* checkpoint-directory))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
@@ -432,7 +439,8 @@ return their fixed configured addresses."
 				  gap init-program-size max-program-size
 				  p-add-instr p-del-instr p-swap-instrs
 				  p-mut-constant p-mut-constant-sign
-				  migration-interval batch-size seed)
+				  migration-interval batch-size seed
+                                  hamming-space-enabled hamming-dataset-name)
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check that mode is either :online or :offline
   (and (or (eq mode :online)
@@ -445,7 +453,16 @@ return their fixed configured addresses."
 	 (:offline (and dataset-name
 			(not (eq dataset-name :none))
 			(eq gym-environment-name :none))))
-       ;; The semantic CAGE2 bridge supplies 52 raw values plus ten scan states.
+       (or (not hamming-space-enabled)
+           (and hamming-dataset-name
+                (not (eq hamming-dataset-name :none))
+                (integerp num-observations)
+                (= num-observations +cage2-observation-size+)
+                (integerp num-actions)
+                (= num-actions +num-semantic-targets+)
+                (or (eq mode :offline)
+                    (cl-gym:cage2-environment-p gym-environment-name))))
+       ;; The semantic bridge supplies raw, scan-state, and availability values.
        (or (not (and (stringp gym-environment-name)
                      (search "Cage2" gym-environment-name)))
            (and (integerp num-observations)
@@ -494,6 +511,10 @@ return their fixed configured addresses."
         (batch-size (getf msg :batch-size))
         (online-fitness-episodes
           (or (getf msg :online-fitness-episodes) 1))
+        (hamming-space-enabled
+          (eq (getf msg :hamming-space-enabled :disabled) :enabled))
+        (hamming-dataset-name
+          (getf msg :hamming-dataset-name :none))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -506,7 +527,7 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A online-fit-eps=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A online-fit-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
@@ -519,6 +540,8 @@ return their fixed configured addresses."
              migration-interval
              batch-size
              online-fitness-episodes
+             hamming-space-enabled
+             hamming-dataset-name
              checkpoint-directory
              seed))
 
@@ -562,7 +585,9 @@ return their fixed configured addresses."
          p-mut-constant-sign
          migration-interval
          batch-size
-         seed)
+         seed
+         hamming-space-enabled
+         hamming-dataset-name)
 
         (progn
           (unless (begin-search-operation)
@@ -591,7 +616,9 @@ return their fixed configured addresses."
            migration-interval
            batch-size
            online-fitness-episodes
-           :checkpoint-directory checkpoint-directory)
+           :checkpoint-directory checkpoint-directory
+           :hamming-space-enabled hamming-space-enabled
+           :hamming-dataset-name hamming-dataset-name)
 
           (push
            (bt:make-thread
@@ -670,6 +697,10 @@ return their fixed configured addresses."
         (batch-size (getf msg :batch-size))
         (online-fitness-episodes
           (or (getf msg :online-fitness-episodes) 1))
+        (hamming-space-enabled
+          (eq (getf msg :hamming-space-enabled :disabled) :enabled))
+        (hamming-dataset-name
+          (getf msg :hamming-dataset-name :none))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -716,7 +747,9 @@ return their fixed configured addresses."
          p-mut-constant-sign
          migration-interval
          batch-size
-         seed)
+         seed
+         hamming-space-enabled
+         hamming-dataset-name)
 
         (progn
           (unless (begin-search-operation)
@@ -745,7 +778,9 @@ return their fixed configured addresses."
            migration-interval
            batch-size
            online-fitness-episodes
-           :checkpoint-directory checkpoint-directory)
+           :checkpoint-directory checkpoint-directory
+           :hamming-space-enabled hamming-space-enabled
+           :hamming-dataset-name hamming-dataset-name)
 
           (push
            (bt:make-thread
@@ -886,15 +921,29 @@ return their fixed configured addresses."
         (environment (getf msg :environment))
         (mode (getf msg :validation-mode))
         (red-agent-name (getf msg :red-agent-name))
-        (episodes (getf msg :episodes)))
+        (episodes (getf msg :episodes))
+        (hamming-space-enabled
+          (eq (getf msg :hamming-space-enabled :disabled) :enabled))
+        (hamming-dataset-name
+          (getf msg :hamming-dataset-name :none)))
 
     (unless best-team-path
       (emit-error "No best-team-path provided for validation.")
       (return-from handle-validate-best-team))
 
+    (when (and hamming-space-enabled
+               (or (not (eq environment :cage2))
+                   (eq hamming-dataset-name :none)))
+      (emit-error
+       "Hamming validation requires CAGE2 and a semantic reference dataset.")
+      (return-from handle-validate-best-team))
+
     (unless (begin-validation-operation)
       (emit-error "This node became busy before validation could start.")
       (return-from handle-validate-best-team))
+
+    (setf *hamming-space-enabled* hamming-space-enabled
+          *hamming-dataset-name* hamming-dataset-name)
 
     (push
      (bt:make-thread

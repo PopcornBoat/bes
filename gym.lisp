@@ -122,7 +122,9 @@ GLOBAL and defensive :MONITOR fallbacks canonicalize to (0 0)."
            cl-tpg::+cage2-observation-size+
            (length observation)))
         (semantic-action->cage2-input
-         (cl-tpg:execute-team-semantic root-team observation)))
+         (cl-tpg:execute-team-semantic
+          root-team
+          (cl-tpg::policy-observation observation))))
       (cl-tpg:execute-team root-team observation)))
 
 (defun make (environment-name &key (video-path nil))

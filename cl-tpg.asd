@@ -18,6 +18,7 @@
 		   (:file "validation")
 	       (:file "mutation")
 	       (:file "dataset")
+	       (:file "hamming")
 	       (:file "migration")
                (:file "networking")
 	       (:file "gym")
