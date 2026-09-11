@@ -182,6 +182,38 @@ allowing permanent positive bloat pressure."
 	(setf (learner-action learner-2) learner-1-action))))
   team)
 
+(defun random-different-category (current category-count)
+  "Return a category distinct from CURRENT when CATEGORY-COUNT permits it."
+  (if (<= category-count 1)
+      current
+      (let ((candidate (random (1- category-count))))
+        (if (>= candidate current) (1+ candidate) candidate))))
+
+(defun mutate-factored-atomic-value (payload)
+  "Copy PAYLOAD and mutate exactly one categorical policy component."
+  (let ((mutated (copy-factored-action payload)))
+    (if (zerop (random 2))
+        (setf (factored-action-primary mutated)
+              (random-different-category
+               (factored-action-primary mutated) *num-actions*))
+        (setf (factored-action-secondary mutated)
+              (random-different-category
+               (factored-action-secondary mutated)
+               +num-semantic-responses+)))
+    mutated))
+
+(defun mutated-atomic-action-value (old-payload)
+  "Return an atomic payload appropriate for the active action contract."
+  (cond
+    ((not *factored-actions-enabled*)
+     (random *num-actions*))
+    ((factored-action-p old-payload)
+     (mutate-factored-atomic-value old-payload))
+    (t
+     ;; A legacy numeric checkpoint entering factored training is upgraded the
+     ;; first time this learner's action mutates.
+     (make-random-atomic-action-value))))
+
 (defun mutate-action (team)
   "Choose a random learner on a team and change its action.
    Its new action might be a new atomic action or a reference
@@ -195,16 +227,19 @@ allowing permanent positive bloat pressure."
       (delete-reference (action-action action)))
     (case new-type
       (:atomic
-       (progn
-	 (setf (action-type action) :atomic)
-	 (setf (action-action action) (random *num-actions*))))
+       (let ((old-payload (and (eq (action-type action) :atomic)
+                               (action-action action))))
+	 (setf (action-type action) :atomic
+               (action-action action)
+               (mutated-atomic-action-value old-payload))))
       (:reference
        (let ((target (random-choice (remove team *teams* :test #'equal))))
 	 (if (creates-cycle-p team target)
 	     ;; Cycle detected, fallback to an atomic action.
 	     (progn
 	       (setf (action-type action) :atomic)
-	       (setf (action-action action) (random *num-actions*)))
+	       (setf (action-action action)
+                     (make-random-atomic-action-value)))
 	     (progn
 	       (setf (action-type action) :reference)
 	       (setf (action-action action) target)

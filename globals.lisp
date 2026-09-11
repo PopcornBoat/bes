@@ -19,6 +19,14 @@
 (defconstant +num-semantic-targets+ 11
   "Number of targets in the hierarchical CAGE2 policy output.")
 
+(defconstant +num-semantic-responses+ 4
+  "Number of host response categories in a factored policy action.")
+
+(defvar *factored-actions-enabled* nil
+  "When true, newly created atomic actions contain categorical target and
+response fields. Legacy numeric atomic actions remain executable so historical
+checkpoints can be loaded and gradually mutated into the new representation.")
+
 (defconstant +cage2-raw-observation-size+ 52
   "Number of raw values produced by the official CAGE2 ChallengeWrapper.")
 

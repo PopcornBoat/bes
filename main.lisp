@@ -244,7 +244,9 @@ reference batch."
 (defun make-fitness-function (&key gym-environment-name dataset-name)
   (cond
     (gym-environment-name
-     (setf *offline-training-dataset* nil
+     (setf *factored-actions-enabled*
+             (not (null (cl-gym:cage2-environment-p gym-environment-name)))
+           *offline-training-dataset* nil
            *offline-reference-dataset* nil
            *offline-fitness-batch-indices* nil
            *current-dataset-fingerprint* nil)
@@ -254,6 +256,8 @@ reference batch."
 
     (dataset-name
      (let ((dataset (load-dataset dataset-name)))
+       (setf *factored-actions-enabled*
+             (eq (dataset-action-format dataset) :semantic))
        (if (eq (dataset-action-format dataset) :semantic)
            (let* ((reference-path
                     (semantic-validation-dataset-path
@@ -568,8 +572,8 @@ through serialization/deserialization and save it to disk."
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
-      (make-initial-population)
       (configure-fitness-function mode gym-environment-name dataset-name)
+      (make-initial-population)
 
       (loop while *running*
             do (evolve)
@@ -732,11 +736,11 @@ normal evolution."
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
+      ;; Configure the action contract before creating random learners.
+      (configure-fitness-function mode gym-environment-name dataset-name)
+
       ;; Build fresh random population for this island.
       (make-initial-population)
-
-      ;; Fitness must exist before the initial evaluation.
-      (configure-fitness-function mode gym-environment-name dataset-name)
 
       ;; Load and inject this island's best team.  Versioned checkpoints retain
       ;; their historical score when the environment and episode count match.

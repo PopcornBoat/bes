@@ -107,18 +107,21 @@ to the semantic policy output; intermediate winners' registers are discarded."
   "Execute TEAM and return the final terminal learner's atomic target.
 
 This compatibility API retains the former integer return shape. Atomic values
-now represent targets when *NUM-ACTIONS* is configured to 11."
+now represent targets when the factored action contract is enabled."
   (multiple-value-bind (terminal-learner registers)
       (execute-team-to-terminal team observation)
     (declare (ignore registers))
-    (action-action (learner-action terminal-learner))))
+    (atomic-action-primary
+     (action-action (learner-action terminal-learner)))))
 
 (defun execute-team-semantic (team observation)
-  "Execute TEAM and return a SEMANTIC-ACTION.
+  "Execute TEAM and return a SEMANTIC-ACTION from the final terminal learner.
 
-The terminal learner's atomic action supplies the target, while registers from
-that same learner supply the response type and optional decoy option. The
-Python bridge must later translate this output into a concrete CAGE2 action."
+New policies carry categorical target and response genes. Legacy numeric
+checkpoints retain their register-decoded response behavior. Only registers
+from the final terminal learner can contribute a transitional decoy option;
+intermediate team-reference winners are never used. The Python bridge converts
+the semantic result into a concrete environment action."
   (multiple-value-bind (terminal-learner registers)
       (execute-team-to-terminal team observation)
     (make-semantic-action-from-terminal
