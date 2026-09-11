@@ -280,9 +280,14 @@ file as the fixed reference dataset. For example,
 Each generation uses one uniform, unbalanced training-row sample shared by all
 candidates. Semantic accuracy follows the bridge contract: GLOBAL compares only
 the target; host actions compare target and response; Decoy resolves the first
-available agreement option and compares it with the teacher option. The complete held-out file supplies the stable reference
-fitness used for best-team selection and checkpoint replay. Online and offline
-runs require finite learner and program limits. The Emacs defaults use hard
+available agreement option and compares it with the teacher option. The
+complete held-out file supplies the stable reference fitness used for best-team
+selection and checkpoint replay. Online and offline runs use the same
+policy-owned table of ten decoy-option permutations. Each table starts from the
+agreement defaults, evolves through pair swaps, is installed in the Python
+environment once per episode, and is serialized with its team.
+
+Runs require finite learner and program limits. The Emacs defaults use hard
 ceilings of 32 learners per team and 256 instructions per program. Growth
 pressure begins tapering above soft thresholds of 11 learners and 128
 instructions, while every size below the hard ceiling remains reachable.

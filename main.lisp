@@ -29,13 +29,15 @@
     (:decoy 3)
     (otherwise nil)))
 
-(defun semantic-action-label-matches-p (prediction label &optional decoy-mask)
+(defun semantic-action-label-matches-p
+       (prediction label &optional decoy-mask option-orders)
   "Compare PREDICTION with a canonical (target response option) LABEL.
 
 GLOBAL requires only the target. Host non-Decoy labels require target and
-response. A new factored Decoy is resolved through the agreement order and the
-row's DECOY-MASK; a legacy prediction with an explicit option retains its old
-comparison. This mirrors the online bridge contract."
+response. A new factored Decoy is resolved through the policy-owned order (or
+the agreement default) and the row's DECOY-MASK; a legacy prediction with an
+explicit option retains its old comparison. This mirrors the online bridge
+contract."
   (destructuring-bind (target response option) label
     (and (= (semantic-action-target prediction) target)
          (or (= target +global-target+)
@@ -48,7 +50,7 @@ comparison. This mirrors the online bridge contract."
                         (let ((predicted-option
                                 (or (semantic-action-option prediction)
                                     (first-available-decoy-option
-                                     target decoy-mask))))
+                                     target decoy-mask option-orders))))
                           (and (integerp predicted-option)
                                (= predicted-option option))))))))))
 
@@ -72,7 +74,8 @@ this function so an entire population can share exactly the same batch."
                (when (semantic-action-label-matches-p
                       (execute-team-semantic team (aref observations index))
                       (aref labels index)
-                      (aref decoy-masks index))
+                      (aref decoy-masks index)
+                      (team-option-orders team))
                  (incf correct))
                (incf count)))
       (if indices

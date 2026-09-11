@@ -6,6 +6,7 @@
   (id (format nil "TEAM-~A-~A" (who-am-i) (funcall *team-id-generator*)))
   (references 0) ;; Track how many learners point here.
   (type :root)
+  (option-orders (make-default-action-option-orders))
   (learners (loop repeat *init-num-learners*
 		  collect (make-learner))))
 
@@ -17,6 +18,11 @@
 	  (setf (gethash id seen) t)
 	  `(:id ,id
 	    :type ,(team-type team)
+	    :option-orders
+              ,(let ((orders (team-option-orders team)))
+                 (and orders
+                      (loop for order across orders
+                            collect (and order (coerce order 'list)))))
 	    :learners ,(mapcar (lambda (l) (serialize-learner l seen))
 			       (team-learners team)))))))
 
@@ -33,6 +39,15 @@
 			    :id (format nil "TEAM-~A-~A" (who-am-i) (funcall *team-id-generator*))
 			    :type (getf data :type)
 			    :references (if is-root 0 1)
+			    :option-orders
+                              (let ((serialized (getf data :option-orders)))
+                                (if serialized
+                                    (map 'simple-vector
+                                         (lambda (order)
+                                           (and order
+                                                (coerce order 'simple-vector)))
+                                         serialized)
+                                    (make-default-action-option-orders)))
 			    ;; Avoid creating throwaway random learners. Fresh-process
 			    ;; deserialization must not depend on training parameters.
 			    :learners nil)))
@@ -220,6 +235,7 @@ team-reference winners never contribute registers."
   "Deep copy a team."
   (make-team
    :type (team-type team)
+   :option-orders (copy-action-option-orders (team-option-orders team))
    :learners (mapcar #'clone-learner (team-learners team))))
 
 (defun delete-team (team)

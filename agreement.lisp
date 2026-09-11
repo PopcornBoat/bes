@@ -156,14 +156,31 @@
        (loop for order across (action-agreement-decoy-orders agreement)
              collect (vector-list order)))))
 
-(defun first-available-decoy-option (target decoy-mask)
+(defun copy-action-option-orders (orders)
+  "Deep-copy a vector of per-target option-order vectors."
+  (and orders
+       (map 'simple-vector
+            (lambda (order)
+              (and order (copy-seq order)))
+            orders)))
+
+(defun make-default-action-option-orders ()
+  "Return an independent copy of the active agreement's option orders."
+  (and *factored-actions-enabled*
+       (copy-action-option-orders
+        (action-agreement-decoy-orders
+         (ensure-cage2-action-agreement)))))
+
+(defun first-available-decoy-option (target decoy-mask &optional option-orders)
   "Resolve TARGET's first available option using the shared agreement order."
   (when (and (integerp target)
              (< +global-target+ target +num-semantic-targets+)
              (integerp decoy-mask)
              (not (minusp decoy-mask)))
     (let* ((agreement (ensure-cage2-action-agreement))
-           (order (aref (action-agreement-decoy-orders agreement) target))
+           (orders (or option-orders
+                       (action-agreement-decoy-orders agreement)))
+           (order (aref orders target))
            (option-count (length (action-agreement-decoy-names agreement)))
            (host-index (1- target)))
       (loop for option across order

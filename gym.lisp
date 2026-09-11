@@ -110,7 +110,7 @@ GLOBAL and defensive :MONITOR fallbacks canonicalize to (0 0)."
            (list target response-index option)
            (list target response-index)))
       (t
-       (list target response-index))))
+       (list target response-index)))))
 
 (defun execute-policy-action (root-team observation environment-name)
   "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
@@ -146,6 +146,16 @@ GLOBAL and defensive :MONITOR fallbacks canonicalize to (0 0)."
       (py4cl2:pymethod env "step" action)
     (values (normalize-obs obs) rew term trunc info)))
 
+(defun configure-cage2-option-orders (env root-team)
+  "Install ROOT-TEAM's evolved option orders in one CAGE2 environment."
+  (let ((orders (cl-tpg::team-option-orders root-team)))
+    (when orders
+      (py4cl2:pycall
+       "cage2_bridge.cage2.configure_env_decoy_orders"
+       env
+       (loop for target from 1 below (length orders)
+             collect (coerce (aref orders target) 'list))))))
+
 (defun rollout-python (root-team environment-name seed &key (video-path nil))
   "Run one complete episode.
 
@@ -162,8 +172,10 @@ Supports:
     (py4cl2:pyexec "import cage3_bridge"))
 
   (let* ((env (make environment-name :video-path video-path))
-         (episode-reward 0.0)
-         (observation (reset env seed)))
+         (episode-reward 0.0))
+    (when (cage2-environment-p environment-name)
+      (configure-cage2-option-orders env root-team))
+    (let ((observation (reset env seed)))
     (unwind-protect
          (loop for timestep from 0
                do (let ((action
@@ -185,7 +197,7 @@ Supports:
         (when (and video-path
                    (probe-file "rl-video-episode-0.mp4"))
           (rename-file "rl-video-episode-0.mp4" video-path))))
-    episode-reward))
+      episode-reward)))
 
 (defun rollout (root-team environment-name seed &key (video-path nil))
   "Run a rollout through the Python Gymnasium bridge."

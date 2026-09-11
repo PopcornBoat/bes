@@ -26,4 +26,20 @@
   (assert (eq program (cl-tpg::mutate-constant program)))
   (assert (= (length (cl-tpg::program-instructions program)) 2)))
 
+(let ((cl-tpg::*factored-actions-enabled* t)
+      (cl-tpg::*teams* nil))
+  (let* ((team (cl-tpg::%make-team :learners nil))
+         (before
+           (cl-tpg::copy-action-option-orders
+            (cl-tpg::team-option-orders team)))
+         (serialized (cl-tpg::serialize-team team))
+         (restored
+           (cl-tpg::deserialize-team
+            serialized (make-hash-table :test #'equal))))
+    (cl-tpg::mutate-action-option-orders team)
+    (assert (not (equalp before (cl-tpg::team-option-orders team))))
+    (assert (equalp before (cl-tpg::team-option-orders restored)))
+    (assert (not (eq (cl-tpg::team-option-orders restored)
+                     (cl-tpg::team-option-orders team))))))
+
 (format t "Mutation regression checks passed.~%")

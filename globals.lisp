@@ -54,12 +54,12 @@ checkpoints can be loaded and gradually mutated into the new representation.")
   "Defensive execution-depth ceiling for malformed or pathological TPGs.")
 
 (defconstant +cage2-online-fitness-protocol+
-  :factored-decoy-availability-shared-seeds-v3
-  "Version tag for factored CAGE2 decisions with explicit resolver state.")
+  :evolved-decoy-orders-shared-seeds-v4
+  "Version tag for factored CAGE2 decisions with evolved option orders.")
 
 (defconstant +semantic-offline-fitness-protocol+
-  :factored-decoy-availability-reference-v2
-  "Version tag for agreement-resolved imitation with explicit decoy state.")
+  :evolved-decoy-orders-reference-v3
+  "Version tag for imitation using policy-owned option orders.")
 
 (defconstant +inf+ most-positive-fixnum)
 

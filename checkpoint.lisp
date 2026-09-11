@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 7
-  "Checkpoint version recording categorical actions and agreement signature.")
+(defconstant +best-team-checkpoint-version+ 8
+  "Checkpoint version adding policy-owned ordered option tables.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."

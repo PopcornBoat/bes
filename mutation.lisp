@@ -214,6 +214,20 @@ allowing permanent positive bloat pressure."
      ;; first time this learner's action mutates.
      (make-random-atomic-action-value))))
 
+(defun mutate-action-option-orders (team)
+  "Swap two entries in one host's policy-owned option permutation."
+  (let ((orders (or (team-option-orders team)
+                    (setf (team-option-orders team)
+                          (make-default-action-option-orders)))))
+    (when orders
+      (let* ((target (1+ (random (1- (length orders)))))
+             (order (aref orders target))
+             (first (random (length order)))
+             (second
+               (random-different-category first (length order))))
+        (rotatef (aref order first) (aref order second)))))
+  team)
+
 (defun mutate-action (team)
   "Choose a random learner on a team and change its action.
    Its new action might be a new atomic action or a reference
@@ -264,6 +278,10 @@ allowing permanent positive bloat pressure."
     (mutate-learner team))
   (when (mutate-action-p)
     (mutate-action team))
+  ;; The policy's ordered-option table evolves independently from its terminal
+  ;; target/response action, using the existing action-mutation probability.
+  (when (and *factored-actions-enabled* (mutate-action-p))
+    (mutate-action-option-orders team))
   (when (swap-learners-p)
     (swap-learners team))
   team)

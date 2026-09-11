@@ -61,7 +61,17 @@
        :target 8 :response :decoy :option nil)
       '(8 3 6)
       (ash 1 (+ (* 7 8) 1)))
-     "factored Decoy skips used agreement option")))
+     "factored Decoy skips used agreement option")
+    (let ((policy-orders (cl-tpg::copy-action-option-orders orders)))
+      (setf (aref policy-orders 8) #(7 5 4 3 2 1 0 6))
+      (check-semantic-offline
+       (cl-tpg::semantic-action-label-matches-p
+        (cl-tpg::make-semantic-action
+         :target 8 :response :decoy :option nil)
+        '(8 3 7)
+        0
+        policy-orders)
+       "policy-owned Decoy order overrides agreement default"))))
 
 (let* ((source (loop repeat 62 collect 0))
        (expanded (cl-tpg::append-decoy-availability source 1)))
