@@ -17,9 +17,49 @@
   (merge-pathnames filename
                    (uiop:ensure-directory-pathname directory)))
 
+(defun checkpoint-agent-type ()
+  "Infer a short agent type from the active environment or dataset."
+  (let* ((source
+           (if *current-dataset-name*
+               *current-dataset-name*
+               *current-gym-environment-name*))
+         (name (string-downcase (princ-to-string (or source "agent")))))
+    (cond
+      ((or (search "b_line" name)
+           (search "b-line" name)
+           (search "bline" name))
+       "bline")
+      ((search "meander" name)
+       "meander")
+      (t
+       "agent"))))
+
+(defun checkpoint-training-mode ()
+  "Return the active search mode as a filename component."
+  (cond
+    (*current-dataset-name* "offline")
+    ((and *current-gym-environment-name*
+          (not (eq *current-gym-environment-name* :none)))
+     "online")
+    (t "unknown")))
+
+(defun best-team-checkpoint-filename ()
+  "Return a stable, configuration-describing best-team filename.
+
+A configuration keeps overwriting its own immediate-best file, while agent,
+observation/action shape, mode, and Hamming variants can coexist in one
+checkpoint directory."
+  (format nil
+          "~A-~D-~D-~A-hamming-~A.lisp"
+          (checkpoint-agent-type)
+          *num-observations*
+          *num-actions*
+          (checkpoint-training-mode)
+          (if *hamming-space-enabled* "on" "off")))
+
 (defun best-team-checkpoint-path (&optional (directory *checkpoint-directory*))
   "Return the default best-team checkpoint file path."
-  (checkpoint-path directory "best-team.lisp"))
+  (checkpoint-path directory (best-team-checkpoint-filename)))
 
 (defun make-best-team-checkpoint-data
        (team fitness &key generation gym-environment-name

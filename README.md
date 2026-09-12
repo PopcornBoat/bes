@@ -65,6 +65,17 @@ Features include:
 - Configurable checkpoint directory
 - Immediate checkpointing whenever a new global best is accepted
 - Save only the globally best team
+- Stable configuration-derived filenames
+
+Automatic and menu-requested saves use
+`agenttype-observationSize-actionSize-mode-hammingState.lisp`. For example,
+a b-line policy with 142 observations and 11 actions trained online with
+Hamming projection is saved as `bline-142-11-online-hamming-on.lisp`.
+B-line and meander are inferred from the active environment or dataset;
+unrecognized tasks use `agent`. Each configuration overwrites only its own
+immediate-best file, so online/offline and Hamming ON/OFF variants can coexist
+in one checkpoint directory. Historical `best-team.lisp` files remain valid
+for loading and warm starts.
 
 Unlike traditional evolutionary checkpoints, this implementation intentionally does **not** save the entire evolutionary population.
 

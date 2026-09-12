@@ -1016,14 +1016,10 @@ selected yet."
 
 
 (defun tpg-save-best-team ()
-  "Save the current best team."
+  "Save the current best team using its configuration-derived filename."
   (interactive)
-  (let ((path
-         (tpg-read-file-path
-          "Save best team as: "
-          "~/Documents/Research/checkpoints/best-team.lisp")))
-    (sly-eval `(cl-tpg::save-best-team ,path))
-    (message "Best team saved to %s" path)))
+  (sly-eval '(cl-tpg::save-best-team))
+  (message "Best team saved using the active checkpoint configuration; see *tpg-log* for its path."))
 
 
 (defun tpg-send-payload-to-island (island-id payload process-name)
