@@ -231,6 +231,21 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 (defvar *current-hamming-dataset-fingerprint* nil
   "Portable identity of the dataset backing the active Hamming projector.")
 
+(defvar *hamming-validation-tracking-enabled* nil
+  "When true, record exact-reference coverage during validation only.")
+
+(defvar *hamming-validation-lookups* 0
+  "Number of policy observations checked during the current validation.")
+
+(defvar *hamming-validation-misses* 0
+  "Number of validation observations absent from the exact reference set.")
+
+(defvar *hamming-validation-unique-misses* nil
+  "Content-based set of distinct missed validation observations.")
+
+(defvar *last-hamming-validation-coverage* nil
+  "Coverage plist produced by the most recently completed validation.")
+
 (defvar *best-team* nil
   "Best root team seen so far.")
 

@@ -948,16 +948,26 @@ return their fixed configured addresses."
     (push
      (bt:make-thread
       (lambda ()
-        (unwind-protect
-             (handler-case
-                 (validate-best-team best-team-path
-                                     environment
-                                     mode
-                                     :red-agent-name red-agent-name
-                                     :episodes episodes)
-               (error (c)
-                 (emit-error
-                  (format nil "Validation crashed: ~A" c))))
-          (finish-validation-operation)))
+        (let ((track-hamming-p
+                (and hamming-space-enabled
+                     (eq environment :cage2))))
+          (when track-hamming-p
+            (begin-hamming-validation-coverage))
+          (unwind-protect
+               (handler-case
+                   (progn
+                     (validate-best-team best-team-path
+                                         environment
+                                         mode
+                                         :red-agent-name red-agent-name
+                                         :episodes episodes)
+                     (when track-hamming-p
+                       (emit-hamming-validation-coverage)))
+                 (error (c)
+                   (emit-error
+                    (format nil "Validation crashed: ~A" c))))
+            (when track-hamming-p
+              (end-hamming-validation-coverage))
+            (finish-validation-operation))))
       :name "validation-thread")
      *server-threads*)))

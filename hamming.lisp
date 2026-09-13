@@ -146,10 +146,71 @@ Raw observation, scan state, and decoy availability contribute 50%, 25%, and
           (observation-block-mismatch-count
            left right scan-end +cage2-observation-size+)))))
 
+(defun begin-hamming-validation-coverage ()
+  "Reset and enable Hamming coverage accounting for one validation."
+  (setf *hamming-validation-tracking-enabled* t
+        *hamming-validation-lookups* 0
+        *hamming-validation-misses* 0
+        *hamming-validation-unique-misses*
+          (make-hash-table :test #'equalp)
+        *last-hamming-validation-coverage* nil))
+
+(defun record-hamming-validation-lookup (observation exact-match-p)
+  "Record whether OBSERVATION was present in the exact reference set."
+  (when *hamming-validation-tracking-enabled*
+    (incf *hamming-validation-lookups*)
+    (unless exact-match-p
+      (incf *hamming-validation-misses*)
+      (unless (nth-value
+               1
+               (gethash observation
+                        *hamming-validation-unique-misses*))
+        ;; Bridge arrays should not become mutable hash-table keys.
+        (setf (gethash (copy-seq observation)
+                       *hamming-validation-unique-misses*)
+              t)))))
+
+(defun hamming-validation-coverage ()
+  "Return a snapshot of the active validation coverage counters."
+  (let* ((lookups *hamming-validation-lookups*)
+         (misses *hamming-validation-misses*)
+         (unique-misses
+           (if *hamming-validation-unique-misses*
+               (hash-table-count *hamming-validation-unique-misses*)
+               0)))
+    (list :lookups lookups
+          :exact-hits (- lookups misses)
+          :misses misses
+          :unique-misses unique-misses
+          :miss-rate-percent
+            (if (plusp lookups)
+                (* 100.0d0 (/ misses lookups))
+                0.0d0))))
+
+(defun emit-hamming-validation-coverage ()
+  "Emit and retain the completed validation coverage summary."
+  (let ((coverage (hamming-validation-coverage)))
+    (setf *last-hamming-validation-coverage* coverage)
+    (emit-message
+     (format nil
+             "Hamming validation coverage: lookups=~D exact-hits=~D misses=~D unique-misses=~D miss-rate=~,2F%%"
+             (getf coverage :lookups)
+             (getf coverage :exact-hits)
+             (getf coverage :misses)
+             (getf coverage :unique-misses)
+             (getf coverage :miss-rate-percent)))
+    coverage))
+
+(defun end-hamming-validation-coverage ()
+  "Disable validation accounting and release its distinct-miss set."
+  (setf *hamming-validation-tracking-enabled* nil
+        *hamming-validation-unique-misses* nil))
+
 (defun nearest-hamming-observation (observation index)
   "Return the closest demonstrated observation, with first-seen tie-breaking."
   (multiple-value-bind (exact-observation present-p)
       (gethash observation (hamming-observation-index-exact index))
+    (record-hamming-validation-lookup observation present-p)
     (if present-p
         exact-observation
         (multiple-value-bind (cached cached-p)

@@ -360,6 +360,14 @@ reference file fingerprint are recorded in checkpoints; a warm start with a
 different setting or reference file is re-baselined instead of comparing
 incompatible historical fitness values.
 
+Hamming-enabled CAGE2 validation also reports exact reference coverage after
+the rollouts finish: total policy lookups, exact hits, total misses, distinct
+missed observations, and miss percentage. A miss means the live 142-value
+observation was absent from the selected reference dataset before nearest-state
+projection. Counters are disabled during training and reset for every
+validation. The latest summary is also available as
+`*last-hamming-validation-coverage*` in the `CL-TPG` package.
+
 ---
 
 # Current Research Status
