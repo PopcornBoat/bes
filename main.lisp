@@ -54,6 +54,63 @@ contract."
                           (and (integerp predicted-option)
                                (= predicted-option option))))))))))
 
+(defun semantic-label-category-pair (label)
+  "Collapse a legacy dataset triple to its ranked target/response label."
+  (destructuring-bind (target response option) label
+    (declare (ignore option))
+    (if (= target +global-target+)
+        (list +global-target+ 0)
+        (list target response))))
+
+(defun resolve-semantic-ranking (predictions decoy-mask option-orders)
+  "Return the first executable target/response pair from PREDICTIONS.
+
+Decoy availability is evaluated from the row mask. If the first choice is an
+exhausted Decoy, later candidates are tried without another TPG call. Restore
+is intentionally skipped only while falling back, matching the PPO agent's
+next-best rule. Exhausting the ranking safely returns GLOBAL Monitor."
+  (loop for prediction in predictions
+        for rank fixnum from 0
+        for pair = (semantic-action-category-pair prediction)
+        for target = (first pair)
+        for response = (second pair)
+        do (cond
+             ((= target +global-target+)
+              (return pair))
+             ((= response 3)
+              (when (integerp
+                     (first-available-decoy-option
+                      target decoy-mask option-orders))
+                (return pair)))
+             ((and (> rank 0) (= response 2))
+              nil)
+             (t
+              (return pair)))
+        finally (return (list +global-target+ 0))))
+
+(defun semantic-ranking-ndcg (predictions teacher-ranking)
+  "Return NDCG for PREDICTIONS under the teacher's frequency-derived order."
+  (let* ((teacher-count (length teacher-ranking))
+         (relevance (make-hash-table :test #'equal))
+         (dcg 0.0d0)
+         (ideal 0.0d0))
+    (loop for pair in teacher-ranking
+          for rank fixnum from 0
+          do (setf (gethash pair relevance) (- teacher-count rank))
+             (incf ideal
+                   (/ (coerce (- teacher-count rank) 'double-float)
+                      (log (+ rank 2.0d0) 2.0d0))))
+    (loop for prediction in predictions
+          for rank fixnum from 0
+          for value = (gethash (semantic-action-category-pair prediction)
+                               relevance
+                               0)
+          when (> value 0)
+            do (incf dcg
+                     (/ (coerce value 'double-float)
+                        (log (+ rank 2.0d0) 2.0d0))))
+    (if (zerop ideal) 0.0d0 (/ dcg ideal))))
+
 (defun semantic-accuracy (team dataset &optional indices)
   "Return strict hierarchical semantic accuracy for TEAM on DATASET.
 
@@ -89,6 +146,63 @@ this function so an entire population can share exactly the same batch."
         (/ (coerce correct 'double-float)
            (coerce count 'double-float)))))
 
+(defun semantic-ranked-fitness (team dataset &optional indices)
+  "Score executable top-choice behavior plus teacher ranking agreement.
+
+The v2 label intentionally ignores concrete Decoy options. Each row contributes
+80% when the first usable predicted target/response equals the demonstrated
+action and 20% NDCG against that observation's frequency-ranked alternatives."
+  (let ((score 0.0d0)
+        (count 0)
+        (observations (observations dataset))
+        (labels (actions dataset))
+        (rankings (dataset-semantic-rankings dataset))
+        (decoy-masks (dataset-decoy-masks dataset))
+        (option-orders (effective-team-option-orders team)))
+    (labels ((score-row (index)
+               (when (and *search-active*
+                          (zerop (logand count 255)))
+                 (abort-search-if-requested))
+               (let* ((teacher-ranking (aref rankings index))
+                      (prediction-limit
+                        (min +semantic-ranking-limit+
+                             (max 1 (length teacher-ranking))))
+                      (predictions
+                        (execute-team-semantic-ranked
+                         team
+                         (policy-observation (aref observations index))
+                         prediction-limit))
+                      (resolved
+                        (resolve-semantic-ranking
+                         predictions
+                         (aref decoy-masks index)
+                         option-orders))
+                      (expected
+                        (semantic-label-category-pair
+                         (aref labels index))))
+                 (when (equal resolved expected)
+                   (incf score +ranked-behavior-fitness-weight+))
+                 (incf score
+                       (* +ranked-order-fitness-weight+
+                          (semantic-ranking-ndcg
+                           predictions teacher-ranking))))
+               (incf count)))
+      (if indices
+          (loop for index across indices do (score-row index))
+          (dotimes (index (dataset-size dataset))
+            (score-row index))))
+    (if (zerop count)
+        0.0d0
+        (/ score (coerce count 'double-float)))))
+
+(defun semantic-dataset-fitness (team dataset &optional indices)
+  "Dispatch semantic fitness according to the dataset protocol generation."
+  (ecase (dataset-action-format dataset)
+    (:semantic
+     (semantic-accuracy team dataset indices))
+    (:semantic-ranked
+     (semantic-ranked-fitness team dataset indices))))
+
 (defun make-uniform-dataset-indices (dataset)
   "Return an unbalanced uniform sample without replacement, or NIL for all rows."
   (let ((size (dataset-size dataset)))
@@ -117,7 +231,7 @@ this function so an entire population can share exactly the same batch."
     (setf *offline-fitness-batch-indices*
           (or (make-uniform-dataset-indices *offline-training-dataset*)
               :all)))
-  (semantic-accuracy
+  (semantic-dataset-fitness
    team
    *offline-training-dataset*
    (unless (eq *offline-fitness-batch-indices* :all)
@@ -127,7 +241,7 @@ this function so an entire population can share exactly the same batch."
   "Evaluate TEAM on the complete fixed held-out semantic dataset."
   (unless *offline-reference-dataset*
     (error "Semantic offline reference dataset is not configured."))
-  (semantic-accuracy team *offline-reference-dataset*))
+  (semantic-dataset-fitness team *offline-reference-dataset*))
 
 (defun semantic-validation-dataset-path (training-path)
   "Infer the sibling validation path from a semantic training dataset path."
@@ -268,8 +382,8 @@ reference batch."
     (dataset-name
      (let ((dataset (load-dataset dataset-name)))
        (setf *factored-actions-enabled*
-             (eq (dataset-action-format dataset) :semantic))
-       (if (eq (dataset-action-format dataset) :semantic)
+             (not (null (semantic-dataset-p dataset))))
+       (if (semantic-dataset-p dataset)
            (let* ((reference-path
                     (semantic-validation-dataset-path
                      (dataset-source-path dataset)))
@@ -278,7 +392,8 @@ reference batch."
                (error "Semantic validation dataset not found: ~A"
                       (namestring reference-path)))
              (let ((reference-dataset (load-dataset reference-file)))
-               (unless (eq (dataset-action-format reference-dataset) :semantic)
+               (unless (eq (dataset-action-format reference-dataset)
+                           (dataset-action-format dataset))
                  (error "Semantic validation path contains a legacy dataset: ~A"
                         (namestring reference-file)))
                 (setf *offline-training-dataset* dataset
@@ -298,7 +413,7 @@ reference batch."
                     (lambda (team)
                       (accuracy team dataset)))))
        (configure-hamming-observation-space
-        (and (eq (dataset-action-format dataset) :semantic)
+        (and (semantic-dataset-p dataset)
              dataset))))
 
     (t

@@ -186,6 +186,92 @@ team-reference winners never contribute registers."
      (action-action (learner-action terminal-learner))
      registers)))
 
+(defun execute-team-semantic-ranked
+       (team observation &optional (limit +semantic-ranking-limit+))
+  "Return up to LIMIT unique semantic candidates in hierarchical bid order.
+
+The first result follows exactly the existing winner-at-each-team traversal.
+Alternatives are explored depth-first in descending local bid order. Every
+candidate is decoded from its own terminal learner and saved register state;
+registers from team-reference learners are never reused. Team evaluations are
+cached for this call so shared subgraphs do not execute their programs twice."
+  (unless (and (integerp limit) (> limit 0))
+    (error "Semantic ranking limit must be positive, got ~S." limit))
+  (let ((evaluation-cache (make-hash-table :test #'eq))
+        (seen-actions (make-hash-table :test #'equal))
+        (results nil))
+    (labels
+        ((evaluate-team (current)
+           (or (gethash current evaluation-cache)
+               (let ((evaluations nil)
+                     (winner nil)
+                     (winning-bid nil)
+                     (register-buffer
+                       (make-array +num-registers+
+                                   :element-type 'double-float)))
+                 (dolist (learner (team-learners current))
+                   (multiple-value-bind (learner-bid registers)
+                       (bid learner observation register-buffer)
+                     (let ((entry
+                             (list learner
+                                   learner-bid
+                                   (copy-seq registers))))
+                       (push entry evaluations)
+                       ;; This is intentionally the same strict comparison as
+                       ;; EXECUTE-TEAM-TO-TERMINAL, including stable bid ties.
+                       (when (or (null winner)
+                                 (> learner-bid winning-bid))
+                         (setf winner entry
+                               winning-bid learner-bid)))))
+                 (unless winner
+                   (error "Cannot execute empty team ~A." (team-id current)))
+                 (setf evaluations (nreverse evaluations))
+                 (let ((ordered
+                         (cons winner
+                               (stable-sort
+                                (remove winner evaluations :test #'eq :count 1)
+                                #'>
+                                :key #'second))))
+                   (setf (gethash current evaluation-cache) ordered)
+                   ordered))))
+         (record-terminal (entry)
+           (let* ((learner (first entry))
+                  (registers (third entry))
+                  (semantic
+                    (make-semantic-action-from-terminal
+                     (action-action (learner-action learner))
+                     registers))
+                  (key (semantic-action-category-pair semantic)))
+             (unless (gethash key seen-actions)
+               (setf (gethash key seen-actions) t)
+               (push semantic results))))
+         (traverse (current visited depth preferred-path-p)
+           (cond
+             ((>= (length results) limit) nil)
+             ((>= depth +max-team-traversal-depth+)
+              (when preferred-path-p
+                (error "TPG traversal exceeded the ~D-team safety limit."
+                       +max-team-traversal-depth+)))
+             ((member current visited :test #'eq)
+              (when preferred-path-p
+                (error "Cycle encountered while executing TPG at team ~A."
+                       (team-id current))))
+             (t
+              (loop for entry in (evaluate-team current)
+                    for local-rank fixnum from 0
+                    until (>= (length results) limit)
+                    do (let* ((learner (first entry))
+                              (act (learner-action learner)))
+                         (if (eq (action-type act) :atomic)
+                             (record-terminal entry)
+                             (traverse (action-action act)
+                                       (cons current visited)
+                                       (1+ depth)
+                                       (and preferred-path-p
+                                            (zerop local-rank))))))))))
+      (traverse team nil 0 t)
+      (nreverse results))))
+
 (defun execute-team-on-dataset (team dataset)
   "Batch executes a team across all the observations in DATASET."
   (map 'list (lambda (obs) (execute-team team obs)) (observations dataset)))

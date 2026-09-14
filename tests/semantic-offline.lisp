@@ -101,6 +101,87 @@
      (= (length (cl-tpg::make-cage2-policy-observation source 1)) 142)
      "142-input mode appends availability")))
 
+(check-semantic-offline
+ (cl-tpg::valid-semantic-ranking-p '((8 3) (8 0) (1 1)))
+ "v2 target/response ranking validation")
+
+(check-semantic-offline
+ (not (cl-tpg::valid-semantic-ranking-p '((8 3) (8 3))))
+ "v2 rankings reject duplicate categories")
+
+(let* ((predictions
+         (list
+          (cl-tpg::make-semantic-action :target 8 :response :decoy)
+          (cl-tpg::make-semantic-action :target 8 :response :analyse)))
+       (teacher '((8 3) (8 0))))
+  (check-semantic-offline
+   (= (cl-tpg::semantic-ranking-ndcg predictions teacher) 1.0d0)
+   "matching semantic ranking has perfect NDCG")
+  (check-semantic-offline
+   (< (cl-tpg::semantic-ranking-ndcg (reverse predictions) teacher) 1.0d0)
+   "reversed semantic ranking loses NDCG"))
+
+(let* ((orders
+         (cl-tpg::action-agreement-decoy-orders
+          (cl-tpg::ensure-cage2-action-agreement)))
+       (exhausted-mask (1- (ash 1 8)))
+       (predictions
+         (list
+          (cl-tpg::make-semantic-action :target 1 :response :decoy)
+          (cl-tpg::make-semantic-action :target 8 :response :restore)
+          (cl-tpg::make-semantic-action :target 8 :response :analyse))))
+  (check-semantic-offline
+   (equal (cl-tpg::resolve-semantic-ranking
+           predictions exhausted-mask orders)
+          '(8 0))
+   "ranked resolver skips exhausted Decoy and fallback Restore"))
+
+(labels ((bid-program (value)
+         (cl-tpg::make-program
+          :instructions
+          (make-array
+           1 :adjustable t :fill-pointer t
+           :initial-contents
+           (list
+            (cl-tpg::%make-instruction
+             :dest 0 :op :add
+             :src1-type :const :src1-val (coerce value 'double-float)
+             :src2-type :const :src2-val 0.0d0 :arity 2)))))
+       (terminal-learner (bid target response)
+         (cl-tpg::make-learner
+          :program (bid-program bid)
+          :action
+          (cl-tpg::make-action
+           :type :atomic
+           :action
+           (cl-tpg::make-factored-action
+            :primary target :secondary response)))))
+  (let* ((inner
+           (cl-tpg::%make-team
+            :learners
+            (list (terminal-learner 5 8 3)
+                  (terminal-learner 3 8 0))))
+         (reference
+           (cl-tpg::make-learner
+            :program (bid-program 10)
+            :action (cl-tpg::make-action :type :reference :action inner)))
+         (root
+           (cl-tpg::%make-team
+            :learners
+            (list reference (terminal-learner 9 1 1))))
+         (observation
+           (make-array 1 :element-type 'double-float :initial-element 0.0d0))
+         (single (cl-tpg::execute-team-semantic root observation))
+         (ranked (cl-tpg::execute-team-semantic-ranked root observation)))
+    (check-semantic-offline
+     (equal (cl-tpg::semantic-action-category-pair single)
+            (cl-tpg::semantic-action-category-pair (first ranked)))
+     "ranked traversal preserves the existing first winner")
+    (check-semantic-offline
+     (equal (mapcar #'cl-tpg::semantic-action-category-pair ranked)
+            '((8 3) (8 0) (1 1)))
+     "ranked traversal follows hierarchical bid order")))
+
 (let* ((cl-tpg::*num-observations* 62)
        (cl-tpg::*hamming-space-enabled* nil)
        (bridge-observation

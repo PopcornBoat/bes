@@ -114,6 +114,21 @@ the legacy register decoder so existing checkpoints remain reproducible."
     (otherwise
      (error "Unsupported atomic action payload: ~S" payload))))
 
+(defun semantic-action-category-pair (action)
+  "Return ACTION as the bridge-level (target response) category pair.
+
+GLOBAL and defensive Monitor results canonicalize to (0 0). Concrete Decoy
+options are deliberately excluded: ranked policies learn host and response,
+while the bridge owns ordered option selection and availability state."
+  (let* ((target (semantic-action-target action))
+         (response (semantic-action-response action))
+         (response-index (position response *semantic-response-types*)))
+    (if (or (not (integerp target))
+            (= target +global-target+)
+            (null response-index))
+        (list +global-target+ 0)
+        (list target response-index))))
+
 (defun atomic-action-primary (payload)
   "Return the compatibility integer represented by atomic PAYLOAD."
   (etypecase payload

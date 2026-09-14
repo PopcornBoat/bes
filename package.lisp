@@ -9,6 +9,7 @@
                      :stop-server
                      :execute-team
                      :execute-team-semantic
+                     :execute-team-semantic-ranked
                      :semantic-action
                      :semantic-action-target
                      :semantic-action-response

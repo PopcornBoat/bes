@@ -30,7 +30,7 @@
 
 (defun make-hamming-index-from-dataset (dataset)
   "Build a unique observation index from a loaded semantic DATASET."
-  (unless (eq (dataset-action-format dataset) :semantic)
+  (unless (semantic-dataset-p dataset)
     (error "Hamming projection requires a semantic CAGE2 dataset."))
   (let ((prototypes (make-array 1024 :adjustable t :fill-pointer 0))
         (exact (make-hash-table :test #'equalp)))

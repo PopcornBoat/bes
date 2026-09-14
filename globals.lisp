@@ -69,13 +69,22 @@ order; :EVOLVED uses each root team's serialized, mutable option orders.")
 (defconstant +max-team-traversal-depth+ 128
   "Defensive execution-depth ceiling for malformed or pathological TPGs.")
 
+(defconstant +semantic-ranking-limit+ 8
+  "Maximum number of unique target/response candidates sent to CAGE2.")
+
+(defconstant +ranked-behavior-fitness-weight+ 0.8d0
+  "Weight of the executable top-choice term in ranked offline fitness.")
+
+(defconstant +ranked-order-fitness-weight+ 0.2d0
+  "Weight of the teacher-order NDCG term in ranked offline fitness.")
+
 (defconstant +cage2-online-fitness-protocol+
-  :observation-prefix-decoy-order-shared-seeds-v5
-  "Version tag for configurable CAGE2 observations and Decoy-order modes.")
+  :ranked-semantic-next-best-shared-seeds-v6
+  "Version tag for ranked semantic CAGE2 execution and shared episode seeds.")
 
 (defconstant +semantic-offline-fitness-protocol+
-  :observation-prefix-decoy-order-reference-v4
-  "Version tag for imitation with configurable observations and option orders.")
+  :ranked-semantic-behavior-ndcg-reference-v5
+  "Version tag for ranked target/response imitation with fixed reference data.")
 
 (defconstant +hamming-raw-mismatch-weight+ 40
   "Integer weight for one raw-observation mismatch.")

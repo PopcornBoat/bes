@@ -8,6 +8,7 @@
   (truncations (make-array 0 :element-type 'bit) :type simple-vector)
   (teacher-actions (make-array 0) :type simple-vector)
   (decoy-masks (make-array 0) :type simple-vector)
+  (semantic-rankings (make-array 0) :type simple-vector)
   (size 0 :type fixnum)
   (action-format :atomic :type keyword)
   source-path)
@@ -44,6 +45,7 @@
 		   :truncations trunc-arr
 		   :teacher-actions (make-array count :initial-element nil)
 		   :decoy-masks (make-array count :initial-element 0)
+		   :semantic-rankings (make-array count :initial-element nil)
 		   :size count
                    :action-format :atomic)))
 
@@ -66,6 +68,32 @@
               (integerp option)
               (<= 0 option)
               (< option 8)))))
+
+(defun valid-semantic-pair-p (pair)
+  "Return true for one canonical (target response) ranked label."
+  (and (listp pair)
+       (= (length pair) 2)
+       (destructuring-bind (target response) pair
+         (and (integerp target)
+              (<= 0 target)
+              (< target +num-semantic-targets+)
+              (integerp response)
+              (<= 0 response)
+              (< response +num-semantic-responses+)))))
+
+(defun valid-semantic-ranking-p (ranking)
+  "Return true for a non-empty duplicate-free target/response ranking."
+  (and (listp ranking)
+       ranking
+       (every #'valid-semantic-pair-p ranking)
+       (= (length ranking)
+          (length (remove-duplicates ranking :test #'equal)))))
+
+(defun semantic-dataset-p (dataset)
+  "Return true for either supported semantic CAGE2 dataset generation."
+  (member (dataset-action-format dataset)
+          '(:semantic :semantic-ranked)
+          :test #'eq))
 
 (defun append-decoy-availability (observation decoy-mask)
   "Append exact host-major binary availability to a 62-value CAGE2 state.
@@ -119,7 +147,7 @@ active experiment exposes all 142 bridge values to programs."
             *num-observations*))))
 
 (defun convert-semantic-stream-to-dataset (first-form stream source-path)
-  "Read cage2-semantic-v1 forms from STREAM into the in-memory dataset shape.
+  "Read cage2-semantic-v1/v2 forms from STREAM into the in-memory dataset shape.
 
 The collector stores full transitions for future work. The current imitation
 fitness retains observation, semantic action, reward, and termination fields;
@@ -143,6 +171,9 @@ teacher action cannot be represented are skipped rather than silently relabelled
         (truncation-list nil)
         (teacher-action-list nil)
         (decoy-mask-list nil)
+        (semantic-ranking-list nil)
+        (saw-ranking nil)
+        (saw-unranked nil)
         (skipped 0))
     (labels ((consume (form)
                (unless (semantic-transition-form-p form)
@@ -153,6 +184,8 @@ teacher action cannot be represented are skipped rather than silently relabelled
                      (reward (getf (rest form) :reward))
                      (teacher-action (getf (rest form) :teacher-action))
                      (decoy-mask (getf (rest form) :decoy-mask-before 0))
+                     (ranking
+                       (getf (rest form) :semantic-ranking :not-present))
                      (terminated (getf (rest form) :terminated))
                      (truncated (getf (rest form) :truncated)))
                  (if (and representable action)
@@ -168,6 +201,16 @@ teacher action cannot be represented are skipped rather than silently relabelled
                               (type-of observation))))
                        (unless (valid-semantic-action-label-p action)
                          (error "Invalid semantic action label: ~S" action))
+                       (if (eq ranking :not-present)
+                           (setf saw-unranked t)
+                           (progn
+                             (unless (valid-semantic-ranking-p ranking)
+                               (error "Invalid semantic action ranking: ~S"
+                                      ranking))
+                             (setf saw-ranking t)))
+                       (when (and saw-ranking saw-unranked)
+                         (error
+                          "Semantic dataset mixes ranked-v2 and unranked-v1 rows."))
                        (unless (numberp reward)
                          (error "Invalid semantic dataset reward: ~S" reward))
                        (unless (and (integerp teacher-action)
@@ -179,6 +222,9 @@ teacher action cannot be represented are skipped rather than silently relabelled
                        (push (copy-list action) action-list)
                        (push teacher-action teacher-action-list)
                        (push decoy-mask decoy-mask-list)
+                       (push (unless (eq ranking :not-present)
+                               (mapcar #'copy-list ranking))
+                             semantic-ranking-list)
                        (push (coerce reward 'double-float) reward-list)
                        (push (if terminated 1 0) termination-list)
                        (push (if truncated 1 0) truncation-list))
@@ -195,6 +241,7 @@ teacher action cannot be represented are skipped rather than silently relabelled
            (truncations (nreverse truncation-list))
            (teacher-actions (nreverse teacher-action-list))
            (decoy-masks (nreverse decoy-mask-list))
+           (semantic-rankings (nreverse semantic-ranking-list))
            (count (length observations))
            (obs-arr (make-array count :initial-contents observations))
            (act-arr (make-array count :initial-contents actions))
@@ -216,8 +263,12 @@ teacher action cannot be represented are skipped rather than silently relabelled
                        (make-array count :initial-contents teacher-actions)
                      :decoy-masks
                        (make-array count :initial-contents decoy-masks)
+                     :semantic-rankings
+                       (make-array count :initial-contents semantic-rankings)
                      :size count
-                     :action-format :semantic
+                     :action-format (if saw-ranking
+                                        :semantic-ranked
+                                        :semantic)
                      :source-path source-path))))
 
 (defun observations (dataset)
@@ -251,6 +302,7 @@ teacher action cannot be represented are skipped rather than silently relabelled
    :truncations (subseq (truncations dataset) start end)
    :teacher-actions (subseq (dataset-teacher-actions dataset) start end)
    :decoy-masks (subseq (dataset-decoy-masks dataset) start end)
+   :semantic-rankings (subseq (dataset-semantic-rankings dataset) start end)
    :size (- end start)
    :action-format (dataset-action-format dataset)
    :source-path (dataset-source-path dataset)))

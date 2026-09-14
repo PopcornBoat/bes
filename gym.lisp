@@ -112,6 +112,10 @@ GLOBAL and defensive :MONITOR fallbacks canonicalize to (0 0)."
       (t
        (list target response-index)))))
 
+(defun semantic-ranking->cage2-input (actions)
+  "Convert ranked BES semantic actions to primitive bridge candidates."
+  (mapcar #'semantic-action->cage2-input actions))
+
 (defun execute-policy-action (root-team observation environment-name)
   "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
   (if (cage2-environment-p environment-name)
@@ -121,8 +125,8 @@ GLOBAL and defensive :MONITOR fallbacks canonicalize to (0 0)."
            "Expected ~D bridge-augmented CAGE2 observations, got ~D. Update/install the scan-state custom-gym-for-bes bridge."
            cl-tpg::+cage2-observation-size+
            (length observation)))
-        (semantic-action->cage2-input
-         (cl-tpg:execute-team-semantic
+        (semantic-ranking->cage2-input
+         (cl-tpg:execute-team-semantic-ranked
           root-team
           (cl-tpg::policy-observation observation))))
       (cl-tpg:execute-team root-team observation)))

@@ -290,16 +290,37 @@ scan-state bridge version. Episode and step indices are not included.
 
 ---
 
-## Offline semantic imitation
+## Ranked semantic imitation and next-best execution
 
-BES accepts the line-oriented `cage2-semantic-v1` datasets produced by the
-CAGE2 collector. Start an offline search with the `_train.lisp` file, configure
+BES accepts both line-oriented `cage2-semantic-v1` datasets and ranked
+`cage2-semantic-v2` datasets produced by the CAGE2 collector. Start an offline
+search with the `_train.lisp` file, configure
 62 or 142 observations and 11 targets. The source dataset is reusable in both
 modes: BES reads its stored 62 values directly in 62 mode or appends 80 binary
 availability values from `:decoy-mask-before` in 142 mode. BES automatically loads the sibling `_val.lisp`
 file as the fixed reference dataset. For example,
 `cage2_bline_semantic_train.lisp` is paired with
 `cage2_bline_semantic_val.lisp`.
+
+For v2, every row retains its historical concrete semantic triple and adds a
+frequency-ranked list of `(target response)` alternatives for that exact
+62-value observation. Concrete Decoy options are not supervised. The ranked
+fitness is `0.8 * executable-action accuracy + 0.2 * ranking NDCG`: availability
+from `:decoy-mask-before` resolves the first usable prediction, while NDCG
+rewards agreement with the teacher's full frequency order. The complete v2
+training and validation files must both use the ranked format; BES rejects a
+mixed v1/v2 pair.
+
+At execution time BES emits up to eight unique semantic candidates in
+hierarchical bid order. The first candidate is exactly the existing TPG winner:
+the highest-bidding learner is followed recursively until a terminal learner is
+reached. Alternatives are then explored depth-first by descending local bid,
+and every terminal candidate uses that learner's own saved registers. The
+bridge consumes this list once. If the selected host has no unused Decoy it
+tries the next candidate, skips Restore while in fallback mode like the PPO
+teacher, and finally uses Monitor if nothing is executable. This avoids a
+second Lisp/Python call. Historical single-action bridge input and v1 dataset
+fitness remain supported.
 
 Each generation uses one uniform, unbalanced training-row sample shared by all
 candidates. Semantic accuracy follows the bridge contract: GLOBAL compares only
