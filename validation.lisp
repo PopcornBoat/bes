@@ -168,18 +168,33 @@ CAGE3 MODE:
                (sb-ext:seed-random-state +cage2-evaluation-seed+)
                *random-state*)))
     (setf *factored-actions-enabled* cage2-p)
+    (when cage2-p
+      (unless (valid-cage2-policy-observation-size-p *num-observations*)
+        (error "CAGE2 validation requires ~D or ~D policy observations, got ~S."
+               +cage2-scan-observation-size+
+               +cage2-observation-size+
+               *num-observations*))
+      (unless (valid-decoy-order-mode-p *decoy-order-mode*)
+        (error "Invalid CAGE2 Decoy-order mode: ~S." *decoy-order-mode*)))
     (configure-hamming-observation-space)
     (when cage2-p
       (seed-cage2-evaluation)
       (emit-message
        (format nil
-               "CAGE2 observations enabled: ~D raw + ~D scan-state + ~D decoy availability = ~D inputs."
+               "CAGE2 policy inputs: first ~D of ~D bridge values (~D raw + ~D scan-state~A); decoy-order=~A."
+               *num-observations*
+               +cage2-observation-size+
                +cage2-raw-observation-size+
                +cage2-scan-state-size+
-               +cage2-decoy-availability-size+
-               +cage2-observation-size+)))
+               (if (= *num-observations* +cage2-observation-size+)
+                   (format nil " + ~D availability"
+                           +cage2-decoy-availability-size+)
+                   "; availability ignored")
+               *decoy-order-mode*)))
 
     (let ((team (load-best-team best-team-path)))
+      (when cage2-p
+        (ensure-team-observation-compatible team *num-observations*))
       (emit-message
        (format nil
                "Validation started. best-team=~A environment=~A mode=~A red=~A episodes=~A"

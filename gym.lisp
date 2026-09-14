@@ -149,8 +149,8 @@ GLOBAL and defensive :MONITOR fallbacks canonicalize to (0 0)."
     (values (normalize-obs obs) rew term trunc info)))
 
 (defun configure-cage2-option-orders (env root-team)
-  "Install ROOT-TEAM's evolved option orders in one CAGE2 environment."
-  (let ((orders (cl-tpg::team-option-orders root-team)))
+  "Install the active fixed or evolved Decoy orders in one CAGE2 environment."
+  (let ((orders (cl-tpg::effective-team-option-orders root-team)))
     (when orders
       (py4cl2:pycall
        "cage2_bridge.cage2.configure_env_decoy_orders"

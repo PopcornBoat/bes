@@ -271,15 +271,19 @@ Both variables are reset appropriately when a new search begins.
 
 ## CAGE2 policy observations
 
-The official CAGE2 bridge supplies 142 policy inputs: the original 52-value
+The official CAGE2 bridge always transports 142 values: the original 52-value
 observation, ten episode-local scan-history values in target order, and 80
-binary decoy-availability values in host-major agreement order. Scan hosts are:
+binary decoy-availability values in host-major agreement order. BES's existing
+`Number of Observations` setting selects the policy prefix for the 2x2
+experiment: `62` exposes raw plus scan state and ignores the final 80 values;
+`142` exposes the complete bridge observation. Scan hosts are:
 Defender, Enterprise0-2, Op_Server0, and User0-4. `0` means unseen, `1` means
 scanned previously, and `2` identifies the most recently detected scan. The
 bridge initializes the state to zero, consumes and maintains it throughout one
 episode, and clears it at the episode boundary. Availability uses `1` for an
-unused option and `0` for a used option. BES receives the completed 142-value
-vector and performs no CAGE2-specific online state extraction itself.
+unused option and `0` for a used option. The bridge remains the authoritative
+owner of this episode-local state in both modes; 62-input BES programs simply
+cannot address the availability suffix.
 
 Online training, offline collection, and validation must all use the same
 scan-state bridge version. Episode and step indices are not included.
@@ -290,8 +294,9 @@ scan-state bridge version. Episode and step indices are not included.
 
 BES accepts the line-oriented `cage2-semantic-v1` datasets produced by the
 CAGE2 collector. Start an offline search with the `_train.lisp` file, configure
-142 observations and 11 targets. BES expands the 62 values stored in each row
-with 80 binary availability values from `:decoy-mask-before`. BES automatically loads the sibling `_val.lisp`
+62 or 142 observations and 11 targets. The source dataset is reusable in both
+modes: BES reads its stored 62 values directly in 62 mode or appends 80 binary
+availability values from `:decoy-mask-before` in 142 mode. BES automatically loads the sibling `_val.lisp`
 file as the fixed reference dataset. For example,
 `cage2_bline_semantic_train.lisp` is paired with
 `cage2_bline_semantic_val.lisp`.
@@ -301,10 +306,17 @@ candidates. Semantic accuracy follows the bridge contract: GLOBAL compares only
 the target; host actions compare target and response; Decoy resolves the first
 available agreement option and compares it with the teacher option. The
 complete held-out file supplies the stable reference fitness used for best-team
-selection and checkpoint replay. Online and offline runs use the same
-policy-owned table of ten decoy-option permutations. Each table starts from the
-agreement defaults, evolves through pair swaps, is installed in the Python
-environment once per episode, and is serialized with its team.
+selection and checkpoint replay. Online and offline runs use the same table of
+ten decoy-option permutations. Choose `fixed` Decoy order to always use the
+PPO-derived agreement defaults and disable order mutation, or `evolved` to
+start from those defaults and evolve pair swaps. The effective table is
+installed in the Python environment once per episode. Team tables remain
+serialized in checkpoints, while fixed mode deliberately ignores their values.
+
+The four primary experimental conditions are 62/fixed, 62/evolved, 142/fixed,
+and 142/evolved. Keep Hamming projection off for the initial 2x2 comparison and
+start each observation size from a fresh population. Start and resume menus
+expose both settings; CAGE2 validation asks for them explicitly.
 
 Runs require finite learner and program limits. The Emacs defaults use hard
 ceilings of 32 learners per team and 256 instructions per program. Growth
@@ -322,10 +334,12 @@ better fitness is never discarded merely because it is larger. The dashboard
 reports population team, learner and instruction counts plus observed maximum
 team and program sizes. Warm-starting an older oversized policy emits a warning
 and preserves the policy rather than silently pruning it.
-Checkpoints record the semantic fitness protocol, dataset file fingerprints,
-and the complete action-agreement signature, so a resume against different
-files or mappings is re-baselined rather than compared to an incompatible
-score. The policy graph itself remains a full serialize/deserialize deep copy.
+Checkpoints record the semantic fitness protocol, observation prefix, Decoy
+order mode, dataset file fingerprints, and the complete action-agreement
+signature, so a resume against different files or mappings is re-baselined
+rather than compared to an incompatible score. Their filenames include
+`order-fixed` or `order-evolved`. The policy graph itself remains a full
+serialize/deserialize deep copy.
 
 Legacy atomic-action datasets retain their original loading and accuracy
 behavior. Reward-based offline fitness and richer state inputs remain future
@@ -341,16 +355,15 @@ active operation. Keep the switch off for the baseline run and turn it on for
 the comparison run using the same checkpoint and validation seeds.
 
 With projection enabled, exact demonstrated observations pass through
-unchanged. An unseen 142-value CAGE2 observation is replaced only for policy
+unchanged. An unseen configured 62- or 142-value CAGE2 policy observation is replaced only for policy
 execution by its nearest unique demonstrated observation; the current Python
 environment state is not modified, and the TPG still chooses the action. Ties
 are deterministic and retain the first state encountered in the dataset.
 
-Distance is categorical, block-normalized weighted Hamming distance. The raw
-52 values contribute 50% of the maximum distance, the ten scan-history values
-25%, and the 80 decoy-availability values 25%. This prevents the large
-availability block from dominating merely because it has more fields. The
-equivalent integer mismatch weights are 40, 104, and 13 respectively.
+Distance is categorical weighted Hamming distance. Raw and scan mismatch
+weights are identical across modes. In 142 mode the availability block retains
+its existing normalized contribution; in 62 mode it is absent from both the
+prototype and distance calculation.
 
 Offline training uses the selected training file as the reference space, so
 training rows normally take the exact fast path while unseen held-out rows are
@@ -362,11 +375,13 @@ incompatible historical fitness values.
 
 Hamming-enabled CAGE2 validation also reports exact reference coverage after
 the rollouts finish: total policy lookups, exact hits, total misses, distinct
-missed observations, and miss percentage. A miss means the live 142-value
-observation was absent from the selected reference dataset before nearest-state
+missed observations, and miss percentage. A miss means the selected live
+62- or 142-value policy observation was absent from the reference dataset before nearest-state
 projection. Counters are disabled during training and reset for every
 validation. The latest summary is also available as
-`*last-hamming-validation-coverage*` in the `CL-TPG` package.
+`*last-hamming-validation-coverage*` in the `CL-TPG` package. Exact coverage is
+measured in the selected policy space, so 62- and 142-input miss rates are not
+directly comparable as counts of the same state identity.
 
 ---
 

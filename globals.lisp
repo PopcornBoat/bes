@@ -27,6 +27,10 @@
 response fields. Legacy numeric atomic actions remain executable so historical
 checkpoints can be loaded and gradually mutated into the new representation.")
 
+(defparameter *decoy-order-mode* :evolved
+  "CAGE2 Decoy ordering mode. :FIXED always uses the PPO-derived agreement
+order; :EVOLVED uses each root team's serialized, mutable option orders.")
+
 (defconstant +cage2-raw-observation-size+ 52
   "Number of raw values produced by the official CAGE2 ChallengeWrapper.")
 
@@ -44,6 +48,18 @@ checkpoints can be loaded and gradually mutated into the new representation.")
   (+ +cage2-scan-observation-size+ +cage2-decoy-availability-size+)
   "CAGE2 policy input size including scan and exact decoy availability state.")
 
+(defun valid-cage2-policy-observation-size-p (size)
+  "Return true when SIZE selects a supported prefix of the bridge observation."
+  (and (integerp size)
+       (member size
+               (list +cage2-scan-observation-size+
+                     +cage2-observation-size+)
+               :test #'=)))
+
+(defun valid-decoy-order-mode-p (mode)
+  "Return true for a supported CAGE2 Decoy-order experiment mode."
+  (member mode '(:fixed :evolved) :test #'eq))
+
 (defconstant +global-target+ 0
   "Target value representing the global Monitor action.")
 
@@ -54,12 +70,12 @@ checkpoints can be loaded and gradually mutated into the new representation.")
   "Defensive execution-depth ceiling for malformed or pathological TPGs.")
 
 (defconstant +cage2-online-fitness-protocol+
-  :evolved-decoy-orders-shared-seeds-v4
-  "Version tag for factored CAGE2 decisions with evolved option orders.")
+  :observation-prefix-decoy-order-shared-seeds-v5
+  "Version tag for configurable CAGE2 observations and Decoy-order modes.")
 
 (defconstant +semantic-offline-fitness-protocol+
-  :evolved-decoy-orders-reference-v3
-  "Version tag for imitation using policy-owned option orders.")
+  :observation-prefix-decoy-order-reference-v4
+  "Version tag for imitation with configurable observations and option orders.")
 
 (defconstant +hamming-raw-mismatch-weight+ 40
   "Integer weight for one raw-observation mismatch.")

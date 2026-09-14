@@ -77,7 +77,7 @@ this function so an entire population can share exactly the same batch."
                         (policy-observation (aref observations index)))
                       (aref labels index)
                       (aref decoy-masks index)
-                      (team-option-orders team))
+                      (effective-team-option-orders team))
                  (incf correct))
                (incf count)))
       (if indices
@@ -638,9 +638,17 @@ the same train/reference file fingerprint."
               (saved-hamming-enabled
                 (not (null (getf metadata :hamming-space-enabled))))
               (saved-hamming-fingerprint
-                (getf metadata :hamming-dataset-fingerprint)))
+                (getf metadata :hamming-dataset-fingerprint))
+              (saved-num-observations
+                (getf metadata :num-observations))
+              (saved-decoy-order-mode
+                (getf metadata :decoy-order-mode)))
           (and (or (null saved-environment)
                    (equal saved-environment gym-environment-name))
+               (or (null saved-num-observations)
+                   (= saved-num-observations *num-observations*))
+               (or (null saved-decoy-order-mode)
+                   (eq saved-decoy-order-mode *decoy-order-mode*))
                (eq saved-hamming-enabled
                    (not (null *hamming-space-enabled*)))
                (or (not *hamming-space-enabled*)
@@ -776,6 +784,8 @@ normal evolution."
       (multiple-value-bind
             (loaded-best-team saved-best-fitness checkpoint-metadata)
           (load-best-team best-team-path)
+        (ensure-team-observation-compatible
+         loaded-best-team *num-observations*)
         (inject-loaded-best-team-into-population loaded-best-team)
         (emit-policy-limit-warning loaded-best-team)
 

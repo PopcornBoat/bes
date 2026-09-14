@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 9
-  "Checkpoint version recording optional Hamming observation projection.")
+(defconstant +best-team-checkpoint-version+ 10
+  "Checkpoint version recording observation-prefix and Decoy-order modes.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -50,11 +50,12 @@ A configuration keeps overwriting its own immediate-best file, while agent,
 observation/action shape, mode, and Hamming variants can coexist in one
 checkpoint directory."
   (format nil
-          "~A-~D-~D-~A-hamming-~A.lisp"
+          "~A-~D-~D-~A-order-~A-hamming-~A.lisp"
           (checkpoint-agent-type)
           *num-observations*
           *num-actions*
           (checkpoint-training-mode)
+          (string-downcase (symbol-name *decoy-order-mode*))
           (if *hamming-space-enabled* "on" "off")))
 
 (defun best-team-checkpoint-path (&optional (directory *checkpoint-directory*))
@@ -66,7 +67,8 @@ checkpoint directory."
                           online-fitness-episodes search-seed
                            fitness-evaluation-protocol dataset-name
                            dataset-fingerprint action-agreement-signature
-                           hamming-space-enabled hamming-dataset-fingerprint)
+                           hamming-space-enabled hamming-dataset-fingerprint
+                           num-observations decoy-order-mode)
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   `(:checkpoint-version ,+best-team-checkpoint-version+
     :fitness ,fitness
@@ -78,6 +80,8 @@ checkpoint directory."
     :dataset-name ,dataset-name
     :dataset-fingerprint ,dataset-fingerprint
     :action-agreement-signature ,action-agreement-signature
+    :num-observations ,num-observations
+    :decoy-order-mode ,decoy-order-mode
     :hamming-space-enabled ,hamming-space-enabled
     :hamming-dataset-fingerprint ,hamming-dataset-fingerprint
     :team ,(serialize-team team (make-hash-table :test #'equal))))
@@ -93,7 +97,8 @@ checkpoint directory."
                                online-fitness-episodes search-seed
                                 fitness-evaluation-protocol dataset-name
                                 dataset-fingerprint action-agreement-signature
-                                hamming-space-enabled hamming-dataset-fingerprint)
+                                hamming-space-enabled hamming-dataset-fingerprint
+                                num-observations decoy-order-mode)
   "Write TEAM, FITNESS, and provenance metadata to PATH."
   (ensure-directories-exist path)
 
@@ -117,6 +122,8 @@ checkpoint directory."
            :dataset-name dataset-name
            :dataset-fingerprint dataset-fingerprint
            :action-agreement-signature action-agreement-signature
+           :num-observations num-observations
+           :decoy-order-mode decoy-order-mode
            :hamming-space-enabled hamming-space-enabled
            :hamming-dataset-fingerprint hamming-dataset-fingerprint)
          :stream out))))
@@ -138,6 +145,8 @@ checkpoint directory."
    :search-seed *current-search-seed*
    :dataset-name *current-dataset-name*
     :dataset-fingerprint *current-dataset-fingerprint*
+    :num-observations *num-observations*
+    :decoy-order-mode *decoy-order-mode*
     :hamming-space-enabled *hamming-space-enabled*
     :hamming-dataset-fingerprint *current-hamming-dataset-fingerprint*
    :action-agreement-signature
@@ -189,7 +198,8 @@ return NIL for FITNESS and METADATA."
                           online-fitness-episodes search-seed
                            fitness-evaluation-protocol dataset-name
                            dataset-fingerprint action-agreement-signature
-                           hamming-space-enabled hamming-dataset-fingerprint)
+                           hamming-space-enabled hamming-dataset-fingerprint
+                           num-observations decoy-order-mode)
   "Add fitness metadata to a legacy best-team checkpoint.
 
 OUTPUT-PATH defaults to PATH.  Supplying a different path is recommended when
@@ -210,6 +220,8 @@ preserving the original legacy file."
      :dataset-name dataset-name
      :dataset-fingerprint dataset-fingerprint
      :action-agreement-signature action-agreement-signature
+     :num-observations num-observations
+     :decoy-order-mode decoy-order-mode
      :hamming-space-enabled hamming-space-enabled
      :hamming-dataset-fingerprint hamming-dataset-fingerprint)
     (emit-message

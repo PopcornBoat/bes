@@ -88,6 +88,36 @@ and 0.0 means used, matching the online Python bridge."
       (setf (aref result (+ +cage2-scan-observation-size+ bit))
             (if (logbitp bit decoy-mask) 0.0d0 1.0d0)))))
 
+(defun make-cage2-scan-observation (observation)
+  "Copy a stored 62-value CAGE2 observation into a specialized policy vector."
+  (unless (and (listp observation)
+               (= (length observation) +cage2-scan-observation-size+))
+    (error "Expected ~D stored CAGE2 observations, got ~A."
+           +cage2-scan-observation-size+
+           (if (listp observation) (length observation) (type-of observation))))
+  (make-array +cage2-scan-observation-size+
+              :element-type 'double-float
+              :initial-contents
+              (mapcar (lambda (value) (coerce value 'double-float))
+                      observation)))
+
+(defun make-cage2-policy-observation (observation decoy-mask)
+  "Build the configured 62- or 142-value policy input from one dataset row.
+
+The source format remains unchanged: it stores the first 62 values and the
+Decoy mask separately. The 80 availability values are appended only when the
+active experiment exposes all 142 bridge values to programs."
+  (cond
+    ((= *num-observations* +cage2-scan-observation-size+)
+     (make-cage2-scan-observation observation))
+    ((= *num-observations* +cage2-observation-size+)
+     (append-decoy-availability observation decoy-mask))
+    (t
+     (error "CAGE2 policy observations must be ~D or ~D, got ~S."
+            +cage2-scan-observation-size+
+            +cage2-observation-size+
+            *num-observations*))))
+
 (defun convert-semantic-stream-to-dataset (first-form stream source-path)
   "Read cage2-semantic-v1 forms from STREAM into the in-memory dataset shape.
 
@@ -100,9 +130,10 @@ teacher action cannot be represented are skipped rather than silently relabelled
     (error "Semantic CAGE2 datasets require *NUM-ACTIONS*=~D, got ~S."
            +num-semantic-targets+
            *num-actions*))
-  (unless (= *num-observations* +cage2-observation-size+)
+  (unless (valid-cage2-policy-observation-size-p *num-observations*)
     (error
-     "Factored CAGE2 datasets require Number of Observations=~D, got ~S."
+     "Factored CAGE2 datasets require Number of Observations=~D or ~D, got ~S."
+     +cage2-scan-observation-size+
      +cage2-observation-size+
      *num-observations*))
   (let ((observation-list nil)
@@ -143,7 +174,7 @@ teacher action cannot be represented are skipped rather than silently relabelled
                                     (<= 0 teacher-action 144))
                          (error "Invalid semantic dataset teacher action: ~S"
                                 teacher-action))
-                       (push (append-decoy-availability observation decoy-mask)
+                       (push (make-cage2-policy-observation observation decoy-mask)
                              observation-list)
                        (push (copy-list action) action-list)
                        (push teacher-action teacher-action-list)

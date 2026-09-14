@@ -12,7 +12,15 @@
 
 (check-semantic-offline
  (= cl-tpg::+cage2-observation-size+ 142)
- "CAGE2 policy observation includes scan and decoy availability")
+ "complete CAGE2 bridge observation includes availability")
+
+(check-semantic-offline
+ (cl-tpg::valid-cage2-policy-observation-size-p 62)
+ "62-value policy prefix is supported")
+
+(check-semantic-offline
+ (cl-tpg::valid-cage2-policy-observation-size-p 142)
+ "142-value policy input is supported")
 
 (flet ((matches (prediction label)
          (cl-tpg::semantic-action-label-matches-p prediction label)))
@@ -45,6 +53,7 @@
 (let* ((orders (make-array 11 :initial-element nil))
        (agreement
          (cl-tpg::make-action-agreement
+          :decoy-names #(apache haraka tomcat vsftpd smss postfix femitter sshd)
           :decoy-orders orders)))
   (setf (aref orders 8) #(1 6 0 4 2 3 5 7))
   (let ((cl-tpg::*action-agreement* agreement))
@@ -82,6 +91,46 @@
   (check-semantic-offline (= (aref expanded 63) 1.0d0)
                           "unused decoy is available"))
 
+(let ((source (loop repeat 62 collect 0)))
+  (let ((cl-tpg::*num-observations* 62))
+    (check-semantic-offline
+     (= (length (cl-tpg::make-cage2-policy-observation source 1)) 62)
+     "62-input mode ignores availability"))
+  (let ((cl-tpg::*num-observations* 142))
+    (check-semantic-offline
+     (= (length (cl-tpg::make-cage2-policy-observation source 1)) 142)
+     "142-input mode appends availability")))
+
+(let* ((cl-tpg::*num-observations* 62)
+       (cl-tpg::*hamming-space-enabled* nil)
+       (bridge-observation
+         (make-array 142
+                     :element-type 'double-float
+                     :initial-element 1.0d0))
+       (policy-observation
+         (cl-tpg::policy-observation bridge-observation)))
+  (check-semantic-offline (= (length policy-observation) 62)
+                          "online policy reads only the configured prefix")
+  (check-semantic-offline (= (aref policy-observation 61) 1.0d0)
+                          "online prefix retains the scan-state boundary"))
+
+(let* ((cl-tpg::*factored-actions-enabled* t)
+       (agreement (cl-tpg::ensure-cage2-action-agreement))
+       (team (cl-tpg::%make-team :learners nil))
+       (evolved (cl-tpg::copy-action-option-orders
+                 (cl-tpg::team-option-orders team))))
+  (rotatef (aref (aref evolved 1) 0) (aref (aref evolved 1) 1))
+  (setf (cl-tpg::team-option-orders team) evolved)
+  (let ((cl-tpg::*decoy-order-mode* :evolved))
+    (check-semantic-offline
+     (eq (cl-tpg::effective-team-option-orders team) evolved)
+     "evolved mode uses the team table"))
+  (let ((cl-tpg::*decoy-order-mode* :fixed))
+    (check-semantic-offline
+     (equalp (cl-tpg::effective-team-option-orders team)
+             (cl-tpg::action-agreement-decoy-orders agreement))
+     "fixed mode uses the PPO-derived agreement table")))
+
 (check-semantic-offline
  (string=
   (namestring
@@ -114,12 +163,16 @@
            :reference (:name "val.lisp" :bytes 25)))
        (cl-tpg::*offline-reference-dataset* t)
        (cl-tpg::*current-dataset-fingerprint* fingerprint)
+       (cl-tpg::*num-observations* 142)
+       (cl-tpg::*decoy-order-mode* :evolved)
        (agreement-signature
          (cl-tpg::action-agreement-signature))
        (metadata
          (list :fitness-evaluation-protocol
                cl-tpg::+semantic-offline-fitness-protocol+
                :dataset-fingerprint fingerprint
+               :num-observations 142
+               :decoy-order-mode :evolved
                :action-agreement-signature agreement-signature)))
   (check-semantic-offline
    (cl-tpg::checkpoint-fitness-comparable-p 0.75d0 metadata nil)

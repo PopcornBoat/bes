@@ -27,6 +27,7 @@
   (assert (= (length (cl-tpg::program-instructions program)) 2)))
 
 (let ((cl-tpg::*factored-actions-enabled* t)
+      (cl-tpg::*decoy-order-mode* :evolved)
       (cl-tpg::*teams* nil))
   (let* ((team (cl-tpg::%make-team :learners nil))
          (before
@@ -41,5 +42,13 @@
     (assert (equalp before (cl-tpg::team-option-orders restored)))
     (assert (not (eq (cl-tpg::team-option-orders restored)
                      (cl-tpg::team-option-orders team))))))
+
+(let ((cl-tpg::*factored-actions-enabled* t)
+      (cl-tpg::*decoy-order-mode* :fixed))
+  (let* ((team (cl-tpg::%make-team :learners nil))
+         (before (cl-tpg::copy-action-option-orders
+                  (cl-tpg::team-option-orders team))))
+    (cl-tpg::mutate-action-option-orders team)
+    (assert (equalp before (cl-tpg::team-option-orders team)))))
 
 (format t "Mutation regression checks passed.~%")

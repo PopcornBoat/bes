@@ -44,7 +44,7 @@
      :source-path (dataset-source-path dataset))))
 
 (defun hamming-observation-from-semantic-form (form)
-  "Return the expanded observation represented by FORM, or NIL if skipped."
+  "Return the configured policy observation represented by FORM, or NIL."
   (unless (semantic-transition-form-p form)
     (error "Hamming reference is not a cage2-semantic-v1 dataset: ~S" form))
   (let ((fields (rest form)))
@@ -59,7 +59,7 @@
            "Expected ~D source observations in Hamming reference, got ~A."
            +cage2-scan-observation-size+
            (if (listp observation) (length observation) (type-of observation))))
-        (append-decoy-availability observation decoy-mask)))))
+        (make-cage2-policy-observation observation decoy-mask)))))
 
 (defun load-hamming-observation-index (name)
   "Stream NAME and retain only its unique expanded semantic observations.
@@ -126,15 +126,14 @@ the reference is streamed without retaining its unused transition columns."
         count (not (= (aref left index) (aref right index)))))
 
 (defun cage2-weighted-hamming-distance (left right)
-  "Return block-normalized weighted Hamming distance as an integer cost.
+  "Return weighted Hamming distance for the configured observation prefix.
 
-Raw observation, scan state, and decoy availability contribute 50%, 25%, and
-25% of the maximum cost respectively. The equivalent exact integer weights are
-40, 104, and 13 per mismatch, avoiding floating-point tie instability."
-  (unless (and (= (length left) +cage2-observation-size+)
-               (= (length right) +cage2-observation-size+))
+The existing raw and scan weights are retained in both modes. Availability
+contributes only when all 142 bridge values are exposed to the policy."
+  (unless (and (= (length left) *num-observations*)
+               (= (length right) *num-observations*))
     (error "Hamming projection requires two ~D-value CAGE2 observations."
-           +cage2-observation-size+))
+           *num-observations*))
   (let ((scan-end +cage2-scan-observation-size+))
     (+ (* +hamming-raw-mismatch-weight+
           (observation-block-mismatch-count
@@ -142,9 +141,29 @@ Raw observation, scan state, and decoy availability contribute 50%, 25%, and
        (* +hamming-scan-mismatch-weight+
           (observation-block-mismatch-count
            left right +cage2-raw-observation-size+ scan-end))
-       (* +hamming-availability-mismatch-weight+
-          (observation-block-mismatch-count
-           left right scan-end +cage2-observation-size+)))))
+       (if (= *num-observations* +cage2-observation-size+)
+           (* +hamming-availability-mismatch-weight+
+              (observation-block-mismatch-count
+               left right scan-end +cage2-observation-size+))
+           0))))
+
+(defun cage2-observation-prefix (observation)
+  "Expose only the configured prefix of a complete bridge observation.
+
+The Python bridge remains the single owner of scan and Decoy state and always
+transports 142 values. A 62-input BES experiment ignores the final 80 values;
+offline observations are already stored at the configured width."
+  (let ((observation-length (length observation)))
+    (cond
+      ((= observation-length *num-observations*) observation)
+      ((and (= observation-length +cage2-observation-size+)
+            (= *num-observations* +cage2-scan-observation-size+))
+       (subseq observation 0 +cage2-scan-observation-size+))
+      (t
+       (error "Expected a ~D-value policy observation or complete ~D-value bridge observation, got ~D."
+              *num-observations*
+              +cage2-observation-size+
+              observation-length)))))
 
 (defun begin-hamming-validation-coverage ()
   "Reset and enable Hamming coverage accounting for one validation."
@@ -248,9 +267,10 @@ Raw observation, scan state, and decoy availability contribute 50%, 25%, and
 The switch and reference index are configured once before training or
 validation. TPG execution still selects the action; projection only supplies a
 known categorical state for observations absent from the reference dataset."
-  (if *hamming-space-enabled*
-      (progn
-        (unless *hamming-observation-index*
-          (error "Hamming projection is enabled but its index is not configured."))
-        (nearest-hamming-observation observation *hamming-observation-index*))
-      observation))
+  (let ((prefix (cage2-observation-prefix observation)))
+    (if *hamming-space-enabled*
+        (progn
+          (unless *hamming-observation-index*
+            (error "Hamming projection is enabled but its index is not configured."))
+          (nearest-hamming-observation prefix *hamming-observation-index*))
+        prefix)))

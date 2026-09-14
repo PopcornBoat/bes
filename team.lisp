@@ -64,6 +64,50 @@
     (push team *teams*)
     team))
 
+(defun effective-team-option-orders (team)
+  "Return the Decoy orders selected by the active 2x2 experiment mode.
+
+Fixed mode ignores serialized team variation and uses the PPO-derived agreement
+order. Evolved mode uses the team's policy-owned table, initializing a missing
+legacy table from the same agreement defaults."
+  (ecase *decoy-order-mode*
+    (:fixed
+     (action-agreement-decoy-orders (ensure-cage2-action-agreement)))
+    (:evolved
+     (or (team-option-orders team)
+         (setf (team-option-orders team)
+               (make-default-action-option-orders))))))
+
+(defun team-max-observation-index (team)
+  "Return TEAM's largest referenced zero-based observation index, or -1."
+  (loop with maximum = -1
+        for reachable in (closure team)
+        do (dolist (learner (team-learners reachable))
+             (loop for instruction across
+                     (program-instructions (learner-program learner))
+                   do (when (eq (instruction-src1-type instruction) :obs)
+                        (setf maximum
+                              (max maximum
+                                   (truncate
+                                    (instruction-src1-val instruction)))))
+                      (when (and (= (instruction-arity instruction) 2)
+                                 (eq (instruction-src2-type instruction) :obs))
+                        (setf maximum
+                              (max maximum
+                                   (truncate
+                                    (instruction-src2-val instruction)))))))
+        finally (return maximum)))
+
+(defun ensure-team-observation-compatible (team observation-count)
+  "Reject TEAM before execution when it addresses beyond OBSERVATION-COUNT."
+  (let ((maximum (team-max-observation-index team)))
+    (when (>= maximum observation-count)
+      (error
+       "Checkpoint references OBS~D but this operation exposes only ~D observations. Select the checkpoint's original observation size or start a fresh run."
+       (1+ maximum)
+       observation-count)))
+  team)
+
 (defun add-reference (target-team)
   "Call this when a learner points to a team."
   (incf (team-references target-team))

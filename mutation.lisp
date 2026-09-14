@@ -216,16 +216,17 @@ allowing permanent positive bloat pressure."
 
 (defun mutate-action-option-orders (team)
   "Swap two entries in one host's policy-owned option permutation."
-  (let ((orders (or (team-option-orders team)
-                    (setf (team-option-orders team)
-                          (make-default-action-option-orders)))))
-    (when orders
-      (let* ((target (1+ (random (1- (length orders)))))
-             (order (aref orders target))
-             (first (random (length order)))
-             (second
-               (random-different-category first (length order))))
-        (rotatef (aref order first) (aref order second)))))
+  (when (eq *decoy-order-mode* :evolved)
+    (let ((orders (or (team-option-orders team)
+                      (setf (team-option-orders team)
+                            (make-default-action-option-orders)))))
+      (when orders
+        (let* ((target (1+ (random (1- (length orders)))))
+               (order (aref orders target))
+               (first (random (length order)))
+               (second
+                 (random-different-category first (length order))))
+          (rotatef (aref order first) (aref order second))))))
   team)
 
 (defun mutate-action (team)
@@ -280,7 +281,9 @@ allowing permanent positive bloat pressure."
     (mutate-action team))
   ;; The policy's ordered-option table evolves independently from its terminal
   ;; target/response action, using the existing action-mutation probability.
-  (when (and *factored-actions-enabled* (mutate-action-p))
+  (when (and *factored-actions-enabled*
+             (eq *decoy-order-mode* :evolved)
+             (mutate-action-p))
     (mutate-action-option-orders team))
   (when (swap-learners-p)
     (swap-learners team))

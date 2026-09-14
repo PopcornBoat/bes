@@ -186,6 +186,11 @@ selected yet."
         (num-actions
          (string-to-number
           (transient-arg-value "*num-actions=" args)))
+        (decoy-order-mode
+         (pcase (transient-arg-value "--decoy-order=" args)
+           ("fixed" :fixed)
+           ("evolved" :evolved)
+           (other (error "Invalid Decoy-order mode: %S" other))))
         (population-size
          (string-to-number
           (transient-arg-value "*population-size=" args)))
@@ -256,6 +261,7 @@ selected yet."
       :dataset-name :none
       :num-observations ,num-observations
       :num-actions ,num-actions
+      :decoy-order-mode ,decoy-order-mode
       :population-size ,population-size
       :init-num-learners ,init-num-learners
       :max-num-learners ,max-num-learners
@@ -379,7 +385,7 @@ selected yet."
             "*env=none"
            
             "*population-size=160"
-            "*num-observations=62"
+            "*num-observations=142"
             "*num-actions=11"
             "*init-num-learners=3"
             "*max-num-learners=32"
@@ -387,6 +393,7 @@ selected yet."
             "*batch-size=1000"
             "*online-fitness-episodes=5"
             "*seed=random"
+            "--decoy-order=evolved"
             "--mode=online")
   ["Island"
     ("-I" "Island" "--island="
@@ -406,6 +413,8 @@ selected yet."
   ["Key Settings"
    ("-Z" "Number of Observations" "*num-observations=")
    ("-X" "Number of Actions" "*num-actions=")
+   ("-O" "Decoy Order" "--decoy-order="
+    :choices ("fixed" "evolved"))
    ("-P" "Population Size" "*population-size=")
    ("-g" "Gap" "*gap=")
    ("-n" "Migration Interval" "*migration-interval=") 
@@ -501,13 +510,24 @@ selected yet."
           (string-to-number
            (read-string
             "Number of observations: "
-            "62")))
+            "142")))
 
          (num-actions
           (string-to-number
            (read-string
             "Number of actions: "
             "11")))
+
+         (decoy-order-mode
+          (intern
+           (concat
+            ":"
+            (completing-read
+             "Decoy order: "
+             '("fixed" "evolved")
+             nil
+             t
+             "evolved"))))
 
          (population-size
           (string-to-number
@@ -644,6 +664,7 @@ selected yet."
 
             :num-observations ,num-observations
             :num-actions ,num-actions
+            :decoy-order-mode ,decoy-order-mode
             :population-size ,population-size
 
             :init-num-learners ,init-num-learners
@@ -1099,6 +1120,24 @@ selected yet."
              '("b_line" "meander" "sleep")
              nil t
              "b_line")))
+         (num-observations
+          (if (eq environment :cage2)
+              (string-to-number
+               (completing-read
+                "CAGE2 policy observations: "
+                '("62" "142")
+                nil t "142"))
+            142))
+         (decoy-order-mode
+          (if (eq environment :cage2)
+              (intern
+               (concat
+                ":"
+                (completing-read
+                 "Decoy order: "
+                 '("fixed" "evolved")
+                 nil t "evolved")))
+            :evolved))
          (episodes
           (cond
            ((and (eq environment :cage2)
@@ -1117,6 +1156,8 @@ selected yet."
              :validation-mode ,validation-mode
              :red-agent-name ,(or red-agent-name :none)
              :episodes ,episodes
+             :num-observations ,num-observations
+             :decoy-order-mode ,decoy-order-mode
              :hamming-space-enabled
              ,(if tpg-hamming-space-enabled :enabled :disabled)
              :hamming-dataset-name

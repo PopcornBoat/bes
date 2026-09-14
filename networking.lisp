@@ -385,7 +385,8 @@ return their fixed configured addresses."
                               online-fitness-episodes
                               &key checkpoint-directory
                                    hamming-space-enabled
-                                   hamming-dataset-name)
+                                   hamming-dataset-name
+                                   (decoy-order-mode :evolved))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -429,6 +430,11 @@ return their fixed configured addresses."
   (setf *hamming-space-enabled* (not (null hamming-space-enabled))
         *hamming-dataset-name* hamming-dataset-name)
 
+  (unless (valid-decoy-order-mode-p decoy-order-mode)
+    (error "Decoy order mode must be :FIXED or :EVOLVED, got ~S."
+           decoy-order-mode))
+  (setf *decoy-order-mode* decoy-order-mode)
+
   (setf *checkpoint-directory* checkpoint-directory))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
@@ -440,7 +446,8 @@ return their fixed configured addresses."
 				  p-add-instr p-del-instr p-swap-instrs
 				  p-mut-constant p-mut-constant-sign
 				  migration-interval batch-size seed
-                                  hamming-space-enabled hamming-dataset-name)
+                                  hamming-space-enabled hamming-dataset-name
+                                  decoy-order-mode)
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check that mode is either :online or :offline
   (and (or (eq mode :online)
@@ -457,17 +464,19 @@ return their fixed configured addresses."
            (and hamming-dataset-name
                 (not (eq hamming-dataset-name :none))
                 (integerp num-observations)
-                (= num-observations +cage2-observation-size+)
+                (valid-cage2-policy-observation-size-p num-observations)
                 (integerp num-actions)
                 (= num-actions +num-semantic-targets+)
                 (or (eq mode :offline)
                     (cl-gym:cage2-environment-p gym-environment-name))))
-       ;; The semantic bridge supplies raw, scan-state, and availability values.
+       (valid-decoy-order-mode-p decoy-order-mode)
+       ;; The semantic bridge transports all 142 values. BES may expose either
+       ;; the complete vector or only its 62-value raw-plus-scan prefix.
        (or (not (and (stringp gym-environment-name)
                      (search "Cage2" gym-environment-name)))
            (and (integerp num-observations)
                 (integerp num-actions)
-                (= num-observations +cage2-observation-size+)
+                (valid-cage2-policy-observation-size-p num-observations)
                 (= num-actions +num-semantic-targets+)))))
 
 (defun who-am-i ()
@@ -515,6 +524,8 @@ return their fixed configured addresses."
           (eq (getf msg :hamming-space-enabled :disabled) :enabled))
         (hamming-dataset-name
           (getf msg :hamming-dataset-name :none))
+        (decoy-order-mode
+          (getf msg :decoy-order-mode :evolved))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -527,12 +538,13 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A online-fit-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A decoy-order=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A online-fit-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
              num-observations
              num-actions
+             decoy-order-mode
              population-size
              init-num-learners
              max-num-learners
@@ -587,7 +599,8 @@ return their fixed configured addresses."
          batch-size
          seed
          hamming-space-enabled
-         hamming-dataset-name)
+         hamming-dataset-name
+         decoy-order-mode)
 
         (progn
           (unless (begin-search-operation)
@@ -618,7 +631,8 @@ return their fixed configured addresses."
            online-fitness-episodes
            :checkpoint-directory checkpoint-directory
            :hamming-space-enabled hamming-space-enabled
-           :hamming-dataset-name hamming-dataset-name)
+           :hamming-dataset-name hamming-dataset-name
+           :decoy-order-mode decoy-order-mode)
 
           (push
            (bt:make-thread
@@ -701,6 +715,8 @@ return their fixed configured addresses."
           (eq (getf msg :hamming-space-enabled :disabled) :enabled))
         (hamming-dataset-name
           (getf msg :hamming-dataset-name :none))
+        (decoy-order-mode
+          (getf msg :decoy-order-mode :evolved))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -749,7 +765,8 @@ return their fixed configured addresses."
          batch-size
          seed
          hamming-space-enabled
-         hamming-dataset-name)
+         hamming-dataset-name
+         decoy-order-mode)
 
         (progn
           (unless (begin-search-operation)
@@ -780,7 +797,8 @@ return their fixed configured addresses."
            online-fitness-episodes
            :checkpoint-directory checkpoint-directory
            :hamming-space-enabled hamming-space-enabled
-           :hamming-dataset-name hamming-dataset-name)
+           :hamming-dataset-name hamming-dataset-name
+           :decoy-order-mode decoy-order-mode)
 
           (push
            (bt:make-thread
@@ -922,6 +940,10 @@ return their fixed configured addresses."
         (mode (getf msg :validation-mode))
         (red-agent-name (getf msg :red-agent-name))
         (episodes (getf msg :episodes))
+        (num-observations
+          (getf msg :num-observations +cage2-observation-size+))
+        (decoy-order-mode
+          (getf msg :decoy-order-mode :evolved))
         (hamming-space-enabled
           (eq (getf msg :hamming-space-enabled :disabled) :enabled))
         (hamming-dataset-name
@@ -938,12 +960,28 @@ return their fixed configured addresses."
        "Hamming validation requires CAGE2 and a semantic reference dataset.")
       (return-from handle-validate-best-team))
 
+    (when (and (eq environment :cage2)
+               (not (valid-cage2-policy-observation-size-p num-observations)))
+      (emit-error
+       (format nil "CAGE2 validation observations must be ~D or ~D, got ~S."
+               +cage2-scan-observation-size+
+               +cage2-observation-size+
+               num-observations))
+      (return-from handle-validate-best-team))
+
+    (unless (valid-decoy-order-mode-p decoy-order-mode)
+      (emit-error "Decoy order mode must be FIXED or EVOLVED.")
+      (return-from handle-validate-best-team))
+
     (unless (begin-validation-operation)
       (emit-error "This node became busy before validation could start.")
       (return-from handle-validate-best-team))
 
     (setf *hamming-space-enabled* hamming-space-enabled
           *hamming-dataset-name* hamming-dataset-name)
+    (when (eq environment :cage2)
+      (setf *num-observations* num-observations
+            *decoy-order-mode* decoy-order-mode))
 
     (push
      (bt:make-thread
