@@ -175,6 +175,7 @@ selected yet."
   (let ((mode (pcase (transient-arg-value "--mode=" args)
                 ("online" :online)
                 ("offline" :offline)
+                ("teacher-forcing" :teacher-forcing)
                 (other (error "Invalid mode: %S" other))))
         (gym-environment-name
          (pcase (transient-arg-value "*env=" args)
@@ -393,15 +394,15 @@ selected yet."
             "*batch-size=1000"
             "*online-fitness-episodes=5"
             "*seed=random"
-            "--decoy-order=evolved"
+            "--decoy-order=fixed"
             "--mode=online")
   ["Island"
     ("-I" "Island" "--island="
     :choices ("all" "0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15"))]
   ["Evaluation"
    ("-M" "Evaluation Mode" "--mode="
-    :choices ("online" "offline"))
-   ("-G" "Online Environment" "*env="
+    :choices ("online" "offline" "teacher-forcing"))
+   ("-G" "Gym Environment" "*env="
     :choices ("none" 
               "Cage2-b_line-100-v0"
               "Cage2-meander-100-v0"
@@ -420,7 +421,7 @@ selected yet."
    ("-n" "Migration Interval" "*migration-interval=") 
    ("-b" "Batch Size" "*batch-size=")
    ("-e"
-    "Online Fitness Episodes"
+    "Fitness Episodes"
     "*online-fitness-episodes=")
    ("-s" "Seed" "*seed=")]
   [:description "Team Constraints"
@@ -475,20 +476,21 @@ selected yet."
          (mode-str
           (completing-read
            "Evaluation mode: "
-           '("online" "offline")
+           '("online" "offline" "teacher-forcing")
            nil
            t
            "offline"))
 
          (mode
-          (if (string= mode-str "online")
-              :online
-            :offline))
+          (pcase mode-str
+            ("online" :online)
+            ("offline" :offline)
+            ("teacher-forcing" :teacher-forcing)))
 
          (env
-          (if (eq mode :online)
+          (if (memq mode '(:online :teacher-forcing))
               (completing-read
-               "Online environment: "
+               "Gym environment: "
                '("Cage2-b_line-100-v0"
                  "Cage2-meander-100-v0"
                  "Cage2-sleep-100-v0"
@@ -527,7 +529,7 @@ selected yet."
              '("fixed" "evolved")
              nil
              t
-             "evolved"))))
+             "fixed"))))
 
          (population-size
           (string-to-number
@@ -637,12 +639,12 @@ selected yet."
             "Batch size: "
             "1000")))
 
-         ;; Online 模式下决定每个 team 用多少个完整 episode
-         ;; 计算一次 fitness。Offline 模式下该值仍会传递，但不会使用。
+         ;; Online mode uses this per team. Teacher forcing uses it once to
+         ;; generate the shared trace for the complete generation.
          (online-fitness-episodes
           (string-to-number
            (read-string
-            "Online fitness episodes per team: "
+            "Fitness episodes: "
             "5")))
 
          (seed-str
@@ -711,7 +713,7 @@ selected yet."
      "resume-search-client")
 
     (message
-     "[LOCAL] Requested warm-start resume on island %s from %s; mode=%s; online fitness episodes=%s"
+     "[LOCAL] Requested warm-start resume on island %s from %s; mode=%s; fitness episodes=%s"
      island-id
      best-team-path
      mode

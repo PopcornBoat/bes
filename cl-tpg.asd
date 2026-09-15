@@ -20,6 +20,7 @@
 	       (:file "dataset")
 	       (:file "hamming")
 	       (:file "migration")
-               (:file "networking")
+	       (:file "networking")
 	       (:file "gym")
+	       (:file "teacher")
 	       (:file "main")))

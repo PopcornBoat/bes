@@ -449,14 +449,23 @@ return their fixed configured addresses."
                                   hamming-space-enabled hamming-dataset-name
                                   decoy-order-mode)
   "Returns T if the search parameters are valid. NIL otherwise."
-       ;; 1. Check that mode is either :online or :offline
+       ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
-	   (eq mode :offline))
-       ;; 2. Check that if mode is online then a gym environment is set and a dataset is not provided.
+	   (eq mode :offline)
+           (eq mode :teacher-forcing))
+       ;; 2. Online and teacher-forcing use an environment; offline uses data.
        (case mode
 	 (:online (and gym-environment-name
 		       (not (eq gym-environment-name :none))
 		       (eq dataset-name :none)))
+         (:teacher-forcing
+          (and gym-environment-name
+               (not (eq gym-environment-name :none))
+               (eq dataset-name :none)
+               (cl-gym:cage2-environment-p gym-environment-name)
+               (or (search "b_line" gym-environment-name)
+                   (search "meander" gym-environment-name))
+               (eq decoy-order-mode :fixed)))
 	 (:offline (and dataset-name
 			(not (eq dataset-name :none))
 			(eq gym-environment-name :none))))
@@ -533,12 +542,12 @@ return their fixed configured addresses."
     (when (or (eq max-num-learners :inf)
               (eq max-program-size :inf))
       (emit-error
-       "Online and offline training require finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
+       "Training requires finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
       (return-from handle-start-search))
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A decoy-order=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A online-fit-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A decoy-order=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
@@ -728,7 +737,7 @@ return their fixed configured addresses."
     (when (or (eq max-num-learners :inf)
               (eq max-program-size :inf))
       (emit-error
-       "Online and offline training require finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
+       "Training requires finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
       (return-from handle-resume-search))
 
     (unless checkpoint-directory

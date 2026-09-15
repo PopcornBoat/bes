@@ -317,10 +317,40 @@ the highest-bidding learner is followed recursively until a terminal learner is
 reached. Alternatives are then explored depth-first by descending local bid,
 and every terminal candidate uses that learner's own saved registers. The
 bridge consumes this list once. If the selected host has no unused Decoy it
-tries the next candidate, skips Restore while in fallback mode like the PPO
+tries the next candidate, skips Restore while in fallback mode like the fixed
 teacher, and finally uses Monitor if nothing is executable. This avoids a
 second Lisp/Python call. Historical single-action bridge input and v1 dataset
 fitness remain supported.
+
+## Teacher forcing
+
+Teacher forcing is a third search mode for CAGE2 b-line and meander tasks. A
+frozen teacher controls the environment and produces a ranked semantic label
+for every visited state. The TPG population only previews those shared states:
+it does not step the environment, alter the teacher, or receive teacher model
+parameters. Each candidate still executes its learner programs, bids through
+register 0, traverses the graph, and emits its own ranked target/response list.
+
+Once per generation, the bridge generates the configured number of teacher
+episodes from a seed list shared by the complete population. BES scores every
+team on exactly the same trace using the ranked offline objective:
+`0.8 * resolved behavior accuracy + 0.2 * ranking NDCG`. Evolution then uses
+the normal selection, cloning, mutation, and replacement path. Simulator cost
+therefore scales with fitness episodes per generation, rather than population
+size multiplied by fitness episodes.
+
+Historical-best comparison uses a fixed 100-episode teacher reference bank
+derived from seed 153 and generated once when the search starts. Teacher
+forcing requires 11 targets, either 62 or 142 policy observations, and fixed
+Decoy ordering. No dataset fingerprint is involved. A warm start is comparable
+only when its teacher-forcing protocol, environment, observation prefix,
+fitness-episode count, Hamming configuration, and action agreement match.
+
+The initial recommended capability run is 62 observations, 11 targets, fixed
+Decoy order, Hamming projection off, five fitness episodes, population 160,
+and a fresh search. Batch size is not used in this mode. B-line and meander
+must be trained separately. The bridge loads packaged NumPy teacher artifacts,
+so its runtime does not require the original training framework.
 
 Each generation uses one uniform, unbalanced training-row sample shared by all
 candidates. Semantic accuracy follows the bridge contract: GLOBAL compares only
@@ -329,7 +359,7 @@ available agreement option and compares it with the teacher option. The
 complete held-out file supplies the stable reference fitness used for best-team
 selection and checkpoint replay. Online and offline runs use the same table of
 ten decoy-option permutations. Choose `fixed` Decoy order to always use the
-PPO-derived agreement defaults and disable order mutation, or `evolved` to
+teacher-derived agreement defaults and disable order mutation, or `evolved` to
 start from those defaults and evolve pair swaps. The effective table is
 installed in the Python environment once per episode. Team tables remain
 serialized in checkpoints, while fixed mode deliberately ignores their values.

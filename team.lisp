@@ -67,7 +67,7 @@
 (defun effective-team-option-orders (team)
   "Return the Decoy orders selected by the active 2x2 experiment mode.
 
-Fixed mode ignores serialized team variation and uses the PPO-derived agreement
+Fixed mode ignores serialized team variation and uses the teacher-derived agreement
 order. Evolved mode uses the team's policy-owned table, initializing a missing
 legacy table from the same agreement defaults."
   (ecase *decoy-order-mode*

@@ -67,7 +67,7 @@ contract."
 
 Decoy availability is evaluated from the row mask. If the first choice is an
 exhausted Decoy, later candidates are tried without another TPG call. Restore
-is intentionally skipped only while falling back, matching the PPO agent's
+is intentionally skipped only while falling back, matching the fixed teacher's
 next-best rule. Exhausting the ranking safely returns GLOBAL Monitor."
   (loop for prediction in predictions
         for rank fixnum from 0
@@ -372,6 +372,8 @@ reference batch."
              (not (null (cl-gym:cage2-environment-p gym-environment-name)))
            *offline-training-dataset* nil
            *offline-reference-dataset* nil
+           *teacher-training-dataset* nil
+           *teacher-reference-dataset* nil
            *offline-fitness-batch-indices* nil
            *current-dataset-fingerprint* nil)
      (configure-hamming-observation-space)
@@ -381,6 +383,8 @@ reference batch."
 
     (dataset-name
      (let ((dataset (load-dataset dataset-name)))
+       (setf *teacher-training-dataset* nil
+             *teacher-reference-dataset* nil)
        (setf *factored-actions-enabled*
              (not (null (semantic-dataset-p dataset))))
        (if (semantic-dataset-p dataset)
@@ -425,7 +429,9 @@ reference batch."
     (:online
      (make-fitness-function :gym-environment-name gym-environment-name))
     (:offline
-     (make-fitness-function :dataset-name dataset-name))))
+     (make-fitness-function :dataset-name dataset-name))
+    (:teacher-forcing
+     (configure-teacher-forcing-fitness gym-environment-name))))
 
 (defun safe-evaluate-team (team)
   (cons team
@@ -448,6 +454,9 @@ reference batch."
   ;; list generated from the search random state.
   (setf *online-fitness-episode-seeds* nil
         *offline-fitness-batch-indices* nil)
+  (when (eq *current-search-mode* :teacher-forcing)
+    (setf *teacher-training-dataset* nil)
+    (prepare-teacher-training-dataset))
   (let* ((results
            (mapcar (lambda (team)
                      (abort-search-if-requested)
@@ -466,6 +475,8 @@ reference batch."
   "Return TEAM's comparable historical score for the active fitness protocol."
   (let ((reference-kind
           (cond
+            ((eq *current-search-mode* :teacher-forcing)
+             :teacher-forcing)
             ((and *current-gym-environment-name*
                   (cl-gym:cage2-environment-p
                    *current-gym-environment-name*))
@@ -481,6 +492,8 @@ reference batch."
                    *generation* reference-kind))
           (let ((result
                   (ecase reference-kind
+                    (:teacher-forcing
+                     (teacher-forcing-reference-fitness team))
                     (:cage2
                      (cage2-reference-fitness
                       team *current-gym-environment-name*))
@@ -691,6 +704,7 @@ through serialization/deserialization and save it to disk."
   (let* ((seed (seed-or-random-seed seed))
          (captured-state (sb-ext:seed-random-state seed)))
     (setf *random-state* captured-state
+          *current-search-mode* mode
           *current-gym-environment-name* gym-environment-name
           *current-search-seed* seed
           *current-dataset-name* (and (eq mode :offline) dataset-name))
@@ -770,6 +784,13 @@ the same train/reference file fingerprint."
                    (equal saved-hamming-fingerprint
                           *current-hamming-dataset-fingerprint*))
                (cond
+                ((eq *current-search-mode* :teacher-forcing)
+                 (and (or (null saved-episodes)
+                          (= saved-episodes *online-fitness-episodes*))
+                      (eq saved-protocol
+                          +teacher-forcing-fitness-protocol+)
+                      (equal saved-agreement-signature
+                             (action-agreement-signature))))
                 ((cl-gym:cage2-environment-p gym-environment-name)
                  (and (or (null saved-episodes)
                           (= saved-episodes *online-fitness-episodes*))
@@ -877,6 +898,7 @@ normal evolution."
   (let* ((seed (seed-or-random-seed seed))
          (captured-state (sb-ext:seed-random-state seed)))
     (setf *random-state* captured-state
+          *current-search-mode* mode
           *current-gym-environment-name* gym-environment-name
           *current-search-seed* seed
           *current-dataset-name* (and (eq mode :offline) dataset-name))

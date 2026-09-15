@@ -210,7 +210,7 @@
     (check-semantic-offline
      (equalp (cl-tpg::effective-team-option-orders team)
              (cl-tpg::action-agreement-decoy-orders agreement))
-     "fixed mode uses the PPO-derived agreement table")))
+     "fixed mode uses the teacher-derived agreement table")))
 
 (check-semantic-offline
  (string=

@@ -28,7 +28,7 @@ response fields. Legacy numeric atomic actions remain executable so historical
 checkpoints can be loaded and gradually mutated into the new representation.")
 
 (defparameter *decoy-order-mode* :evolved
-  "CAGE2 Decoy ordering mode. :FIXED always uses the PPO-derived agreement
+  "CAGE2 Decoy ordering mode. :FIXED always uses the teacher-derived agreement
 order; :EVOLVED uses each root team's serialized, mutable option orders.")
 
 (defconstant +cage2-raw-observation-size+ 52
@@ -86,6 +86,13 @@ order; :EVOLVED uses each root team's serialized, mutable option orders.")
   :ranked-semantic-behavior-ndcg-reference-v5
   "Version tag for ranked target/response imitation with fixed reference data.")
 
+(defconstant +teacher-forcing-fitness-protocol+
+  :teacher-forcing-ranked-reference-v1
+  "Version tag for generation-shared teacher traces and ranked imitation.")
+
+(defconstant +teacher-reference-episodes+ 100
+  "Fixed number of deterministic teacher episodes in the reference bank.")
+
 (defconstant +hamming-raw-mismatch-weight+ 40
   "Integer weight for one raw-observation mismatch.")
 
@@ -121,6 +128,9 @@ search and turn this flag back on.")
 
 (defvar *current-gym-environment-name* nil
   "Gym environment used by the current search, recorded in checkpoints.")
+
+(defvar *current-search-mode* nil
+  "Active search mode: :ONLINE, :OFFLINE, or :TEACHER-FORCING.")
 
 (defvar *current-search-seed* nil
   "Resolved integer seed used by the current search, recorded in checkpoints.")
@@ -234,6 +244,12 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 
 (defvar *offline-reference-dataset* nil
   "Fixed held-out semantic dataset used to compare historical best teams.")
+
+(defvar *teacher-training-dataset* nil
+  "Generation-shared teacher trace used for population fitness.")
+
+(defvar *teacher-reference-dataset* nil
+  "Fixed teacher trace bank used for historical-best comparisons.")
 
 (defvar *offline-fitness-batch-indices* nil
   "Uniform row indices shared by all semantic-offline candidates in one generation.")
