@@ -197,6 +197,11 @@ selected yet."
            ("fixed" :fixed)
            ("policy" :policy)
            (other (error "Invalid CAGE2 opening mode: %S" other))))
+        (teacher-forcing-rollout-mode
+         (pcase (transient-arg-value "--teacher-rollout=" args)
+           ("dagger" :dagger)
+           ("teacher" :teacher)
+           (other (error "Invalid teacher-forcing rollout mode: %S" other))))
         (population-size
          (string-to-number
           (transient-arg-value "*population-size=" args)))
@@ -269,6 +274,7 @@ selected yet."
       :num-actions ,num-actions
       :decoy-order-mode ,decoy-order-mode
       :cage2-opening-mode ,cage2-opening-mode
+      :teacher-forcing-rollout-mode ,teacher-forcing-rollout-mode
       :population-size ,population-size
       :init-num-learners ,init-num-learners
       :max-num-learners ,max-num-learners
@@ -402,6 +408,7 @@ selected yet."
             "*seed=random"
             "--decoy-order=fixed"
             "--opening=fixed"
+            "--teacher-rollout=dagger"
             "--mode=online")
   ["Island"
     ("-I" "Island" "--island="
@@ -425,6 +432,8 @@ selected yet."
     :choices ("fixed" "evolved"))
    ("-Q" "Episode Opening" "--opening="
     :choices ("fixed" "policy"))
+   ("-T" "Teacher Rollout" "--teacher-rollout="
+     :choices ("dagger" "teacher"))
    ("-P" "Population Size" "*population-size=")
    ("-g" "Gap" "*gap=")
    ("-n" "Migration Interval" "*migration-interval=") 
@@ -553,6 +562,19 @@ selected yet."
                  t
                  "fixed")))
             :policy))
+
+         (teacher-forcing-rollout-mode
+           (if (eq mode :teacher-forcing)
+               (intern
+                (concat
+                 ":"
+                 (completing-read
+                  "Teacher-forcing rollout: "
+                  '("dagger" "teacher")
+                  nil
+                  t
+                  "dagger")))
+             :dagger))
 
          (population-size
           (string-to-number
@@ -691,6 +713,7 @@ selected yet."
             :num-actions ,num-actions
             :decoy-order-mode ,decoy-order-mode
             :cage2-opening-mode ,cage2-opening-mode
+            :teacher-forcing-rollout-mode ,teacher-forcing-rollout-mode
             :population-size ,population-size
 
             :init-num-learners ,init-num-learners

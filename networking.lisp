@@ -383,11 +383,12 @@ return their fixed configured addresses."
                               migration-interval
                               batch-size
                               online-fitness-episodes
-                              &key checkpoint-directory
-                                   hamming-space-enabled
-                                   hamming-dataset-name
-                                   (decoy-order-mode :evolved)
-                                   (cage2-opening-mode :fixed))
+                               &key checkpoint-directory
+                                    hamming-space-enabled
+                                    hamming-dataset-name
+                                    (decoy-order-mode :evolved)
+                                    (cage2-opening-mode :fixed)
+                                    (teacher-forcing-rollout-mode :dagger))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -441,6 +442,12 @@ return their fixed configured addresses."
            cage2-opening-mode))
   (setf *cage2-opening-mode* cage2-opening-mode)
 
+  (unless (valid-teacher-forcing-rollout-mode-p
+           teacher-forcing-rollout-mode)
+    (error "Teacher-forcing rollout mode must be :DAGGER or :TEACHER, got ~S."
+           teacher-forcing-rollout-mode))
+  (setf *teacher-forcing-rollout-mode* teacher-forcing-rollout-mode)
+
   (setf *checkpoint-directory* checkpoint-directory))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
@@ -453,7 +460,8 @@ return their fixed configured addresses."
 				  p-mut-constant p-mut-constant-sign
 				  migration-interval batch-size seed
                                   hamming-space-enabled hamming-dataset-name
-                                  decoy-order-mode cage2-opening-mode)
+                                  decoy-order-mode cage2-opening-mode
+                                  teacher-forcing-rollout-mode)
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -486,6 +494,8 @@ return their fixed configured addresses."
                     (cl-gym:cage2-environment-p gym-environment-name))))
        (valid-decoy-order-mode-p decoy-order-mode)
        (valid-cage2-opening-mode-p cage2-opening-mode)
+       (valid-teacher-forcing-rollout-mode-p
+        teacher-forcing-rollout-mode)
        ;; The semantic bridge transports all 142 values. BES may expose either
        ;; the complete vector or only its 62-value raw-plus-scan prefix.
        (or (not (and (stringp gym-environment-name)
@@ -544,6 +554,8 @@ return their fixed configured addresses."
           (getf msg :decoy-order-mode :evolved))
         (cage2-opening-mode
           (getf msg :cage2-opening-mode :fixed))
+        (teacher-forcing-rollout-mode
+          (getf msg :teacher-forcing-rollout-mode :dagger))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -556,7 +568,7 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A decoy-order=~A opening=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A decoy-order=~A opening=~A teacher-rollout=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
@@ -564,6 +576,7 @@ return their fixed configured addresses."
              num-actions
              decoy-order-mode
              cage2-opening-mode
+             teacher-forcing-rollout-mode
              population-size
              init-num-learners
              max-num-learners
@@ -620,7 +633,8 @@ return their fixed configured addresses."
          hamming-space-enabled
          hamming-dataset-name
          decoy-order-mode
-         cage2-opening-mode)
+         cage2-opening-mode
+         teacher-forcing-rollout-mode)
 
         (progn
           (unless (begin-search-operation)
@@ -653,7 +667,8 @@ return their fixed configured addresses."
            :hamming-space-enabled hamming-space-enabled
            :hamming-dataset-name hamming-dataset-name
            :decoy-order-mode decoy-order-mode
-           :cage2-opening-mode cage2-opening-mode)
+           :cage2-opening-mode cage2-opening-mode
+           :teacher-forcing-rollout-mode teacher-forcing-rollout-mode)
 
           (push
            (bt:make-thread
@@ -740,6 +755,8 @@ return their fixed configured addresses."
           (getf msg :decoy-order-mode :evolved))
         (cage2-opening-mode
           (getf msg :cage2-opening-mode :fixed))
+        (teacher-forcing-rollout-mode
+          (getf msg :teacher-forcing-rollout-mode :dagger))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -790,7 +807,8 @@ return their fixed configured addresses."
          hamming-space-enabled
          hamming-dataset-name
          decoy-order-mode
-         cage2-opening-mode)
+         cage2-opening-mode
+         teacher-forcing-rollout-mode)
 
         (progn
           (unless (begin-search-operation)
@@ -823,7 +841,8 @@ return their fixed configured addresses."
            :hamming-space-enabled hamming-space-enabled
            :hamming-dataset-name hamming-dataset-name
            :decoy-order-mode decoy-order-mode
-           :cage2-opening-mode cage2-opening-mode)
+           :cage2-opening-mode cage2-opening-mode
+           :teacher-forcing-rollout-mode teacher-forcing-rollout-mode)
 
           (push
            (bt:make-thread

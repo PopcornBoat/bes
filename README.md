@@ -324,28 +324,36 @@ fitness remain supported.
 
 ## Teacher forcing
 
-Teacher forcing is a third search mode for CAGE2 b-line and meander tasks. A
-frozen teacher controls the environment and produces a ranked semantic label
-for every policy-controlled state. The TPG population only previews those shared states:
-it does not step the environment, alter the teacher, or receive teacher model
-parameters. Each candidate still executes its learner programs, bids through
-register 0, traverses the graph, and emits its own ranked target/response list.
+Teacher forcing is a third search mode for CAGE2 b-line and meander tasks. Its
+default `dagger` rollout lets the current best TPG policy control a second copy
+of each episode after the fixed opening. The frozen teacher sees those exact
+learner-visited observations and supplies ranked semantic labels, but never
+acts in or changes that environment. The menu's `teacher` rollout preserves
+the original teacher-controlled behavior-cloning experiment.
 
 Once per generation, the bridge generates the configured number of teacher
-episodes from a seed list shared by the complete population. BES scores every
-team on exactly the same trace using the ranked offline objective:
+episodes from a seed list shared by the complete population. In `dagger` mode,
+BES also runs the current behavior team on those seeds, appends its labelled
+states to a bounded replay retaining the newest 10,000 rows, and samples one
+replay row per current teacher row. The resulting fitness set is therefore a
+50/50 teacher/replay mixture once enough replay exists. BES scores every team
+on exactly the same rows using the ranked offline objective:
 `0.8 * resolved behavior accuracy + 0.2 * ranking NDCG`. Evolution then uses
 the normal selection, cloning, mutation, and replacement path. Simulator cost
-therefore scales with fitness episodes per generation, rather than population
-size multiplied by fitness episodes.
+therefore scales with two rollout banks per generation in `dagger` mode,
+rather than population size multiplied by fitness episodes.
 
-Historical-best comparison uses a fixed 100-episode teacher reference bank
-derived from seed 153 and generated once when the search starts. Teacher
+Historical-best comparison deliberately remains a fixed 100-episode
+teacher-controlled reference bank derived from seed 153 and generated once
+when the search starts. It is stable and replayable, while online validation
+remains the final measure of closed-loop behavior. Teacher
 forcing requires 11 targets, either 62 or 142 policy observations, and fixed
 Decoy ordering. No dataset fingerprint is involved. A warm start is comparable
 only when its teacher-forcing protocol, environment, observation prefix,
-fitness-episode count, episode-opening mode, Hamming configuration, and action
-agreement match.
+fitness-episode count, episode-opening mode, rollout mode, Hamming
+configuration, and action agreement match. `dagger` and `teacher` use
+different checkpoint filenames and fitness protocol tags, so changing modes
+safely re-baselines a warm start.
 
 ## CAGE2 episode opening
 
@@ -357,11 +365,14 @@ policy; the fourth observation is the first policy decision state. Fixed Decoy
 ordering resolves the repeated User2 semantic action to successive concrete
 Decoys without another TPG call.
 
-In teacher-forcing mode the teacher still executes the complete episode so its
-internal state and the environment remain correct, but the first three rows
-are excluded from TPG fitness when `fixed` opening is selected. Online search
-and validation use the same controller sequence. `policy` disables the
-controller and restores the older behavior in which TPG acts from step 0.
+In teacher-controlled rollout mode the teacher still executes the complete
+episode, but the first three rows are excluded from TPG fitness when `fixed`
+opening is selected. In DAgger rollout mode, the controller executes those
+steps while both teacher and TPG observe the same state; the teacher advances
+its opening position and TPG begins controlling and contributing rows at step
+3. Online search and validation use the same controller sequence. `policy`
+disables the controller and restores the older behavior in which TPG acts from
+step 0.
 Opening mode is part of checkpoint filenames and metadata; checkpoints created
 before this protocol are treated as `policy` opening and re-baselined when
 resumed under `fixed`.

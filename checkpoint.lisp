@@ -37,7 +37,10 @@
 (defun checkpoint-training-mode ()
   "Return the active search mode as a filename component."
   (cond
-    ((eq *current-search-mode* :teacher-forcing) "teacher-forcing")
+    ((eq *current-search-mode* :teacher-forcing)
+     (if (eq *teacher-forcing-rollout-mode* :dagger)
+         "teacher-forcing-dagger"
+         "teacher-forcing"))
     (*current-dataset-name* "offline")
     ((and *current-gym-environment-name*
           (not (eq *current-gym-environment-name* :none)))
@@ -160,7 +163,7 @@ checkpoint directory."
    :fitness-evaluation-protocol
    (cond
      ((eq *current-search-mode* :teacher-forcing)
-      +teacher-forcing-fitness-protocol+)
+      (teacher-forcing-fitness-protocol))
      ((cl-gym:cage2-environment-p *current-gym-environment-name*)
       +cage2-online-fitness-protocol+)
      (*offline-reference-dataset*

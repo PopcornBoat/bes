@@ -37,11 +37,17 @@
       (cl-tpg::*num-actions* 11)
       (cl-tpg::*decoy-order-mode* :fixed)
       (cl-tpg::*cage2-opening-mode* :fixed)
+      (cl-tpg::*teacher-forcing-rollout-mode* :dagger)
       (cl-tpg::*hamming-space-enabled* nil))
   (check-teacher-forcing
    (string= (cl-tpg::best-team-checkpoint-filename)
-            "bline-62-11-teacher-forcing-order-fixed-opening-fixed-hamming-off.lisp")
-   "checkpoint name identifies teacher forcing without a dataset fingerprint"))
+            "bline-62-11-teacher-forcing-dagger-order-fixed-opening-fixed-hamming-off.lisp")
+   "checkpoint name distinguishes DAgger teacher forcing")
+  (let ((cl-tpg::*teacher-forcing-rollout-mode* :teacher))
+    (check-teacher-forcing
+     (string= (cl-tpg::best-team-checkpoint-filename)
+              "bline-62-11-teacher-forcing-order-fixed-opening-fixed-hamming-off.lisp")
+     "pure teacher rollout retains its explicit checkpoint name")))
 
 (check-teacher-forcing
  (= cl-tpg::+teacher-trace-chunk-size+ 5)
@@ -52,6 +58,35 @@
       (cl-tpg::valid-cage2-opening-mode-p :policy)
       (not (cl-tpg::valid-cage2-opening-mode-p :evolved)))
  "only fixed-controller and full-policy opening modes are accepted")
+
+(check-teacher-forcing
+ (and (cl-tpg::valid-teacher-forcing-rollout-mode-p :dagger)
+      (cl-tpg::valid-teacher-forcing-rollout-mode-p :teacher)
+      (not (cl-tpg::valid-teacher-forcing-rollout-mode-p :online)))
+ "only DAgger and pure-teacher rollout modes are accepted")
+
+(let* ((all-target-one-decoys-used (1- (ash 1 8)))
+       (ranking '((1 3) (2 2) (2 0))))
+  (check-teacher-forcing
+   (equal (cl-tpg::resolve-teacher-pair-ranking
+           ranking all-target-one-decoys-used)
+          '(2 0))
+   "teacher resolver skips exhausted Decoy and fallback Restore")
+  (check-teacher-forcing
+   (equal (cl-tpg::resolve-teacher-pair-ranking '((0 0) (1 0)) 0)
+          '(0 0))
+   "teacher resolver accepts GLOBAL immediately"))
+
+(let ((cl-tpg::*teacher-dagger-replay-rows* nil)
+      (cl-tpg::*teacher-dagger-random-state*
+        (sb-ext:seed-random-state 153)))
+  (cl-tpg::append-teacher-dagger-replay '(a b c))
+  (let ((sample (cl-tpg::sample-teacher-dagger-replay 2)))
+    (check-teacher-forcing
+     (and (= (length sample) 2)
+          (= (length (remove-duplicates sample)) 2)
+          (every (lambda (row) (member row '(a b c))) sample))
+     "DAgger replay samples without replacement")))
 
 (let ((cl-tpg::*cage2-opening-mode* :fixed))
   (check-teacher-forcing

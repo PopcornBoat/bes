@@ -375,6 +375,8 @@ reference batch."
            *teacher-training-dataset* nil
            *teacher-reference-dataset* nil
            *offline-fitness-batch-indices* nil
+           *teacher-dagger-replay-rows* nil
+           *teacher-dagger-random-state* nil
            *current-dataset-fingerprint* nil)
      (configure-hamming-observation-space)
      (setf *fitness-fn*
@@ -384,7 +386,9 @@ reference batch."
     (dataset-name
      (let ((dataset (load-dataset dataset-name)))
        (setf *teacher-training-dataset* nil
-             *teacher-reference-dataset* nil)
+             *teacher-reference-dataset* nil
+             *teacher-dagger-replay-rows* nil
+             *teacher-dagger-random-state* nil)
        (setf *factored-actions-enabled*
              (not (null (semantic-dataset-p dataset))))
        (if (semantic-dataset-p dataset)
@@ -793,7 +797,7 @@ the same train/reference file fingerprint."
                  (and (or (null saved-episodes)
                           (= saved-episodes *online-fitness-episodes*))
                       (eq saved-protocol
-                          +teacher-forcing-fitness-protocol+)
+                          (teacher-forcing-fitness-protocol))
                       (equal saved-agreement-signature
                              (action-agreement-signature))))
                 ((cl-gym:cage2-environment-p gym-environment-name)

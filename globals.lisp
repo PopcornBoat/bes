@@ -35,6 +35,10 @@ order; :EVOLVED uses each root team's serialized, mutable option orders.")
   "CAGE2 episode-opening mode. :FIXED executes the three main-agent probe
 actions before consulting TPG; :POLICY lets TPG control the episode from step 0.")
 
+(defparameter *teacher-forcing-rollout-mode* :dagger
+  "Teacher-forcing state distribution. :TEACHER imitates only teacher-controlled
+trajectories; :DAGGER also labels states visited by the current best TPG policy.")
+
 (defconstant +cage2-raw-observation-size+ 52
   "Number of raw values produced by the official CAGE2 ChallengeWrapper.")
 
@@ -67,6 +71,10 @@ actions before consulting TPG; :POLICY lets TPG control the episode from step 0.
 (defun valid-cage2-opening-mode-p (mode)
   "Return true for a supported CAGE2 episode-opening mode."
   (member mode '(:fixed :policy) :test #'eq))
+
+(defun valid-teacher-forcing-rollout-mode-p (mode)
+  "Return true for a supported teacher-forcing trajectory source."
+  (member mode '(:teacher :dagger) :test #'eq))
 
 (defconstant +global-target+ 0
   "Target value representing the global Monitor action.")
@@ -101,12 +109,25 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
   :ranked-semantic-behavior-ndcg-reference-v5
   "Version tag for ranked target/response imitation with fixed reference data.")
 
-(defconstant +teacher-forcing-fitness-protocol+
+(defconstant +teacher-forcing-teacher-protocol+
   :teacher-forcing-ranked-reference-opening-v2
-  "Version tag for teacher traces aligned with the episode-opening protocol.")
+  "Version tag for teacher-controlled traces aligned with the opening protocol.")
+
+(defconstant +teacher-forcing-dagger-protocol+
+  :teacher-forcing-dagger-ranked-reference-opening-v3
+  "Version tag for bounded learner-on-policy DAgger imitation.")
+
+(defun teacher-forcing-fitness-protocol ()
+  "Return the checkpoint protocol for the active teacher-forcing rollout mode."
+  (ecase *teacher-forcing-rollout-mode*
+    (:teacher +teacher-forcing-teacher-protocol+)
+    (:dagger +teacher-forcing-dagger-protocol+)))
 
 (defconstant +teacher-reference-episodes+ 100
   "Fixed number of deterministic teacher episodes in the reference bank.")
+
+(defconstant +teacher-dagger-replay-capacity+ 10000
+  "Maximum learner-visited, teacher-labelled rows retained by DAgger.")
 
 (defconstant +hamming-raw-mismatch-weight+ 40
   "Integer weight for one raw-observation mismatch.")
@@ -265,6 +286,12 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 
 (defvar *teacher-reference-dataset* nil
   "Fixed teacher trace bank used for historical-best comparisons.")
+
+(defvar *teacher-dagger-replay-rows* nil
+  "Bounded learner-visited rows retained by teacher-forcing DAgger.")
+
+(defvar *teacher-dagger-random-state* nil
+  "Private random state used only to sample DAgger replay rows.")
 
 (defvar *offline-fitness-batch-indices* nil
   "Uniform row indices shared by all semantic-offline candidates in one generation.")
