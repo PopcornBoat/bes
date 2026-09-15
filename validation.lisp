@@ -181,7 +181,7 @@ CAGE3 MODE:
       (seed-cage2-evaluation)
       (emit-message
        (format nil
-               "CAGE2 policy inputs: first ~D of ~D bridge values (~D raw + ~D scan-state~A); decoy-order=~A."
+               "CAGE2 policy inputs: first ~D of ~D bridge values (~D raw + ~D scan-state~A); decoy-order=~A; opening=~A."
                *num-observations*
                +cage2-observation-size+
                +cage2-raw-observation-size+
@@ -190,7 +190,8 @@ CAGE3 MODE:
                    (format nil " + ~D availability"
                            +cage2-decoy-availability-size+)
                    "; availability ignored")
-               *decoy-order-mode*)))
+               *decoy-order-mode*
+               *cage2-opening-mode*)))
 
     (let ((team (load-best-team best-team-path)))
       (when cage2-p

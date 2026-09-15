@@ -386,7 +386,8 @@ return their fixed configured addresses."
                               &key checkpoint-directory
                                    hamming-space-enabled
                                    hamming-dataset-name
-                                   (decoy-order-mode :evolved))
+                                   (decoy-order-mode :evolved)
+                                   (cage2-opening-mode :fixed))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -435,6 +436,11 @@ return their fixed configured addresses."
            decoy-order-mode))
   (setf *decoy-order-mode* decoy-order-mode)
 
+  (unless (valid-cage2-opening-mode-p cage2-opening-mode)
+    (error "CAGE2 opening mode must be :FIXED or :POLICY, got ~S."
+           cage2-opening-mode))
+  (setf *cage2-opening-mode* cage2-opening-mode)
+
   (setf *checkpoint-directory* checkpoint-directory))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
@@ -447,7 +453,7 @@ return their fixed configured addresses."
 				  p-mut-constant p-mut-constant-sign
 				  migration-interval batch-size seed
                                   hamming-space-enabled hamming-dataset-name
-                                  decoy-order-mode)
+                                  decoy-order-mode cage2-opening-mode)
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -479,6 +485,7 @@ return their fixed configured addresses."
                 (or (eq mode :offline)
                     (cl-gym:cage2-environment-p gym-environment-name))))
        (valid-decoy-order-mode-p decoy-order-mode)
+       (valid-cage2-opening-mode-p cage2-opening-mode)
        ;; The semantic bridge transports all 142 values. BES may expose either
        ;; the complete vector or only its 62-value raw-plus-scan prefix.
        (or (not (and (stringp gym-environment-name)
@@ -535,6 +542,8 @@ return their fixed configured addresses."
           (getf msg :hamming-dataset-name :none))
         (decoy-order-mode
           (getf msg :decoy-order-mode :evolved))
+        (cage2-opening-mode
+          (getf msg :cage2-opening-mode :fixed))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -547,13 +556,14 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A decoy-order=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A decoy-order=~A opening=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
              num-observations
              num-actions
              decoy-order-mode
+             cage2-opening-mode
              population-size
              init-num-learners
              max-num-learners
@@ -609,7 +619,8 @@ return their fixed configured addresses."
          seed
          hamming-space-enabled
          hamming-dataset-name
-         decoy-order-mode)
+         decoy-order-mode
+         cage2-opening-mode)
 
         (progn
           (unless (begin-search-operation)
@@ -641,7 +652,8 @@ return their fixed configured addresses."
            :checkpoint-directory checkpoint-directory
            :hamming-space-enabled hamming-space-enabled
            :hamming-dataset-name hamming-dataset-name
-           :decoy-order-mode decoy-order-mode)
+           :decoy-order-mode decoy-order-mode
+           :cage2-opening-mode cage2-opening-mode)
 
           (push
            (bt:make-thread
@@ -726,6 +738,8 @@ return their fixed configured addresses."
           (getf msg :hamming-dataset-name :none))
         (decoy-order-mode
           (getf msg :decoy-order-mode :evolved))
+        (cage2-opening-mode
+          (getf msg :cage2-opening-mode :fixed))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -775,7 +789,8 @@ return their fixed configured addresses."
          seed
          hamming-space-enabled
          hamming-dataset-name
-         decoy-order-mode)
+         decoy-order-mode
+         cage2-opening-mode)
 
         (progn
           (unless (begin-search-operation)
@@ -807,7 +822,8 @@ return their fixed configured addresses."
            :checkpoint-directory checkpoint-directory
            :hamming-space-enabled hamming-space-enabled
            :hamming-dataset-name hamming-dataset-name
-           :decoy-order-mode decoy-order-mode)
+           :decoy-order-mode decoy-order-mode
+           :cage2-opening-mode cage2-opening-mode)
 
           (push
            (bt:make-thread
@@ -953,6 +969,8 @@ return their fixed configured addresses."
           (getf msg :num-observations +cage2-observation-size+))
         (decoy-order-mode
           (getf msg :decoy-order-mode :evolved))
+        (cage2-opening-mode
+          (getf msg :cage2-opening-mode :fixed))
         (hamming-space-enabled
           (eq (getf msg :hamming-space-enabled :disabled) :enabled))
         (hamming-dataset-name
@@ -982,6 +1000,10 @@ return their fixed configured addresses."
       (emit-error "Decoy order mode must be FIXED or EVOLVED.")
       (return-from handle-validate-best-team))
 
+    (unless (valid-cage2-opening-mode-p cage2-opening-mode)
+      (emit-error "CAGE2 opening mode must be FIXED or POLICY.")
+      (return-from handle-validate-best-team))
+
     (unless (begin-validation-operation)
       (emit-error "This node became busy before validation could start.")
       (return-from handle-validate-best-team))
@@ -990,7 +1012,8 @@ return their fixed configured addresses."
           *hamming-dataset-name* hamming-dataset-name)
     (when (eq environment :cage2)
       (setf *num-observations* num-observations
-            *decoy-order-mode* decoy-order-mode))
+            *decoy-order-mode* decoy-order-mode
+            *cage2-opening-mode* cage2-opening-mode))
 
     (push
      (bt:make-thread

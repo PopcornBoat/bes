@@ -162,6 +162,19 @@ GLOBAL and defensive :MONITOR fallbacks canonicalize to (0 0)."
        (loop for target from 1 below (length orders)
              collect (coerce (aref orders target) 'list))))))
 
+(defun cage2-fixed-opening-action (environment-name timestep)
+  "Return the fixed CAGE2 probe action for TIMESTEP, or NIL.
+
+The main agent uses these first three actions to expose the red policy. They
+belong to the episode controller rather than the evolved TPG policy."
+  (when (and (cage2-environment-p environment-name)
+             (eq cl-tpg::*cage2-opening-mode* :fixed)
+             (<= 0 timestep)
+             (< timestep
+                (length cl-tpg::+cage2-fixed-opening-rankings+)))
+    (copy-tree
+     (aref cl-tpg::+cage2-fixed-opening-rankings+ timestep))))
+
 (defun rollout-python (root-team environment-name seed &key (video-path nil))
   "Run one complete episode.
 
@@ -184,13 +197,17 @@ Supports:
     (let ((observation (reset env seed)))
     (unwind-protect
          (loop for timestep from 0
-               do (let ((action
-                          (if (shared-policy-observation-p observation)
-                              (shared-policy-actions root-team observation)
-                              (execute-policy-action
-                               root-team
-                               observation
-                               environment-name))))
+               do (let* ((opening-action
+                           (cage2-fixed-opening-action
+                            environment-name timestep))
+                         (action
+                           (or opening-action
+                               (if (shared-policy-observation-p observation)
+                                   (shared-policy-actions root-team observation)
+                                   (execute-policy-action
+                                    root-team
+                                    observation
+                                    environment-name)))))
                     (multiple-value-bind (obs rew term trunc info)
                         (step env action)
                       (declare (ignore info))

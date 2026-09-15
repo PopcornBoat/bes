@@ -81,6 +81,7 @@ between simulator calls. Chunking does not change episode seeds or rows."
     (error "Teacher forcing requires at least one episode seed."))
   (py4cl2:pyexec "import cage2_bridge; import cage2_bridge.teacher")
   (let ((remaining (coerce episode-seeds 'list))
+        (include-opening-p (eq *cage2-opening-mode* :policy))
         (all-rows nil))
     (loop while remaining
           for count = (min +teacher-trace-chunk-size+ (length remaining))
@@ -92,7 +93,8 @@ between simulator calls. Chunking does not change episode seeds or rows."
                            (py4cl2:pycall
                             "cage2_bridge.teacher.generate_teacher_trace"
                             environment-name
-                            chunk)
+                            chunk
+                            include-opening-p)
                            "chunk"))
                    remaining (nthcdr count remaining)))
     (teacher-trace-to-dataset all-rows)))
@@ -117,6 +119,8 @@ between simulator calls. Chunking does not change episode seeds or rows."
            *num-observations*))
   (unless (eq *decoy-order-mode* :fixed)
     (error "Teacher forcing requires the fixed Decoy order."))
+  (unless (valid-cage2-opening-mode-p *cage2-opening-mode*)
+    (error "Invalid CAGE2 opening mode: ~S." *cage2-opening-mode*))
   (setf *factored-actions-enabled* t
         *offline-training-dataset* nil
         *offline-reference-dataset* nil
@@ -127,9 +131,13 @@ between simulator calls. Chunking does not change episode seeds or rows."
   (configure-hamming-observation-space)
   (emit-message
    (format nil
-           "Teacher reference generation started: episodes=~D environment=~A"
+           "Teacher reference generation started: episodes=~D environment=~A opening=~A~A"
            +teacher-reference-episodes+
-           environment-name))
+           environment-name
+           *cage2-opening-mode*
+           (if (eq *cage2-opening-mode* :fixed)
+               "; first three controller steps excluded from TPG fitness"
+               "")))
   (setf *teacher-reference-dataset*
         (generate-teacher-trace-dataset
          environment-name

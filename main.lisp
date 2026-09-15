@@ -771,13 +771,18 @@ the same train/reference file fingerprint."
               (saved-num-observations
                 (getf metadata :num-observations))
               (saved-decoy-order-mode
-                (getf metadata :decoy-order-mode)))
+                (getf metadata :decoy-order-mode))
+              (saved-opening-mode
+                ;; Checkpoints before v11 used TPG from step 0.
+                (or (getf metadata :cage2-opening-mode) :policy)))
           (and (or (null saved-environment)
                    (equal saved-environment gym-environment-name))
                (or (null saved-num-observations)
                    (= saved-num-observations *num-observations*))
                (or (null saved-decoy-order-mode)
                    (eq saved-decoy-order-mode *decoy-order-mode*))
+               (or (not (cl-gym:cage2-environment-p gym-environment-name))
+                   (eq saved-opening-mode *cage2-opening-mode*))
                (eq saved-hamming-enabled
                    (not (null *hamming-space-enabled*)))
                (or (not *hamming-space-enabled*)

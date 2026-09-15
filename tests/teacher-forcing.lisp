@@ -36,14 +36,40 @@
       (cl-tpg::*num-observations* 62)
       (cl-tpg::*num-actions* 11)
       (cl-tpg::*decoy-order-mode* :fixed)
+      (cl-tpg::*cage2-opening-mode* :fixed)
       (cl-tpg::*hamming-space-enabled* nil))
   (check-teacher-forcing
    (string= (cl-tpg::best-team-checkpoint-filename)
-            "bline-62-11-teacher-forcing-order-fixed-hamming-off.lisp")
+            "bline-62-11-teacher-forcing-order-fixed-opening-fixed-hamming-off.lisp")
    "checkpoint name identifies teacher forcing without a dataset fingerprint"))
 
 (check-teacher-forcing
  (= cl-tpg::+teacher-trace-chunk-size+ 5)
  "teacher generation has bounded bridge-call chunks")
+
+(check-teacher-forcing
+ (and (cl-tpg::valid-cage2-opening-mode-p :fixed)
+      (cl-tpg::valid-cage2-opening-mode-p :policy)
+      (not (cl-tpg::valid-cage2-opening-mode-p :evolved)))
+ "only fixed-controller and full-policy opening modes are accepted")
+
+(let ((cl-tpg::*cage2-opening-mode* :fixed))
+  (check-teacher-forcing
+   (equal (loop for step below 3
+                collect
+                (cl-gym::cage2-fixed-opening-action
+                 "Cage2-b_line-100-v0" step))
+          '(((8 3)) ((8 3)) ((2 3))))
+   "fixed opening returns the three main-agent probe actions")
+  (check-teacher-forcing
+   (null (cl-gym::cage2-fixed-opening-action
+          "Cage2-b_line-100-v0" 3))
+   "TPG begins acting at step three"))
+
+(let ((cl-tpg::*cage2-opening-mode* :policy))
+  (check-teacher-forcing
+   (null (cl-gym::cage2-fixed-opening-action
+          "Cage2-b_line-100-v0" 0))
+   "policy opening leaves step zero under TPG control"))
 
 (format t "~D teacher-forcing checks passed.~%" *teacher-forcing-checks*)

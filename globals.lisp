@@ -31,6 +31,10 @@ checkpoints can be loaded and gradually mutated into the new representation.")
   "CAGE2 Decoy ordering mode. :FIXED always uses the teacher-derived agreement
 order; :EVOLVED uses each root team's serialized, mutable option orders.")
 
+(defparameter *cage2-opening-mode* :fixed
+  "CAGE2 episode-opening mode. :FIXED executes the three main-agent probe
+actions before consulting TPG; :POLICY lets TPG control the episode from step 0.")
+
 (defconstant +cage2-raw-observation-size+ 52
   "Number of raw values produced by the official CAGE2 ChallengeWrapper.")
 
@@ -60,8 +64,19 @@ order; :EVOLVED uses each root team's serialized, mutable option orders.")
   "Return true for a supported CAGE2 Decoy-order experiment mode."
   (member mode '(:fixed :evolved) :test #'eq))
 
+(defun valid-cage2-opening-mode-p (mode)
+  "Return true for a supported CAGE2 episode-opening mode."
+  (member mode '(:fixed :policy) :test #'eq))
+
 (defconstant +global-target+ 0
   "Target value representing the global Monitor action.")
+
+(defparameter +cage2-fixed-opening-rankings+
+  #(((8 3)) ((8 3)) ((2 3)))
+  "Main-agent probe sequence used before the opponent policy is observable.
+
+Each entry is a ranked bridge action. Fixed Decoy ordering resolves the two
+User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
 
 (defconstant +cage2-evaluation-seed+ 153
   "Root seed used by reproducible CAGE2 evaluation protocols.")
@@ -79,7 +94,7 @@ order; :EVOLVED uses each root team's serialized, mutable option orders.")
   "Weight of the teacher-order NDCG term in ranked offline fitness.")
 
 (defconstant +cage2-online-fitness-protocol+
-  :ranked-semantic-next-best-shared-seeds-v6
+  :ranked-semantic-next-best-shared-seeds-opening-v7
   "Version tag for ranked semantic CAGE2 execution and shared episode seeds.")
 
 (defconstant +semantic-offline-fitness-protocol+
@@ -87,8 +102,8 @@ order; :EVOLVED uses each root team's serialized, mutable option orders.")
   "Version tag for ranked target/response imitation with fixed reference data.")
 
 (defconstant +teacher-forcing-fitness-protocol+
-  :teacher-forcing-ranked-reference-v1
-  "Version tag for generation-shared teacher traces and ranked imitation.")
+  :teacher-forcing-ranked-reference-opening-v2
+  "Version tag for teacher traces aligned with the episode-opening protocol.")
 
 (defconstant +teacher-reference-episodes+ 100
   "Fixed number of deterministic teacher episodes in the reference bank.")

@@ -192,6 +192,11 @@ selected yet."
            ("fixed" :fixed)
            ("evolved" :evolved)
            (other (error "Invalid Decoy-order mode: %S" other))))
+        (cage2-opening-mode
+         (pcase (transient-arg-value "--opening=" args)
+           ("fixed" :fixed)
+           ("policy" :policy)
+           (other (error "Invalid CAGE2 opening mode: %S" other))))
         (population-size
          (string-to-number
           (transient-arg-value "*population-size=" args)))
@@ -263,6 +268,7 @@ selected yet."
       :num-observations ,num-observations
       :num-actions ,num-actions
       :decoy-order-mode ,decoy-order-mode
+      :cage2-opening-mode ,cage2-opening-mode
       :population-size ,population-size
       :init-num-learners ,init-num-learners
       :max-num-learners ,max-num-learners
@@ -395,6 +401,7 @@ selected yet."
             "*online-fitness-episodes=5"
             "*seed=random"
             "--decoy-order=fixed"
+            "--opening=fixed"
             "--mode=online")
   ["Island"
     ("-I" "Island" "--island="
@@ -416,6 +423,8 @@ selected yet."
    ("-X" "Number of Actions" "*num-actions=")
    ("-O" "Decoy Order" "--decoy-order="
     :choices ("fixed" "evolved"))
+   ("-Q" "Episode Opening" "--opening="
+    :choices ("fixed" "policy"))
    ("-P" "Population Size" "*population-size=")
    ("-g" "Gap" "*gap=")
    ("-n" "Migration Interval" "*migration-interval=") 
@@ -530,6 +539,20 @@ selected yet."
              nil
              t
              "fixed"))))
+
+         (cage2-opening-mode
+          (if (and (stringp env)
+                   (string-prefix-p "Cage2" env))
+              (intern
+               (concat
+                ":"
+                (completing-read
+                 "CAGE2 episode opening: "
+                 '("fixed" "policy")
+                 nil
+                 t
+                 "fixed")))
+            :policy))
 
          (population-size
           (string-to-number
@@ -667,6 +690,7 @@ selected yet."
             :num-observations ,num-observations
             :num-actions ,num-actions
             :decoy-order-mode ,decoy-order-mode
+            :cage2-opening-mode ,cage2-opening-mode
             :population-size ,population-size
 
             :init-num-learners ,init-num-learners
@@ -1140,6 +1164,16 @@ selected yet."
                  '("fixed" "evolved")
                  nil t "evolved")))
             :evolved))
+         (cage2-opening-mode
+          (if (eq environment :cage2)
+              (intern
+               (concat
+                ":"
+                (completing-read
+                 "CAGE2 episode opening: "
+                 '("fixed" "policy")
+                 nil t "fixed")))
+            :policy))
          (episodes
           (cond
            ((and (eq environment :cage2)
@@ -1160,6 +1194,7 @@ selected yet."
              :episodes ,episodes
              :num-observations ,num-observations
              :decoy-order-mode ,decoy-order-mode
+             :cage2-opening-mode ,cage2-opening-mode
              :hamming-space-enabled
              ,(if tpg-hamming-space-enabled :enabled :disabled)
              :hamming-dataset-name

@@ -67,10 +67,10 @@ Features include:
 - Save only the globally best team
 - Stable configuration-derived filenames
 
-Automatic and menu-requested saves use
-`agenttype-observationSize-actionSize-mode-hammingState.lisp`. For example,
-a b-line policy with 142 observations and 11 actions trained online with
-Hamming projection is saved as `bline-142-11-online-hamming-on.lisp`.
+Automatic and menu-requested saves include the agent, policy shape, training
+mode, Decoy-order mode, episode-opening mode, and Hamming state. For example,
+a b-line policy can be saved as
+`bline-62-11-online-order-fixed-opening-fixed-hamming-off.lisp`.
 B-line and meander are inferred from the active environment or dataset;
 unrecognized tasks use `agent`. Each configuration overwrites only its own
 immediate-best file, so online/offline and Hamming ON/OFF variants can coexist
@@ -326,7 +326,7 @@ fitness remain supported.
 
 Teacher forcing is a third search mode for CAGE2 b-line and meander tasks. A
 frozen teacher controls the environment and produces a ranked semantic label
-for every visited state. The TPG population only previews those shared states:
+for every policy-controlled state. The TPG population only previews those shared states:
 it does not step the environment, alter the teacher, or receive teacher model
 parameters. Each candidate still executes its learner programs, bids through
 register 0, traverses the graph, and emits its own ranked target/response list.
@@ -344,7 +344,27 @@ derived from seed 153 and generated once when the search starts. Teacher
 forcing requires 11 targets, either 62 or 142 policy observations, and fixed
 Decoy ordering. No dataset fingerprint is involved. A warm start is comparable
 only when its teacher-forcing protocol, environment, observation prefix,
-fitness-episode count, Hamming configuration, and action agreement match.
+fitness-episode count, episode-opening mode, Hamming configuration, and action
+agreement match.
+
+## CAGE2 episode opening
+
+The start, resume, and validation menus expose `Episode Opening` with two
+modes. `fixed` is the recommended main-agent protocol: the episode controller
+executes `User2 Decoy`, `User2 Decoy`, and `Enterprise0 Decoy` during steps
+0-2, then TPG begins acting at step 3. These probes exist to expose the red
+policy; the fourth observation is the first policy decision state. Fixed Decoy
+ordering resolves the repeated User2 semantic action to successive concrete
+Decoys without another TPG call.
+
+In teacher-forcing mode the teacher still executes the complete episode so its
+internal state and the environment remain correct, but the first three rows
+are excluded from TPG fitness when `fixed` opening is selected. Online search
+and validation use the same controller sequence. `policy` disables the
+controller and restores the older behavior in which TPG acts from step 0.
+Opening mode is part of checkpoint filenames and metadata; checkpoints created
+before this protocol are treated as `policy` opening and re-baselined when
+resumed under `fixed`.
 
 The initial recommended capability run is 62 observations, 11 targets, fixed
 Decoy order, Hamming projection off, five fitness episodes, population 160,
