@@ -49,6 +49,47 @@
               "bline-62-11-teacher-forcing-order-fixed-opening-fixed-hamming-off.lisp")
      "pure teacher rollout retains its explicit checkpoint name")))
 
+(let ((cl-tpg::*current-search-mode* :online)
+      (cl-tpg::*current-gym-environment-name* "Cage2-b_line-100-v0")
+      (cl-tpg::*mixed-training-lineage* t)
+      (cl-tpg::*num-observations* 62)
+      (cl-tpg::*num-actions* 11)
+      (cl-tpg::*decoy-order-mode* :fixed)
+      (cl-tpg::*cage2-opening-mode* :fixed)
+      (cl-tpg::*hamming-space-enabled* nil))
+  (check-teacher-forcing
+   (string= (cl-tpg::best-team-checkpoint-filename)
+            "bline-62-11-mix-order-fixed-opening-fixed-hamming-off.lisp")
+   "online continuation of an offline lineage uses the mix checkpoint name"))
+
+(let ((cl-tpg::*configured-online-fitness-episodes* 5))
+  (check-teacher-forcing
+   (equal (mapcar #'cl-tpg::online-fitness-episodes-for-generation
+                  '(1 200 201 500 501 1000))
+          '(5 5 10 10 20 20))
+   "online five-episode launch follows the staged curriculum"))
+
+(let ((cl-tpg::*configured-online-fitness-episodes* 7))
+  (check-teacher-forcing
+   (= (cl-tpg::online-fitness-episodes-for-generation 1000) 7)
+   "non-five online episode settings remain fixed"))
+
+(multiple-value-bind (accepted delta margin)
+    (cl-tpg::online-reference-promotion-p
+     '(2.0d0 2.0d0 2.0d0)
+     '(1.0d0 1.0d0 1.0d0))
+  (check-teacher-forcing
+   (and accepted (= delta 1.0d0) (= margin 0.0d0))
+   "consistent paired improvement passes the online promotion guard"))
+
+(multiple-value-bind (accepted delta margin)
+    (cl-tpg::online-reference-promotion-p
+     '(2.0d0 0.0d0)
+     '(0.0d0 0.0d0))
+  (check-teacher-forcing
+   (and (not accepted) (= delta margin))
+   "mean improvement equal to its standard error is rejected as noise"))
+
 (check-teacher-forcing
  (= cl-tpg::+teacher-trace-chunk-size+ 5)
  "teacher generation has bounded bridge-call chunks")

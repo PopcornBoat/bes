@@ -201,7 +201,7 @@ The special key :LOCAL always resolves dynamically to the current machine IP.")
         population-worst
         generation
         &key online-fitness-episodes team-count learner-count
-          instruction-count max-team-size max-program-size)
+          instruction-count max-team-size max-program-size elapsed-seconds)
   "Send generation-level and population-level fitness statistics
 to the telemetry client."
   (let ((payload
@@ -230,6 +230,7 @@ to the telemetry client."
              :instruction-count ,instruction-count
              :max-team-size ,max-team-size
              :max-program-size ,max-program-size
+             :elapsed-seconds ,elapsed-seconds
 
              :from
              ,island-id
@@ -424,8 +425,8 @@ return their fixed configured addresses."
   (setf *migration-interval* migration-interval)
   (setf *batch-size* batch-size)
 
-  (setf *online-fitness-episodes*
-        online-fitness-episodes)
+  (setf *configured-online-fitness-episodes* online-fitness-episodes
+        *online-fitness-episodes* online-fitness-episodes)
 
   ;; These values are copied from the pre-run menu request. Later menu changes
   ;; affect only the next operation, never an active training/validation run.

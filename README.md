@@ -252,6 +252,7 @@ Current information includes:
 - Rolling mean fitness
 - Generation count
 - Total evaluation episodes
+- Wall-clock elapsed search time (HH:MM:SS)
 
 These statistics simplify long-running evolutionary experiments.
 
@@ -432,6 +433,28 @@ serialize/deserialize deep copy.
 Legacy atomic-action datasets retain their original loading and accuracy
 behavior. Reward-based offline fitness and richer state inputs remain future
 work.
+
+## Protected mixed online fine-tuning
+
+Warm-starting CAGE2 online search from a semantic-offline or teacher-forcing
+checkpoint marks the lineage as mix. Its immediate-best filename therefore
+uses mix instead of online, while the source checkpoint remains untouched.
+The lineage is stored in checkpoint metadata and survives later resumes.
+
+When online search is launched with five fitness episodes, BES automatically
+uses a 5 -> 10 -> 20 curriculum: five episodes through generation 200, ten
+from generation 201 through 500, and twenty from generation 501 onward. All
+population candidates still share one newly generated seed bank per generation.
+Launching with any other episode count keeps that count fixed for controlled
+comparisons.
+
+Historical-best promotion is deliberately more conservative than population
+selection. The generation winner is evaluated on a fixed 100-episode seed bank
+rooted at 153 and compared episode-by-episode with the frozen incumbent. It is
+saved only when its paired mean improvement exceeds one standard error. This
+prevents a few lucky training episodes from replacing a strong warm-start
+policy. Population selection continues to use the current curriculum episodes,
+so exploratory evolution is not frozen by the checkpoint guard.
 
 ## Optional Hamming observation projection
 

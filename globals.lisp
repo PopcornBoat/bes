@@ -102,8 +102,33 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
   "Weight of the teacher-order NDCG term in ranked offline fitness.")
 
 (defconstant +cage2-online-fitness-protocol+
-  :ranked-semantic-next-best-shared-seeds-opening-v7
-  "Version tag for ranked semantic CAGE2 execution and shared episode seeds.")
+  :ranked-semantic-next-best-staged-robust-reference-v8
+  "Version tag for staged online fitness and robust best-team promotion.")
+
+(defconstant +cage2-online-reference-episodes+ 100
+  "Fixed episode count used to protect the online historical best from noise.")
+
+(defconstant +cage2-online-promotion-standard-errors+ 1.0d0
+  "Required paired standard-error margin for online best-team promotion.")
+
+(defconstant +online-fitness-stage-two-generation+ 201
+  "First online generation evaluated with ten training episodes per team.")
+
+(defconstant +online-fitness-stage-three-generation+ 501
+  "First online generation evaluated with twenty training episodes per team.")
+
+(defparameter +online-fitness-episode-schedule+
+  '((1 . 5) (201 . 10) (501 . 20))
+  "Online CAGE2 training schedule used when the requested initial count is five.")
+
+(defvar *configured-online-fitness-episodes* 1
+  "Episode count requested at launch, before optional online staging.")
+
+(defvar *online-best-reference-scores* nil
+  "Per-seed rewards for the protected online historical best.")
+
+(defvar *mixed-training-lineage* nil
+  "True when online search descends from an offline or teacher-forcing checkpoint.")
 
 (defconstant +semantic-offline-fitness-protocol+
   :ranked-semantic-behavior-ndcg-reference-v5
@@ -173,6 +198,9 @@ search and turn this flag back on.")
 
 (defvar *current-search-seed* nil
   "Resolved integer seed used by the current search, recorded in checkpoints.")
+
+(defvar *search-start-time* nil
+  "Universal time at which the active search began.")
 
 (defvar *generation* 1
   "Generation counter.")

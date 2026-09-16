@@ -307,22 +307,47 @@ not an error and therefore is not converted into a bad-team fitness result."
   (unless *running*
     (throw 'search-stop-requested nil)))
 
-(defun make-online-fitness-episode-seeds (&optional root-seed)
+(defun make-online-fitness-episode-seeds
+       (&optional root-seed (episode-count *online-fitness-episodes*))
   "Return one seed per online-fitness episode.
 
 With ROOT-SEED, derive a reproducible seed bank without consuming the search
 random state. Without it, consume the search random state so each generation
 receives a new batch."
-  (unless (and (integerp *online-fitness-episodes*)
-               (> *online-fitness-episodes* 0))
-    (error "*ONLINE-FITNESS-EPISODES* must be a positive integer."))
+  (unless (and (integerp episode-count) (> episode-count 0))
+    (error "Episode count must be a positive integer, got ~S." episode-count))
 
   (let ((*random-state*
           (if root-seed
               (sb-ext:seed-random-state root-seed)
               *random-state*)))
-    (loop repeat *online-fitness-episodes*
+    (loop repeat episode-count
           collect (random 9999999))))
+
+(defun online-fitness-episodes-for-generation (generation)
+  "Return the active online training episode count for GENERATION.
+
+Requesting five episodes enables the reproducible 5 -> 10 -> 20 curriculum.
+Any other launch value remains fixed for controlled comparison runs."
+  (if (= *configured-online-fitness-episodes* 5)
+      (loop with result = 5
+            for (start . episodes) in +online-fitness-episode-schedule+
+            when (>= generation start) do (setf result episodes)
+            finally (return result))
+      *configured-online-fitness-episodes*))
+
+(defun update-online-fitness-stage ()
+  "Apply and report the episode stage used by this online CAGE2 generation."
+  (when (and (eq *current-search-mode* :online)
+             (cl-gym:cage2-environment-p *current-gym-environment-name*))
+    (let ((episodes (online-fitness-episodes-for-generation *generation*)))
+      (unless (= episodes *online-fitness-episodes*)
+        (setf *online-fitness-episodes* episodes)
+        (emit-message
+         (format nil
+                 "Online fitness stage changed: generation=~D episodes=~D."
+                 *generation*
+                 episodes))))))
 
 (defun cage2-fitness-on-seeds (team gym-environment-name episode-seeds)
   "Evaluate TEAM on the exact CAGE2 EPISODE-SEEDS and return mean reward."
@@ -332,12 +357,45 @@ receives a new batch."
          collect
          (cl-gym:rollout team gym-environment-name episode-seed))))
 
+(defun cage2-reference-scores (team gym-environment-name)
+  "Return TEAM rewards on the protected fixed 100-episode seed bank."
+  (let ((seeds
+          (make-online-fitness-episode-seeds
+           +cage2-evaluation-seed+
+           +cage2-online-reference-episodes+)))
+    (loop for episode-seed in seeds
+          do (abort-search-if-requested)
+          collect (cl-gym:rollout team gym-environment-name episode-seed))))
+
 (defun cage2-reference-fitness (team gym-environment-name)
-  "Evaluate TEAM on the fixed checkpoint/reference seed bank rooted at 153."
-  (cage2-fitness-on-seeds
-   team
-   gym-environment-name
-   (make-online-fitness-episode-seeds +cage2-evaluation-seed+)))
+  "Evaluate TEAM on the protected fixed CAGE2 reference bank."
+  (arithmetic-mean (cage2-reference-scores team gym-environment-name)))
+
+(defun sample-standard-error (values)
+  "Return the sample standard error of numeric VALUES."
+  (if (< (length values) 2)
+      0.0d0
+      (let* ((mean (arithmetic-mean values))
+             (n (length values))
+             (sum-of-squares
+               (loop for value in values
+                     for delta = (- (coerce value 'double-float) mean)
+                     sum (* delta delta) into total
+                     finally (return (coerce total 'double-float))))
+             (variance
+               (/ sum-of-squares (coerce (1- n) 'double-float))))
+        (/ (sqrt variance) (sqrt (coerce n 'double-float))))))
+
+(defun online-reference-promotion-p (candidate-scores incumbent-scores)
+  "Require a positive paired one-standard-error improvement over INCUMBENT."
+  (if (null incumbent-scores)
+      t
+      (let* ((differences (mapcar #'- candidate-scores incumbent-scores))
+             (mean-difference (arithmetic-mean differences))
+             (margin
+               (* +cage2-online-promotion-standard-errors+
+                  (sample-standard-error differences))))
+        (values (> mean-difference margin) mean-difference margin))))
 
 (defun online-fitness (team gym-environment-name)
   "Evaluate TEAM over *ONLINE-FITNESS-EPISODES* complete episodes.
@@ -453,6 +511,7 @@ reference batch."
             
 (defun evaluate ()
   "Returns a list of (team . fitness), skipping and deleting bad teams."
+  (update-online-fitness-stage)
   ;; The first CAGE2 team lazily creates a seed list after this reset. Every
   ;; root team reads that same list; the next population evaluation gets a new
   ;; list generated from the search random state.
@@ -475,7 +534,7 @@ reference batch."
       (delete-team team))
     good-results))
 
-(defun current-reference-fitness (team training-fitness)
+(defun current-reference-evaluation (team training-fitness)
   "Return TEAM's comparable historical score for the active fitness protocol."
   (let ((reference-kind
           (cond
@@ -494,15 +553,18 @@ reference batch."
            (format nil
                    "Generation ~D ~A reference evaluation started."
                    *generation* reference-kind))
-          (let ((result
-                  (ecase reference-kind
-                    (:teacher-forcing
-                     (teacher-forcing-reference-fitness team))
-                    (:cage2
-                     (cage2-reference-fitness
-                      team *current-gym-environment-name*))
-                    (:offline
-                     (semantic-offline-reference-fitness team)))))
+          (multiple-value-bind (result detail)
+              (ecase reference-kind
+                (:teacher-forcing
+                 (values (teacher-forcing-reference-fitness team) nil))
+                (:cage2
+                 (let ((scores
+                         (cage2-reference-scores
+                          team
+                          *current-gym-environment-name*)))
+                   (values (arithmetic-mean scores) scores)))
+                (:offline
+                 (values (semantic-offline-reference-fitness team) nil)))
             (emit-message
              (format nil
                      "Generation ~D ~A reference evaluation finished in ~,2F seconds."
@@ -511,7 +573,11 @@ reference batch."
                      (/ (- (get-internal-real-time) started)
                         (coerce internal-time-units-per-second
                                 'double-float))))
-            result)))))
+            (values result detail))))))
+
+(defun current-reference-fitness (team training-fitness)
+  "Return only the scalar part of CURRENT-REFERENCE-EVALUATION."
+  (nth-value 0 (current-reference-evaluation team training-fitness)))
 
 (defun complexity-key-less-p (left right)
   "Return true when lexicographic complexity key LEFT is smaller than RIGHT."
@@ -568,10 +634,9 @@ through serialization/deserialization and save it to disk."
          (generation-best-team
            (car best-entry))
 
-         (historical-candidate-fitness
-           (current-reference-fitness
-            generation-best-team
-            generation-best))
+         (historical-candidate-fitness nil)
+
+         (historical-candidate-detail nil)
 
          (population-mean
            (arithmetic-mean fitness-values))
@@ -584,6 +649,12 @@ through serialization/deserialization and save it to disk."
                    fitness-values
                    :initial-value
                    most-positive-double-float)))
+
+    (multiple-value-setq
+        (historical-candidate-fitness historical-candidate-detail)
+      (current-reference-evaluation
+       generation-best-team
+       generation-best))
 
     ;; ------------------------------------------------------------
     ;; Historical best
@@ -601,15 +672,40 @@ through serialization/deserialization and save it to disk."
     ;; the exact same policy state.
     ;; ------------------------------------------------------------
 
-    (when (or (null *best-fitness*)
-              (> historical-candidate-fitness *best-fitness*))
+    (multiple-value-bind (promotion-p mean-difference promotion-margin)
+        (if (and (eq *current-search-mode* :online)
+                 (cl-gym:cage2-environment-p
+                  *current-gym-environment-name*)
+                 *best-fitness*)
+            (online-reference-promotion-p
+             historical-candidate-detail
+             *online-best-reference-scores*)
+            (values (or (null *best-fitness*)
+                        (> historical-candidate-fitness *best-fitness*))
+                    nil
+                    nil))
+      (when (and *best-fitness*
+                 (> historical-candidate-fitness *best-fitness*)
+                 (not promotion-p))
+        (emit-message
+         (format nil
+                 "Online best promotion rejected as noise: candidate=~A incumbent=~A paired-delta=~,4F required-margin=~,4F."
+                 historical-candidate-fitness
+                 *best-fitness*
+                 mean-difference
+                 promotion-margin)))
+
+      (when promotion-p
 
       (let ((frozen-best-team
               (deep-copy-team-via-serialization
                generation-best-team)))
 
         (setf *best-fitness* historical-candidate-fitness
-              *best-team* frozen-best-team)
+              *best-team* frozen-best-team
+              *online-best-reference-scores*
+                (and historical-candidate-detail
+                     (copy-list historical-candidate-detail)))
 
         (emit-message
          (format nil
@@ -620,7 +716,7 @@ through serialization/deserialization and save it to disk."
 
         ;; Save immediately, before reproduce/mutation/deletion.
         (when *checkpoint-directory*
-          (save-best-team))))
+          (save-best-team)))))
 
     ;; ------------------------------------------------------------
     ;; Telemetry
@@ -643,7 +739,10 @@ through serialization/deserialization and save it to disk."
        :learner-count learner-count
        :instruction-count instruction-count
        :max-team-size max-team-size
-       :max-program-size max-program-size))
+       :max-program-size max-program-size
+       :elapsed-seconds
+         (and *search-start-time*
+              (- (get-universal-time) *search-start-time*))))
 
     ;; ------------------------------------------------------------
     ;; Selection
@@ -711,7 +810,10 @@ through serialization/deserialization and save it to disk."
           *current-search-mode* mode
           *current-gym-environment-name* gym-environment-name
           *current-search-seed* seed
-          *current-dataset-name* (and (eq mode :offline) dataset-name))
+          *current-dataset-name* (and (eq mode :offline) dataset-name)
+          *mixed-training-lineage* nil
+          *online-best-reference-scores* nil
+          *search-start-time* (get-universal-time))
 
     (catch 'search-stop-requested
       (setf *teams* nil)
@@ -764,6 +866,8 @@ the same train/reference file fingerprint."
                (getf metadata :online-fitness-episodes))
              (saved-protocol
                (getf metadata :fitness-evaluation-protocol))
+             (saved-online-reference-episodes
+               (getf metadata :online-reference-episodes))
              (saved-dataset-fingerprint
                (getf metadata :dataset-fingerprint))
               (saved-agreement-signature
@@ -801,10 +905,10 @@ the same train/reference file fingerprint."
                       (equal saved-agreement-signature
                              (action-agreement-signature))))
                 ((cl-gym:cage2-environment-p gym-environment-name)
-                 (and (or (null saved-episodes)
-                          (= saved-episodes *online-fitness-episodes*))
-                      (eq saved-protocol
+                 (and (eq saved-protocol
                           +cage2-online-fitness-protocol+)
+                      (= (or saved-online-reference-episodes 0)
+                         +cage2-online-reference-episodes+)
                       (equal saved-agreement-signature
                              (action-agreement-signature))))
                 (*offline-reference-dataset*
@@ -845,16 +949,23 @@ checkpoint remains replayable while training continues on changing batches."
     (let* ((generation-best-team (car best-entry))
            (generation-best-fitness (cdr best-entry))
            (loaded-current-fitness (cdr loaded-entry))
-           (loaded-reference-fitness
-             (current-reference-fitness
-              loaded-best-team
-              loaded-current-fitness))
-           (generation-reference-fitness
-             (if (eq generation-best-team loaded-best-team)
-                 loaded-reference-fitness
-                 (current-reference-fitness
-                  generation-best-team
-                  generation-best-fitness))))
+           (loaded-reference-fitness nil)
+           (loaded-reference-detail nil)
+           (generation-reference-fitness nil)
+           (generation-reference-detail nil))
+      (multiple-value-setq
+          (loaded-reference-fitness loaded-reference-detail)
+        (current-reference-evaluation
+         loaded-best-team
+         loaded-current-fitness))
+      (if (eq generation-best-team loaded-best-team)
+          (setf generation-reference-fitness loaded-reference-fitness
+                generation-reference-detail loaded-reference-detail)
+          (multiple-value-setq
+              (generation-reference-fitness generation-reference-detail)
+            (current-reference-evaluation
+             generation-best-team
+             generation-best-fitness)))
       (when (and (numberp saved-best-fitness)
                  (not (fitness-values-equivalent-p
                        saved-best-fitness
@@ -867,7 +978,13 @@ checkpoint remains replayable while training continues on changing batches."
       (let* ((loaded-baseline
                (or saved-best-fitness loaded-reference-fitness))
              (generation-won-p
-               (> generation-reference-fitness loaded-baseline))
+               (if (and (eq *current-search-mode* :online)
+                        (cl-gym:cage2-environment-p
+                         *current-gym-environment-name*))
+                   (online-reference-promotion-p
+                    generation-reference-detail
+                    loaded-reference-detail)
+                   (> generation-reference-fitness loaded-baseline)))
              (chosen-team
                (if generation-won-p
                    generation-best-team
@@ -878,7 +995,12 @@ checkpoint remains replayable while training continues on changing batches."
                    loaded-baseline)))
         (setf *best-team*
                 (deep-copy-team-via-serialization chosen-team)
-              *best-fitness* chosen-fitness)
+              *best-fitness* chosen-fitness
+              *online-best-reference-scores*
+                (copy-list
+                 (if generation-won-p
+                     generation-reference-detail
+                     loaded-reference-detail)))
 
         (emit-message
          (format nil
@@ -910,7 +1032,10 @@ normal evolution."
           *current-search-mode* mode
           *current-gym-environment-name* gym-environment-name
           *current-search-seed* seed
-          *current-dataset-name* (and (eq mode :offline) dataset-name))
+          *current-dataset-name* (and (eq mode :offline) dataset-name)
+          *mixed-training-lineage* nil
+          *online-best-reference-scores* nil
+          *search-start-time* (get-universal-time))
 
     (catch 'search-stop-requested
       ;; Fresh island-local state.
@@ -934,6 +1059,18 @@ normal evolution."
          loaded-best-team *num-observations*)
         (inject-loaded-best-team-into-population loaded-best-team)
         (emit-policy-limit-warning loaded-best-team)
+
+        (setf *mixed-training-lineage*
+              (and (eq mode :online)
+                   (or (getf checkpoint-metadata
+                             :mixed-training-lineage)
+                       (getf checkpoint-metadata :dataset-name)
+                       (member
+                        (getf checkpoint-metadata
+                              :fitness-evaluation-protocol)
+                        (list +teacher-forcing-teacher-protocol+
+                              +teacher-forcing-dagger-protocol+)
+                        :test #'eq))))
 
         (let ((comparable-fitness
                 (and (checkpoint-fitness-comparable-p

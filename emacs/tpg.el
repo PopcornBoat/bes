@@ -846,6 +846,7 @@ selected yet."
          ("Instrs" 10 t)
          ("Max Team" 10 t)
          ("Max Prog" 10 t)
+         ("Elapsed" 10 t)
          ("CPU" 8 t)
          ("Mem" 8 t)])
 
@@ -925,6 +926,14 @@ selected yet."
 
           (format "%s" (or (plist-get data :max-program-size) "-"))
 
+          (let ((seconds (plist-get data :elapsed-seconds)))
+            (if (numberp seconds)
+                (format "%02d:%02d:%02d"
+                        (/ seconds 3600)
+                        (% (/ seconds 60) 60)
+                        (% seconds 60))
+              "-"))
+
           (format "%.1f"
                   (or
                    (plist-get data :cpu)
@@ -977,7 +986,8 @@ selected yet."
        (learner-count (plist-get msg :LEARNER-COUNT))
        (instruction-count (plist-get msg :INSTRUCTION-COUNT))
        (max-team-size (plist-get msg :MAX-TEAM-SIZE))
-       (max-program-size (plist-get msg :MAX-PROGRAM-SIZE)))
+       (max-program-size (plist-get msg :MAX-PROGRAM-SIZE))
+       (elapsed-seconds (plist-get msg :ELAPSED-SECONDS)))
 
    (puthash
 
@@ -1018,7 +1028,8 @@ selected yet."
                        (:learner-count ,learner-count)
                        (:instruction-count ,instruction-count)
                        (:max-team-size ,max-team-size)
-                       (:max-program-size ,max-program-size)))
+                       (:max-program-size ,max-program-size)
+                       (:elapsed-seconds ,elapsed-seconds)))
         (setq data (plist-put data (car entry) (cadr entry))))
       data)
     tpg-data)))

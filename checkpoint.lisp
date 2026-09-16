@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 11
-  "Checkpoint version recording the CAGE2 episode-opening mode.")
+(defconstant +best-team-checkpoint-version+ 12
+  "Checkpoint version recording mixed lineage and robust online references.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -37,6 +37,8 @@
 (defun checkpoint-training-mode ()
   "Return the active search mode as a filename component."
   (cond
+    ((and (eq *current-search-mode* :online) *mixed-training-lineage*)
+     "mix")
     ((eq *current-search-mode* :teacher-forcing)
      (if (eq *teacher-forcing-rollout-mode* :dagger)
          "teacher-forcing-dagger"
@@ -72,6 +74,7 @@ checkpoint directory."
                           online-fitness-episodes search-seed
                            fitness-evaluation-protocol dataset-name
                            dataset-fingerprint action-agreement-signature
+                           online-reference-episodes mixed-training-lineage
                            hamming-space-enabled hamming-dataset-fingerprint
                            num-observations decoy-order-mode cage2-opening-mode)
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
@@ -85,6 +88,8 @@ checkpoint directory."
     :dataset-name ,dataset-name
     :dataset-fingerprint ,dataset-fingerprint
     :action-agreement-signature ,action-agreement-signature
+    :online-reference-episodes ,online-reference-episodes
+    :mixed-training-lineage ,mixed-training-lineage
     :num-observations ,num-observations
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode
@@ -103,6 +108,7 @@ checkpoint directory."
                                online-fitness-episodes search-seed
                                 fitness-evaluation-protocol dataset-name
                                 dataset-fingerprint action-agreement-signature
+                                online-reference-episodes mixed-training-lineage
                                 hamming-space-enabled hamming-dataset-fingerprint
                                 num-observations decoy-order-mode
                                 cage2-opening-mode)
@@ -129,6 +135,8 @@ checkpoint directory."
            :dataset-name dataset-name
            :dataset-fingerprint dataset-fingerprint
            :action-agreement-signature action-agreement-signature
+           :online-reference-episodes online-reference-episodes
+           :mixed-training-lineage mixed-training-lineage
            :num-observations num-observations
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
@@ -153,6 +161,10 @@ checkpoint directory."
    :search-seed *current-search-seed*
    :dataset-name *current-dataset-name*
     :dataset-fingerprint *current-dataset-fingerprint*
+    :online-reference-episodes
+      (and (eq *current-search-mode* :online)
+           +cage2-online-reference-episodes+)
+    :mixed-training-lineage *mixed-training-lineage*
     :num-observations *num-observations*
     :decoy-order-mode *decoy-order-mode*
     :cage2-opening-mode *cage2-opening-mode*
@@ -209,6 +221,7 @@ return NIL for FITNESS and METADATA."
                           online-fitness-episodes search-seed
                            fitness-evaluation-protocol dataset-name
                            dataset-fingerprint action-agreement-signature
+                           online-reference-episodes mixed-training-lineage
                            hamming-space-enabled hamming-dataset-fingerprint
                            num-observations decoy-order-mode
                            cage2-opening-mode)
@@ -232,6 +245,8 @@ preserving the original legacy file."
      :dataset-name dataset-name
      :dataset-fingerprint dataset-fingerprint
      :action-agreement-signature action-agreement-signature
+     :online-reference-episodes online-reference-episodes
+     :mixed-training-lineage mixed-training-lineage
      :num-observations num-observations
      :decoy-order-mode decoy-order-mode
      :cage2-opening-mode cage2-opening-mode
