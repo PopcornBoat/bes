@@ -80,12 +80,21 @@
 (let ((cl-tpg::*teacher-dagger-replay-rows* nil)
       (cl-tpg::*teacher-dagger-random-state*
         (sb-ext:seed-random-state 153)))
-  (cl-tpg::append-teacher-dagger-replay '(a b c))
+  (let ((observation (loop repeat 142 collect 0.0d0)))
+    (cl-tpg::append-teacher-dagger-replay
+     (list (list observation '(8 3) '((8 3) (0 0)) 0)
+           (list observation '(2 0) '((2 0) (0 0)) 0)
+           (list observation '(0 0) '((0 0)) 0))))
+  (check-teacher-forcing
+   (every
+    (lambda (row)
+      (typep (first row) '(simple-array double-float (*))))
+    cl-tpg::*teacher-dagger-replay-rows*)
+   "DAgger replay stores compact double-float observation arrays")
   (let ((sample (cl-tpg::sample-teacher-dagger-replay 2)))
     (check-teacher-forcing
      (and (= (length sample) 2)
-          (= (length (remove-duplicates sample)) 2)
-          (every (lambda (row) (member row '(a b c))) sample))
+          (= (length (remove-duplicates sample :test #'eq)) 2))
      "DAgger replay samples without replacement")))
 
 (let ((cl-tpg::*cage2-opening-mode* :fixed))

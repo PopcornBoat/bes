@@ -343,6 +343,12 @@ the normal selection, cloning, mutation, and replacement path. Simulator cost
 therefore scales with two rollout banks per generation in `dagger` mode,
 rather than population size multiplied by fitness episodes.
 
+Replay observations are stored as compact double-float arrays instead of
+boxed lists. DAgger also requests a full SBCL collection every 25 generations
+after the previous fitness dataset is released, preventing retired trace rows
+from accumulating in older heap generations during long searches. For long
+CAGE2 runs, start SBCL with `--dynamic-space-size 4096` or larger.
+
 Historical-best comparison deliberately remains a fixed 100-episode
 teacher-controlled reference bank derived from seed 153 and generated once
 when the search starts. It is stable and replayable, while online validation

@@ -129,6 +129,9 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
 (defconstant +teacher-dagger-replay-capacity+ 10000
   "Maximum learner-visited, teacher-labelled rows retained by DAgger.")
 
+(defconstant +teacher-dagger-full-gc-interval+ 25
+  "Generations between full collections of retired DAgger trace storage.")
+
 (defconstant +hamming-raw-mismatch-weight+ 40
   "Integer weight for one raw-observation mismatch.")
 

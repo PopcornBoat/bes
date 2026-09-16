@@ -196,7 +196,7 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
                         ;; observation without changing the environment state.
                         (unless opening-action
                           (push
-                           (list (coerce observation 'list)
+                           (list observation
                                  (copy-list selected)
                                  (copy-tree ranking)
                                  decoy-mask)
@@ -211,9 +211,18 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
       (ignore-errors (py4cl2:pymethod env "close")))
     (nreverse rows)))
 
+(defun compact-teacher-dagger-row (row)
+  "Copy one DAgger ROW into replay's compact, independently owned form."
+  (destructuring-bind (observation selected ranking decoy-mask) row
+    (list (cl-gym:obs->array observation)
+          (copy-list selected)
+          (copy-tree ranking)
+          decoy-mask)))
+
 (defun append-teacher-dagger-replay (rows)
   "Append ROWS and keep only the newest bounded DAgger replay entries."
-  (let* ((combined (nconc *teacher-dagger-replay-rows* (copy-list rows)))
+  (let* ((compact-rows (mapcar #'compact-teacher-dagger-row rows))
+         (combined (nconc *teacher-dagger-replay-rows* compact-rows))
          (excess (- (length combined) +teacher-dagger-replay-capacity+)))
     (setf *teacher-dagger-replay-rows*
           (if (plusp excess)
@@ -298,8 +307,22 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
       (first (root-teams))
       (error "DAgger cannot choose a behavior team from an empty population.")))
 
+(defun maybe-collect-teacher-dagger-garbage ()
+  "Periodically reclaim promoted trace objects retired from bounded replay."
+  #+sbcl
+  (when (and (eq *teacher-forcing-rollout-mode* :dagger)
+             (plusp *generation*)
+             (zerop (mod *generation*
+                         +teacher-dagger-full-gc-interval+)))
+    (emit-message
+     (format nil
+             "Generation ~D DAgger full garbage collection started."
+             *generation*))
+    (sb-ext:gc :full t)))
+
 (defun prepare-teacher-training-dataset ()
   "Build one shared teacher-labelled fitness dataset for this generation."
+  (maybe-collect-teacher-dagger-garbage)
   (let ((seeds (make-online-fitness-episode-seeds)))
     (emit-message
      (format nil
