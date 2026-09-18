@@ -68,9 +68,10 @@ Features include:
 - Stable configuration-derived filenames
 
 Automatic and menu-requested saves include the agent, policy shape, training
-mode, Decoy-order mode, episode-opening mode, and Hamming state. For example,
+mode, Decoy-order mode, episode-opening mode, Hamming state, and policy-memory
+mode. For example,
 a b-line policy can be saved as
-`bline-62-11-online-order-fixed-opening-fixed-hamming-off.lisp`.
+`bline-62-11-online-order-fixed-opening-fixed-hamming-off-memory-recurrent.lisp`.
 B-line and meander are inferred from the active environment or dataset;
 unrecognized tasks use `agent`. Each configuration overwrites only its own
 immediate-best file, so online/offline and Hamming ON/OFF variants can coexist
@@ -383,6 +384,37 @@ step 0.
 Opening mode is part of checkpoint filenames and metadata; checkpoints created
 before this protocol are treated as `policy` opening and re-baselined when
 resumed under `fixed`.
+
+## Optional recurrent learner registers
+
+The Emacs main menu exposes `Recurrent Registers (next operation)`. When it is
+enabled for CAGE2 online search or validation, every learner owns an independent
+eight-register vector for the duration of one environment episode. All learners
+still execute and bid normally; a learner sees the register values left by its
+own previous executions, never values from another learner. The complete bank
+is discarded at environment reset, so every episode starts from zero. With the
+switch off, each bid retains the original behavior and starts from zero.
+
+The fixed three-step opening does not execute TPG programs. Recurrent state
+therefore remains zero during those controller-owned steps and begins evolving
+when TPG first acts at step 3. Internal team traversal is unchanged: each
+visited team's learners bid, team-reference winners continue traversal, and the
+final terminal learner supplies the semantic action.
+
+Recurrent mode is intentionally limited to online CAGE2 search and CAGE2
+validation. Current offline and teacher-forcing fitness functions sample
+individual rows rather than complete ordered episodes; even where source files
+contain termination flags, filtered semantic rows do not guarantee intact
+boundaries. Enabling memory there would teach dependencies on an arbitrary row
+order, so the server rejects that combination. A stateless offline checkpoint
+can still warm-start recurrent online training; its saved fitness is
+re-baselined because memory modes are not comparable.
+
+Register state is runtime-only and is not serialized. The policy graph and
+programs keep their existing checkpoint representation, while checkpoint
+metadata and filenames record `memory-recurrent` or `memory-stateless`.
+Independent staged online evaluators receive the same setting as the search.
+Legacy checkpoints are interpreted as stateless.
 
 The initial recommended capability run is 62 observations, 11 targets, fixed
 Decoy order, Hamming projection off, five fitness episodes, population 160,

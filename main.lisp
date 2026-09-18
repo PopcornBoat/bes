@@ -502,7 +502,8 @@ promotion still requires the stricter positive one-standard-error improvement."
    :hamming-dataset-fingerprint *current-hamming-dataset-fingerprint*
    :num-observations *num-observations*
    :decoy-order-mode *decoy-order-mode*
-   :cage2-opening-mode *cage2-opening-mode*))
+   :cage2-opening-mode *cage2-opening-mode*
+   :recurrent-policy-enabled *recurrent-policy-enabled*))
 
 (defun note-online-generation-candidate (team fitness)
   "Retain the strongest training winner seen in the current submission window."
@@ -546,6 +547,7 @@ promotion still requires the stricter positive one-standard-error improvement."
            :num-actions *num-actions*
            :decoy-order-mode *decoy-order-mode*
            :cage2-opening-mode *cage2-opening-mode*
+           :recurrent-policy-enabled *recurrent-policy-enabled*
            :hamming-space-enabled *hamming-space-enabled*
            :hamming-dataset-name *hamming-dataset-name*
            :reference-episodes +cage2-online-reference-episodes+
@@ -694,6 +696,8 @@ promotion still requires the stricter positive one-standard-error improvement."
                  (*num-actions* (getf request :num-actions))
                  (*decoy-order-mode* (getf request :decoy-order-mode))
                  (*cage2-opening-mode* (getf request :cage2-opening-mode))
+                 (*recurrent-policy-enabled*
+                   (not (null (getf request :recurrent-policy-enabled))))
                  (*hamming-space-enabled*
                    (getf request :hamming-space-enabled))
                  (*hamming-dataset-name*
@@ -1265,7 +1269,10 @@ the same train/reference file fingerprint."
                 (getf metadata :decoy-order-mode))
               (saved-opening-mode
                 ;; Checkpoints before v11 used TPG from step 0.
-                (or (getf metadata :cage2-opening-mode) :policy)))
+                (or (getf metadata :cage2-opening-mode) :policy))
+              (saved-recurrent-enabled
+                ;; Checkpoints before v13 always cleared registers per bid.
+                (not (null (getf metadata :recurrent-policy-enabled)))))
           (and (or (null saved-environment)
                    (equal saved-environment gym-environment-name))
                (or (null saved-num-observations)
@@ -1274,6 +1281,8 @@ the same train/reference file fingerprint."
                    (eq saved-decoy-order-mode *decoy-order-mode*))
                (or (not (cl-gym:cage2-environment-p gym-environment-name))
                    (eq saved-opening-mode *cage2-opening-mode*))
+               (eq saved-recurrent-enabled
+                   (not (null *recurrent-policy-enabled*)))
                (eq saved-hamming-enabled
                    (not (null *hamming-space-enabled*)))
                (or (not *hamming-space-enabled*)

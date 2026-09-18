@@ -26,6 +26,9 @@
 
 (defvar tpg-hamming-dataset-name nil
   "Semantic training dataset used by the next Hamming-enabled operation.")
+(defvar tpg-recurrent-registers-enabled nil
+  "Whether the next online CAGE2 operation preserves learner registers per episode.")
+
 
 (defun plist-to-cl-sexp (plist)
   "Format a plist as a Common Lisp readable s-expression with keywords."
@@ -147,6 +150,19 @@ required; the island performs the authoritative file check."
   "Describe the Hamming setting that will be copied into the next request."
   (format "Hamming Projection: %s"
           (if tpg-hamming-space-enabled "ON" "OFF")))
+
+(defun tpg-toggle-recurrent-registers ()
+  "Toggle recurrent registers for operations requested after this command."
+  (interactive)
+  (setq tpg-recurrent-registers-enabled
+        (not tpg-recurrent-registers-enabled))
+  (message "[LOCAL] Recurrent registers are %s for the next operation"
+           (if tpg-recurrent-registers-enabled "ON" "OFF")))
+
+(defun tpg-recurrent-menu-description ()
+  "Describe the recurrent-register setting copied into the next request."
+  (format "Recurrent Registers: %s"
+          (if tpg-recurrent-registers-enabled "ON" "OFF")))
 
 (defun tpg-add-hamming-settings (payload &optional fallback-dataset)
   "Return PAYLOAD with the menu's fixed Hamming settings.
@@ -295,6 +311,8 @@ selected yet."
       :batch-size ,batch-size
       :online-fitness-episodes ,online-fitness-episodes
       :checkpoint-directory :none
+      :recurrent-policy-enabled
+      ,(if tpg-recurrent-registers-enabled :enabled :disabled)
       :seed ,seed)))
 
 (transient-define-suffix start-search ()
@@ -317,6 +335,10 @@ selected yet."
           (tpg-read-directory-path
            "Checkpoint directory: "
            "~/Documents/Research/checkpoints/")))
+
+    (when (and tpg-recurrent-registers-enabled
+               (not (eq mode :online)))
+      (user-error "Recurrent registers require online CAGE2 mode"))
 
     (setq payload
           (plist-put payload :dataset-name dataset-name))
@@ -721,6 +743,8 @@ selected yet."
 
             :p-add ,p-add
             :p-del ,p-del
+            :recurrent-policy-enabled
+            ,(if tpg-recurrent-registers-enabled :enabled :disabled)
             :p-mut ,p-mut
             :p-act ,p-act
             :p-swap ,p-swap
@@ -753,6 +777,10 @@ selected yet."
                 :none)
 
              :seed ,seed)))
+
+    (when (and tpg-recurrent-registers-enabled
+               (not (eq mode :online)))
+      (user-error "Recurrent registers require online CAGE2 mode"))
 
     (tpg-send-payload-to-island
      island-id
@@ -790,8 +818,11 @@ selected yet."
    ("b" "Save Best Team" tpg-save-best-team)]
   
   ["Python"
-    ("p" "Set Python Interpreter" tpg-configure-python-interpreter)])
-   
+   ("p" "Set Python Interpreter" tpg-configure-python-interpreter)]
+
+  ["Policy Memory (next operation)"
+   ("M" tpg-recurrent-menu-description tpg-toggle-recurrent-registers)])
+
 
 (defvar tpg-mode-map
   (let ((map (make-sparse-keymap)))
@@ -1229,6 +1260,8 @@ selected yet."
              :num-observations ,num-observations
              :decoy-order-mode ,decoy-order-mode
              :cage2-opening-mode ,cage2-opening-mode
+             :recurrent-policy-enabled
+             ,(if tpg-recurrent-registers-enabled :enabled :disabled)
              :hamming-space-enabled
              ,(if tpg-hamming-space-enabled :enabled :disabled)
              :hamming-dataset-name
@@ -1237,6 +1270,10 @@ selected yet."
                       (user-error
                        "Select a Hamming reference dataset before validation"))
                 :none))))
+
+    (when (and tpg-recurrent-registers-enabled
+               (not (eq environment :cage2)))
+      (user-error "Recurrent-register validation is currently CAGE2-only"))
 
     (tpg-send-payload-to-island
      island-id

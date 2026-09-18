@@ -39,6 +39,14 @@ actions before consulting TPG; :POLICY lets TPG control the episode from step 0.
   "Teacher-forcing state distribution. :TEACHER imitates only teacher-controlled
 trajectories; :DAGGER also labels states visited by the current best TPG policy.")
 
+(defparameter *recurrent-policy-enabled* nil
+  "When true, each learner keeps its own register vector for one online episode.")
+
+(defvar *policy-episode-registers* nil
+  "Dynamically bound EQ hash table of learner to episode-local registers.
+A fresh table is bound around every online rollout. NIL deliberately keeps
+offline row evaluation and all legacy execution stateless.")
+
 (defconstant +cage2-raw-observation-size+ 52
   "Number of raw values produced by the official CAGE2 ChallengeWrapper.")
 

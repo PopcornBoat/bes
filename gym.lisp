@@ -194,33 +194,36 @@ Supports:
          (episode-reward 0.0))
     (when (cage2-environment-p environment-name)
       (configure-cage2-option-orders env root-team))
-    (let ((observation (reset env seed)))
-    (unwind-protect
-         (loop for timestep from 0
-               do (let* ((opening-action
-                           (cage2-fixed-opening-action
-                            environment-name timestep))
-                         (action
-                           (or opening-action
-                               (if (shared-policy-observation-p observation)
-                                   (shared-policy-actions root-team observation)
-                                   (execute-policy-action
-                                    root-team
-                                    observation
-                                    environment-name)))))
-                    (multiple-value-bind (obs rew term trunc info)
-                        (step env action)
-                      (declare (ignore info))
-                      (incf episode-reward rew)
-                      (setf observation obs)
-                      (when (or term trunc)
-                        (return)))))
-      (ignore-errors
-        (py4cl2:pymethod env "close")
-        (when (and video-path
-                   (probe-file "rl-video-episode-0.mp4"))
-          (rename-file "rl-video-episode-0.mp4" video-path))))
-      episode-reward)))
+    (cl-tpg::call-with-fresh-policy-episode
+     (lambda ()
+       (let ((observation (reset env seed)))
+         (unwind-protect
+              (loop for timestep from 0
+                    do (let* ((opening-action
+                                (cage2-fixed-opening-action
+                                 environment-name timestep))
+                              (action
+                                (or opening-action
+                                    (if (shared-policy-observation-p observation)
+                                        (shared-policy-actions
+                                         root-team observation)
+                                        (execute-policy-action
+                                         root-team
+                                         observation
+                                         environment-name)))))
+                         (multiple-value-bind (obs rew term trunc info)
+                             (step env action)
+                           (declare (ignore info))
+                           (incf episode-reward rew)
+                           (setf observation obs)
+                           (when (or term trunc)
+                             (return)))))
+           (ignore-errors
+             (py4cl2:pymethod env "close")
+             (when (and video-path
+                        (probe-file "rl-video-episode-0.mp4"))
+               (rename-file "rl-video-episode-0.mp4" video-path))))
+         episode-reward)))))
 
 (defun rollout (root-team environment-name seed &key (video-path nil))
   "Run a rollout through the Python Gymnasium bridge."

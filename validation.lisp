@@ -181,7 +181,7 @@ CAGE3 MODE:
       (seed-cage2-evaluation)
       (emit-message
        (format nil
-               "CAGE2 policy inputs: first ~D of ~D bridge values (~D raw + ~D scan-state~A); decoy-order=~A; opening=~A."
+               "CAGE2 policy inputs: first ~D of ~D bridge values (~D raw + ~D scan-state~A); decoy-order=~A; opening=~A; memory=~A."
                *num-observations*
                +cage2-observation-size+
                +cage2-raw-observation-size+
@@ -191,7 +191,8 @@ CAGE3 MODE:
                            +cage2-decoy-availability-size+)
                    "; availability ignored")
                *decoy-order-mode*
-               *cage2-opening-mode*)))
+               *cage2-opening-mode*
+               (if *recurrent-policy-enabled* :recurrent :stateless))))
 
     (let ((team (load-best-team best-team-path)))
       (when cage2-p

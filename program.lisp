@@ -27,12 +27,14 @@
     (make-program
      :instructions (copy-program-instructions instructions))))
 
-(defun execute-program (program observations &optional register-buffer)
+(defun execute-program
+       (program observations &optional register-buffer (reset-registers-p t))
   "Given an encoded program and a double-array of OBSERVATIONS
   representing the state. Execute the program and return its registers.
 
-When REGISTER-BUFFER is supplied, reset and reuse it to avoid allocating one
-register vector for every learner bid."
+When REGISTER-BUFFER is supplied, it is normally reset and reused to avoid
+allocating one vector for every bid. Recurrent execution passes NIL for
+RESET-REGISTERS-P so that one learner's episode-local state is preserved."
   (declare (optimize (speed 3) (safety 0) (debug 0))
 	   (type (simple-array double-float (*)) observations)
            (type program program))
@@ -44,7 +46,8 @@ register vector for every learner bid."
                            :initial-element 0.0d0))))
     (declare (type (simple-array double-float (*)) registers)
              (type (vector t *) instructions))
-    (fill registers 0.0d0)
+    (when reset-registers-p
+      (fill registers 0.0d0))
     
     (loop for ins across instructions do
       (let* ((op   (instruction-op ins))

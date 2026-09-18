@@ -389,6 +389,7 @@ return their fixed configured addresses."
                                     hamming-dataset-name
                                     (decoy-order-mode :evolved)
                                     (cage2-opening-mode :fixed)
+                                    (recurrent-policy-enabled nil)
                                     (teacher-forcing-rollout-mode :dagger))
   "Set the hyperparameters according to the TCP request."
 
@@ -431,7 +432,8 @@ return their fixed configured addresses."
   ;; These values are copied from the pre-run menu request. Later menu changes
   ;; affect only the next operation, never an active training/validation run.
   (setf *hamming-space-enabled* (not (null hamming-space-enabled))
-        *hamming-dataset-name* hamming-dataset-name)
+        *hamming-dataset-name* hamming-dataset-name
+        *recurrent-policy-enabled* (not (null recurrent-policy-enabled)))
 
   (unless (valid-decoy-order-mode-p decoy-order-mode)
     (error "Decoy order mode must be :FIXED or :EVOLVED, got ~S."
@@ -462,6 +464,7 @@ return their fixed configured addresses."
 				  migration-interval batch-size seed
                                   hamming-space-enabled hamming-dataset-name
                                   decoy-order-mode cage2-opening-mode
+                                  recurrent-policy-enabled
                                   teacher-forcing-rollout-mode)
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
@@ -493,6 +496,11 @@ return their fixed configured addresses."
                 (= num-actions +num-semantic-targets+)
                 (or (eq mode :offline)
                     (cl-gym:cage2-environment-p gym-environment-name))))
+       ;; Recurrent registers require an ordered episode and are intentionally
+       ;; unavailable to shuffled offline rows and teacher-forcing row fitness.
+       (or (not recurrent-policy-enabled)
+           (and (eq mode :online)
+                (cl-gym:cage2-environment-p gym-environment-name)))
        (valid-decoy-order-mode-p decoy-order-mode)
        (valid-cage2-opening-mode-p cage2-opening-mode)
        (valid-teacher-forcing-rollout-mode-p
@@ -555,6 +563,8 @@ return their fixed configured addresses."
           (getf msg :decoy-order-mode :evolved))
         (cage2-opening-mode
           (getf msg :cage2-opening-mode :fixed))
+        (recurrent-policy-enabled
+          (eq (getf msg :recurrent-policy-enabled :disabled) :enabled))
         (teacher-forcing-rollout-mode
           (getf msg :teacher-forcing-rollout-mode :dagger))
         (seed (getf msg :seed)))
@@ -569,7 +579,7 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A decoy-order=~A opening=~A teacher-rollout=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
@@ -577,6 +587,7 @@ return their fixed configured addresses."
              num-actions
              decoy-order-mode
              cage2-opening-mode
+             (if recurrent-policy-enabled :recurrent :stateless)
              teacher-forcing-rollout-mode
              population-size
              init-num-learners
@@ -635,6 +646,7 @@ return their fixed configured addresses."
          hamming-dataset-name
          decoy-order-mode
          cage2-opening-mode
+         recurrent-policy-enabled
          teacher-forcing-rollout-mode)
 
         (progn
@@ -669,6 +681,7 @@ return their fixed configured addresses."
            :hamming-dataset-name hamming-dataset-name
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
+           :recurrent-policy-enabled recurrent-policy-enabled
            :teacher-forcing-rollout-mode teacher-forcing-rollout-mode)
 
           (push
@@ -756,6 +769,8 @@ return their fixed configured addresses."
           (getf msg :decoy-order-mode :evolved))
         (cage2-opening-mode
           (getf msg :cage2-opening-mode :fixed))
+        (recurrent-policy-enabled
+          (eq (getf msg :recurrent-policy-enabled :disabled) :enabled))
         (teacher-forcing-rollout-mode
           (getf msg :teacher-forcing-rollout-mode :dagger))
         (seed (getf msg :seed)))
@@ -809,6 +824,7 @@ return their fixed configured addresses."
          hamming-dataset-name
          decoy-order-mode
          cage2-opening-mode
+         recurrent-policy-enabled
          teacher-forcing-rollout-mode)
 
         (progn
@@ -843,6 +859,7 @@ return their fixed configured addresses."
            :hamming-dataset-name hamming-dataset-name
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
+           :recurrent-policy-enabled recurrent-policy-enabled
            :teacher-forcing-rollout-mode teacher-forcing-rollout-mode)
 
           (push
@@ -991,6 +1008,8 @@ return their fixed configured addresses."
           (getf msg :decoy-order-mode :evolved))
         (cage2-opening-mode
           (getf msg :cage2-opening-mode :fixed))
+        (recurrent-policy-enabled
+          (eq (getf msg :recurrent-policy-enabled :disabled) :enabled))
         (hamming-space-enabled
           (eq (getf msg :hamming-space-enabled :disabled) :enabled))
         (hamming-dataset-name
@@ -1005,6 +1024,11 @@ return their fixed configured addresses."
                    (eq hamming-dataset-name :none)))
       (emit-error
        "Hamming validation requires CAGE2 and a semantic reference dataset.")
+      (return-from handle-validate-best-team))
+
+    (when (and recurrent-policy-enabled
+               (not (eq environment :cage2)))
+      (emit-error "Recurrent-register validation is currently supported only for CAGE2.")
       (return-from handle-validate-best-team))
 
     (when (and (eq environment :cage2)
@@ -1029,7 +1053,8 @@ return their fixed configured addresses."
       (return-from handle-validate-best-team))
 
     (setf *hamming-space-enabled* hamming-space-enabled
-          *hamming-dataset-name* hamming-dataset-name)
+          *hamming-dataset-name* hamming-dataset-name
+          *recurrent-policy-enabled* recurrent-policy-enabled)
     (when (eq environment :cage2)
       (setf *num-observations* num-observations
             *decoy-order-mode* decoy-order-mode
