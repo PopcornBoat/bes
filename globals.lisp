@@ -111,6 +111,34 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
 (defconstant +cage2-online-promotion-standard-errors+ 1.0d0
   "Required paired standard-error margin for online best-team promotion.")
 
+(defconstant +online-candidate-evaluation-interval+ 10
+  "Generations accumulated before submitting one online generation-best
+candidate to the independent reference evaluator.")
+
+(defconstant +online-candidate-screen-episodes+ 20
+  "Prefix of the fixed reference bank used for the cheap candidate screen.")
+
+(defconstant +online-candidate-screen-standard-errors+ 1.0d0
+  "Uncertainty allowance used by the first-stage futility screen.")
+
+(defvar *online-candidate-process* nil
+  "UIOP process information for the active independent candidate evaluator.")
+
+(defvar *online-candidate-job* nil
+  "Metadata for the online candidate currently owned by the evaluator.")
+
+(defvar *online-candidate-next-submit-generation* nil
+  "First generation at which the accumulated candidate may be submitted.")
+
+(defvar *online-staged-best-team* nil
+  "Frozen best training candidate accumulated since the previous submission.")
+
+(defvar *online-staged-best-fitness* nil
+  "Generation-training fitness associated with *ONLINE-STAGED-BEST-TEAM*.")
+
+(defvar *online-staged-best-generation* nil
+  "Source generation associated with *ONLINE-STAGED-BEST-TEAM*.")
+
 (defconstant +online-fitness-stage-two-generation+ 201
   "First online generation evaluated with ten training episodes per team.")
 

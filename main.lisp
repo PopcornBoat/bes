@@ -397,6 +397,392 @@ Any other launch value remains fixed for controlled comparison runs."
                   (sample-standard-error differences))))
         (values (> mean-difference margin) mean-difference margin))))
 
+(defun online-candidate-screen-worthy-p (candidate-scores incumbent-scores)
+  "Return true unless the first-stage paired sample already shows futility.
+
+The screen is deliberately permissive: it continues to the complete reference
+bank whenever the paired mean plus one standard error is positive. The final
+promotion still requires the stricter positive one-standard-error improvement."
+  (let* ((differences (mapcar #'- candidate-scores incumbent-scores))
+         (mean-difference (arithmetic-mean differences))
+         (uncertainty
+           (* +online-candidate-screen-standard-errors+
+              (sample-standard-error differences))))
+    (values (> (+ mean-difference uncertainty) 0.0d0)
+            mean-difference
+            uncertainty)))
+
+(defun read-readable-object (path)
+  "Read one printed Common Lisp object from PATH using standard syntax."
+  (with-open-file (stream path :direction :input)
+    (with-standard-io-syntax
+      (read stream))))
+
+(defun write-readable-object-atomically (object path)
+  "Write OBJECT beside PATH and atomically publish the completed file."
+  (let* ((destination (pathname path))
+         (temporary
+           (make-pathname
+            :name (format nil ".~A-~D"
+                          (or (pathname-name destination) "result")
+                          (get-universal-time))
+            :type "tmp"
+            :defaults destination)))
+    (ensure-directories-exist destination)
+    (unwind-protect
+         (progn
+           (with-open-file (stream temporary
+                                   :direction :output
+                                   :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (with-standard-io-syntax
+               (let ((*print-circle* t)
+                     (*print-readably* t)
+                     (*print-pretty* nil))
+                 (write object :stream stream))))
+           (uiop:rename-file-overwriting-target temporary destination))
+      (when (probe-file temporary)
+        (delete-file temporary)))
+    destination))
+
+(defun online-candidate-evaluation-enabled-p ()
+  "Return true when CAGE2 online search has a replayable incumbent bank."
+  (and (eq *current-search-mode* :online)
+       *current-gym-environment-name*
+       (cl-gym:cage2-environment-p *current-gym-environment-name*)
+       *checkpoint-directory*
+       *best-fitness*
+       (= (length *online-best-reference-scores*)
+          +cage2-online-reference-episodes+)))
+
+(defun reset-online-candidate-evaluation-state ()
+  "Discard local staged-evaluator state before a fresh or resumed search."
+  (when (and *online-candidate-process*
+             (ignore-errors
+               (uiop:process-alive-p *online-candidate-process*)))
+    (ignore-errors
+      (uiop:terminate-process *online-candidate-process*)))
+  (setf *online-candidate-process* nil
+        *online-candidate-job* nil
+        *online-candidate-next-submit-generation*
+          (+ *generation* +online-candidate-evaluation-interval+)
+        *online-staged-best-team* nil
+        *online-staged-best-fitness* nil
+        *online-staged-best-generation* nil))
+
+(defun online-candidate-directory ()
+  "Return the private staged-evaluation directory for this checkpoint run."
+  (checkpoint-path *checkpoint-directory* ".online-candidates/"))
+
+(defun online-candidate-path (generation kind type)
+  "Return one unique artifact path for GENERATION, KIND, and pathname TYPE."
+  (merge-pathnames
+   (make-pathname
+    :name (format nil "generation-~D-~A" generation kind)
+    :type type)
+   (uiop:ensure-directory-pathname (online-candidate-directory))))
+
+(defun write-online-candidate-checkpoint (team training-fitness generation path)
+  "Write frozen TEAM to the evaluator's private candidate checkpoint PATH."
+  (write-best-team-checkpoint
+   team
+   training-fitness
+   path
+   :generation generation
+   :gym-environment-name *current-gym-environment-name*
+   :online-fitness-episodes *online-fitness-episodes*
+   :search-seed *current-search-seed*
+   :fitness-evaluation-protocol +cage2-online-fitness-protocol+
+   :dataset-name *current-dataset-name*
+   :dataset-fingerprint *current-dataset-fingerprint*
+   :action-agreement-signature (action-agreement-signature)
+   :online-reference-episodes +cage2-online-reference-episodes+
+   :mixed-training-lineage *mixed-training-lineage*
+   :hamming-space-enabled *hamming-space-enabled*
+   :hamming-dataset-fingerprint *current-hamming-dataset-fingerprint*
+   :num-observations *num-observations*
+   :decoy-order-mode *decoy-order-mode*
+   :cage2-opening-mode *cage2-opening-mode*))
+
+(defun note-online-generation-candidate (team fitness)
+  "Retain the strongest training winner seen in the current submission window."
+  (when (or (null *online-staged-best-fitness*)
+            (> fitness *online-staged-best-fitness*))
+    (setf *online-staged-best-team*
+            (deep-copy-team-via-serialization team)
+          *online-staged-best-fitness* fitness
+          *online-staged-best-generation* *generation*)))
+
+(defun launch-online-candidate-evaluation ()
+  "Publish the accumulated candidate and start its independent SBCL worker."
+  (let* ((generation *online-staged-best-generation*)
+         (training-fitness *online-staged-best-fitness*)
+         (candidate-path
+           (online-candidate-path generation "candidate" "lisp"))
+         (request-path
+           (online-candidate-path generation "request" "lisp"))
+         (result-path
+           (online-candidate-path generation "result" "lisp"))
+         (log-path
+           (online-candidate-path generation "worker" "log"))
+         (worker-script
+           (merge-pathnames
+            "scripts/run-online-candidate-evaluation.lisp"
+            (asdf:system-source-directory :cl-tpg))))
+    (unless (and generation *online-staged-best-team*)
+      (error "Cannot submit an empty online candidate window."))
+    (write-online-candidate-checkpoint
+     *online-staged-best-team* training-fitness generation candidate-path)
+    (write-readable-object-atomically
+     (list :version 1
+           :candidate-path (namestring candidate-path)
+           :result-path (namestring result-path)
+           :candidate-generation generation
+           :candidate-training-fitness training-fitness
+           :incumbent-fitness *best-fitness*
+           :incumbent-scores (copy-list *online-best-reference-scores*)
+           :gym-environment-name *current-gym-environment-name*
+           :num-observations *num-observations*
+           :num-actions *num-actions*
+           :decoy-order-mode *decoy-order-mode*
+           :cage2-opening-mode *cage2-opening-mode*
+           :hamming-space-enabled *hamming-space-enabled*
+           :hamming-dataset-name *hamming-dataset-name*
+           :reference-episodes +cage2-online-reference-episodes+
+           :screen-episodes +online-candidate-screen-episodes+)
+     request-path)
+    (setf *online-candidate-process*
+            (uiop:launch-program
+             (list "sbcl"
+                   "--dynamic-space-size" "4096"
+                   "--noinform" "--non-interactive"
+                   "--load" (namestring worker-script)
+                   "--end-toplevel-options"
+                   (namestring request-path))
+             :input nil
+             :output log-path
+             :error-output :output
+             :if-output-exists :supersede
+             :ignore-error-status t)
+          *online-candidate-job*
+            (list :generation generation
+                  :training-fitness training-fitness
+                  :candidate-path candidate-path
+                  :request-path request-path
+                  :result-path result-path
+                  :log-path log-path
+                  :incumbent-fitness *best-fitness*)
+          *online-candidate-next-submit-generation*
+            (+ *generation* +online-candidate-evaluation-interval+)
+          *online-staged-best-team* nil
+          *online-staged-best-fitness* nil
+          *online-staged-best-generation* nil)
+    (emit-message
+     (format nil
+             "Generation ~D submitted to independent online evaluator: training-fitness=~A screen=~D reference=~D."
+             generation training-fitness
+             +online-candidate-screen-episodes+
+             +cage2-online-reference-episodes+))))
+
+(defun staged-incumbent-current-p (result)
+  "Reject a worker result if the in-memory incumbent changed meanwhile."
+  (fitness-values-equivalent-p
+   (getf result :incumbent-fitness)
+   *best-fitness*))
+
+(defun consume-online-candidate-result (result)
+  "Apply one completed worker RESULT on the main search thread."
+  (let ((generation (getf result :candidate-generation))
+        (candidate-path (getf *online-candidate-job* :candidate-path)))
+    (cond
+      ((eq (getf result :status) :error)
+       (emit-message
+        (format nil
+                "Independent evaluator failed for generation ~D: ~A"
+                generation (getf result :message))))
+      ((not (staged-incumbent-current-p result))
+       (emit-message
+        (format nil
+                "Independent evaluator discarded stale generation ~D result: evaluated-incumbent=~A current-incumbent=~A."
+                generation (getf result :incumbent-fitness) *best-fitness*)))
+      ((not (getf result :accepted))
+       (emit-message
+        (format nil
+                "Independent evaluator rejected generation ~D at ~A: candidate=~A incumbent=~A paired-delta=~,4F margin=~,4F."
+                generation
+                (getf result :stage)
+                (getf result :candidate-fitness)
+                (getf result :incumbent-fitness)
+                (getf result :paired-delta)
+                (getf result :margin))))
+      (t
+       (let ((candidate-team (load-best-team candidate-path)))
+         (ensure-team-observation-compatible
+          candidate-team *num-observations*)
+         (setf *best-team* candidate-team
+               *best-fitness* (getf result :candidate-fitness)
+               *online-best-reference-scores*
+                 (copy-list (getf result :candidate-scores)))
+         (emit-message
+          (format nil
+                  "NEW GLOBAL BEST: generation=~D independent-reference-fitness=~A training-fitness=~A paired-delta=~,4F required-margin=~,4F."
+                  generation
+                  *best-fitness*
+                  (getf result :candidate-training-fitness)
+                  (getf result :paired-delta)
+                  (getf result :margin)))
+         ;; Record the generation that produced the accepted graph, not the
+         ;; later generation at which the main thread noticed the result.
+         (let ((*generation* generation))
+           (save-best-team)))))))
+
+(defun poll-online-candidate-evaluation ()
+  "Consume a completed staged evaluator result without blocking evolution."
+  (when *online-candidate-job*
+    (let ((result-path (getf *online-candidate-job* :result-path)))
+      (cond
+        ((probe-file result-path)
+         (handler-case
+             (consume-online-candidate-result
+              (read-readable-object result-path))
+           (error (condition)
+             (emit-message
+              (format nil
+                      "Could not consume independent evaluator result: ~A"
+                      condition))))
+         (setf *online-candidate-process* nil
+               *online-candidate-job* nil))
+        ((and *online-candidate-process*
+              (not (ignore-errors
+                     (uiop:process-alive-p
+                      *online-candidate-process*))))
+         (emit-message
+          (format nil
+                  "Independent evaluator exited without a result; see ~A"
+                  (namestring
+                   (getf *online-candidate-job* :log-path))))
+         (setf *online-candidate-process* nil
+               *online-candidate-job* nil))))))
+
+(defun maybe-launch-online-candidate-evaluation ()
+  "Submit the accumulated window when its deadline arrives and no worker runs."
+  (when (and (online-candidate-evaluation-enabled-p)
+             (null *online-candidate-job*)
+             *online-staged-best-team*
+             (>= *generation*
+                 *online-candidate-next-submit-generation*))
+    (launch-online-candidate-evaluation)))
+
+(defun run-online-candidate-evaluation (request-path)
+  "Worker entry point for a staged online candidate evaluation REQUEST-PATH."
+  (let* ((request (read-readable-object request-path))
+         (result-path (pathname (getf request :result-path)))
+         (started (get-universal-time)))
+    (labels ((publish (result)
+               (write-readable-object-atomically
+                (append result
+                        (list :elapsed-seconds
+                              (- (get-universal-time) started)))
+                result-path)))
+      (handler-case
+          (let* ((*running* t)
+                 (*search-active* nil)
+                 (*current-search-mode* :online)
+                 (*current-gym-environment-name*
+                   (getf request :gym-environment-name))
+                 (*num-observations* (getf request :num-observations))
+                 (*num-actions* (getf request :num-actions))
+                 (*decoy-order-mode* (getf request :decoy-order-mode))
+                 (*cage2-opening-mode* (getf request :cage2-opening-mode))
+                 (*hamming-space-enabled*
+                   (getf request :hamming-space-enabled))
+                 (*hamming-dataset-name*
+                   (getf request :hamming-dataset-name))
+                 (*factored-actions-enabled* t)
+                 (reference-count (getf request :reference-episodes))
+                 (screen-count (getf request :screen-episodes))
+                 (incumbent-scores (getf request :incumbent-scores))
+                 (team (load-best-team (getf request :candidate-path)))
+                 (seeds
+                   (make-online-fitness-episode-seeds
+                    +cage2-evaluation-seed+ reference-count)))
+            (unless (= reference-count (length incumbent-scores))
+              (error "Incumbent score count ~D does not match reference count ~D."
+                     (length incumbent-scores) reference-count))
+            (unless (<= 1 screen-count reference-count)
+              (error "Invalid staged screen size ~S for ~D references."
+                     screen-count reference-count))
+            (configure-hamming-observation-space)
+            (ensure-team-observation-compatible team *num-observations*)
+            (let* ((screen-scores
+                     (loop for seed in seeds
+                           repeat screen-count
+                           collect
+                           (cl-gym:rollout
+                            team *current-gym-environment-name* seed)))
+                   (incumbent-screen
+                     (subseq incumbent-scores 0 screen-count)))
+              (multiple-value-bind
+                    (continue-p screen-delta screen-uncertainty)
+                  (online-candidate-screen-worthy-p
+                   screen-scores incumbent-screen)
+                (if (not continue-p)
+                    (publish
+                     (list :status :complete
+                           :accepted nil
+                           :stage :screen
+                           :candidate-generation
+                             (getf request :candidate-generation)
+                           :candidate-training-fitness
+                             (getf request :candidate-training-fitness)
+                           :candidate-fitness
+                             (arithmetic-mean screen-scores)
+                           :incumbent-fitness
+                             (getf request :incumbent-fitness)
+                           :paired-delta screen-delta
+                           :margin screen-uncertainty
+                           :evaluated-episodes screen-count))
+                    (let* ((remaining-scores
+                             (loop for seed in (nthcdr screen-count seeds)
+                                   collect
+                                   (cl-gym:rollout
+                                    team
+                                    *current-gym-environment-name*
+                                    seed)))
+                           (candidate-scores
+                             (append screen-scores remaining-scores)))
+                      (multiple-value-bind (accepted delta margin)
+                          (online-reference-promotion-p
+                           candidate-scores incumbent-scores)
+                        (publish
+                         (list :status :complete
+                               :accepted accepted
+                               :stage :reference
+                               :candidate-generation
+                                 (getf request :candidate-generation)
+                               :candidate-training-fitness
+                                 (getf request :candidate-training-fitness)
+                               :candidate-fitness
+                                 (arithmetic-mean candidate-scores)
+                               :candidate-scores candidate-scores
+                               :incumbent-fitness
+                                 (getf request :incumbent-fitness)
+                               :paired-delta delta
+                               :margin margin
+                               :screen-delta screen-delta
+                               :screen-uncertainty screen-uncertainty
+                               :evaluated-episodes reference-count))))))))
+        (error (condition)
+          (publish
+           (list :status :error
+                 :accepted nil
+                 :candidate-generation
+                   (getf request :candidate-generation)
+                 :incumbent-fitness
+                   (getf request :incumbent-fitness)
+                 :message (princ-to-string condition)))))))
+  t)
+
 (defun online-fitness (team gym-environment-name)
   "Evaluate TEAM over *ONLINE-FITNESS-EPISODES* complete episodes.
 
@@ -648,75 +1034,71 @@ through serialization/deserialization and save it to disk."
            (reduce #'min
                    fitness-values
                    :initial-value
-                   most-positive-double-float)))
+                   most-positive-double-float))
+         (staged-online-p
+           (online-candidate-evaluation-enabled-p)))
 
-    (multiple-value-setq
-        (historical-candidate-fitness historical-candidate-detail)
-      (current-reference-evaluation
-       generation-best-team
-       generation-best))
+    (when staged-online-p
+      (poll-online-candidate-evaluation)
+      (note-online-generation-candidate
+       generation-best-team generation-best)
+      (maybe-launch-online-candidate-evaluation))
 
-    ;; ------------------------------------------------------------
-    ;; Historical best
-    ;;
-    ;; IMPORTANT:
-    ;; Never store the live population team directly in *BEST-TEAM*.
-    ;;
-    ;; Instead:
-    ;;   1. detect a new global best
-    ;;   2. deep-copy its entire graph immediately
-    ;;   3. store that frozen copy in *BEST-TEAM*
-    ;;   4. immediately write it to disk
-    ;;
-    ;; This guarantees that *BEST-FITNESS* and *BEST-TEAM* refer to
-    ;; the exact same policy state.
-    ;; ------------------------------------------------------------
+    (unless staged-online-p
+      (multiple-value-setq
+          (historical-candidate-fitness historical-candidate-detail)
+        (current-reference-evaluation
+         generation-best-team
+         generation-best))
 
-    (multiple-value-bind (promotion-p mean-difference promotion-margin)
-        (if (and (eq *current-search-mode* :online)
-                 (cl-gym:cage2-environment-p
-                  *current-gym-environment-name*)
-                 *best-fitness*)
-            (online-reference-promotion-p
-             historical-candidate-detail
-             *online-best-reference-scores*)
-            (values (or (null *best-fitness*)
-                        (> historical-candidate-fitness *best-fitness*))
-                    nil
-                    nil))
-      (when (and *best-fitness*
-                 (> historical-candidate-fitness *best-fitness*)
-                 (not promotion-p))
-        (emit-message
-         (format nil
-                 "Online best promotion rejected as noise: candidate=~A incumbent=~A paired-delta=~,4F required-margin=~,4F."
-                 historical-candidate-fitness
-                 *best-fitness*
-                 mean-difference
-                 promotion-margin)))
+      ;; Non-online modes retain synchronous reference selection. The first
+      ;; generation of a fresh online run also establishes its incumbent here;
+      ;; later online candidates go through the independent staged worker.
+      (multiple-value-bind (promotion-p mean-difference promotion-margin)
+          (if (and (eq *current-search-mode* :online)
+                   (cl-gym:cage2-environment-p
+                    *current-gym-environment-name*)
+                   *best-fitness*)
+              (online-reference-promotion-p
+               historical-candidate-detail
+               *online-best-reference-scores*)
+              (values (or (null *best-fitness*)
+                          (> historical-candidate-fitness *best-fitness*))
+                      nil
+                      nil))
+        (when (and *best-fitness*
+                   (> historical-candidate-fitness *best-fitness*)
+                   (not promotion-p))
+          (emit-message
+           (format nil
+                   "Online best promotion rejected as noise: candidate=~A incumbent=~A paired-delta=~,4F required-margin=~,4F."
+                   historical-candidate-fitness
+                   *best-fitness*
+                   mean-difference
+                   promotion-margin)))
 
-      (when promotion-p
+        (when promotion-p
 
-      (let ((frozen-best-team
-              (deep-copy-team-via-serialization
-               generation-best-team)))
+          (let ((frozen-best-team
+                  (deep-copy-team-via-serialization
+                   generation-best-team)))
 
-        (setf *best-fitness* historical-candidate-fitness
-              *best-team* frozen-best-team
-              *online-best-reference-scores*
-                (and historical-candidate-detail
-                     (copy-list historical-candidate-detail)))
+            (setf *best-fitness* historical-candidate-fitness
+                  *best-team* frozen-best-team
+                  *online-best-reference-scores*
+                    (and historical-candidate-detail
+                         (copy-list historical-candidate-detail)))
 
-        (emit-message
-         (format nil
-                 "NEW GLOBAL BEST: generation=~A reference-fitness=~A training-fitness=~A. "
-                 *generation*
-                 *best-fitness*
-                 generation-best))
+            (emit-message
+             (format nil
+                     "NEW GLOBAL BEST: generation=~A reference-fitness=~A training-fitness=~A. "
+                     *generation*
+                     *best-fitness*
+                     generation-best))
 
-        ;; Save immediately, before reproduce/mutation/deletion.
-        (when *checkpoint-directory*
-          (save-best-team)))))
+            ;; Save immediately, before reproduce/mutation/deletion.
+            (when *checkpoint-directory*
+              (save-best-team))))))
 
     ;; ------------------------------------------------------------
     ;; Telemetry
@@ -818,6 +1200,7 @@ through serialization/deserialization and save it to disk."
     (catch 'search-stop-requested
       (setf *teams* nil)
       (setf *generation* 1)
+      (reset-online-candidate-evaluation-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
@@ -1041,6 +1424,7 @@ normal evolution."
       ;; Fresh island-local state.
       (setf *teams* nil)
       (setf *generation* 1)
+      (reset-online-candidate-evaluation-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 

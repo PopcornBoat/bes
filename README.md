@@ -449,12 +449,26 @@ Launching with any other episode count keeps that count fixed for controlled
 comparisons.
 
 Historical-best promotion is deliberately more conservative than population
-selection. The generation winner is evaluated on a fixed 100-episode seed bank
-rooted at 153 and compared episode-by-episode with the frozen incumbent. It is
-saved only when its paired mean improvement exceeds one standard error. This
-prevents a few lucky training episodes from replacing a strong warm-start
-policy. Population selection continues to use the current curriculum episodes,
-so exploratory evolution is not frozen by the checkpoint guard.
+selection. Online search accumulates the strongest generation-training winner
+over ten generations, serializes a frozen copy, and submits it to a separate
+SBCL evaluator process. The search thread never waits for this reference job and
+continues population selection using the current curriculum seed bank.
+
+The evaluator first compares the candidate and frozen incumbent on the first 20
+episodes of the fixed 100-episode seed bank rooted at 153. A clearly futile
+candidate (paired mean plus one standard error no better than zero) is rejected
+without spending the remaining rollouts. Every uncertain or promising candidate
+continues through all 100 paired episodes. It replaces the historical best only
+when its complete paired mean improvement exceeds one standard error, exactly as
+under the earlier robust promotion guard. The main search process alone consumes
+the result, updates its in-memory historical best, and writes the public
+checkpoint; the worker cannot race the search by overwriting it directly.
+
+Candidate requests, results, and worker logs are stored under
+`.online-candidates/` in the selected checkpoint directory. A result whose
+incumbent no longer matches the in-memory incumbent is discarded as stale.
+This design prevents lucky training episodes from replacing a strong warm-start
+policy while moving expensive reference evaluation off the evolutionary loop.
 
 ## Optional Hamming observation projection
 

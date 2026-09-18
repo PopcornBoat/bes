@@ -90,6 +90,27 @@
    (and (not accepted) (= delta margin))
    "mean improvement equal to its standard error is rejected as noise"))
 
+(multiple-value-bind (continued delta uncertainty)
+    (cl-tpg::online-candidate-screen-worthy-p
+     '(0.0d0 1.0d0 0.0d0 1.0d0)
+     '(1.0d0 1.0d0 1.0d0 1.0d0))
+  (declare (ignore delta uncertainty))
+  (check-teacher-forcing
+   (not continued)
+   "staged evaluator rejects a clearly futile reference prefix"))
+
+(multiple-value-bind (continued delta uncertainty)
+    (cl-tpg::online-candidate-screen-worthy-p
+     '(2.0d0 0.0d0)
+     '(0.0d0 0.0d0))
+  (check-teacher-forcing
+   (and continued (= delta uncertainty))
+   "uncertain first-stage candidates continue to the full reference bank"))
+
+(check-teacher-forcing
+ (= cl-tpg::+online-candidate-evaluation-interval+ 10)
+ "online candidate evaluation is periodic instead of generation-blocking")
+
 (check-teacher-forcing
  (= cl-tpg::+teacher-trace-chunk-size+ 5)
  "teacher generation has bounded bridge-call chunks")
