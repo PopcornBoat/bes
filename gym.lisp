@@ -185,7 +185,11 @@ Supports:
   (py4cl2:pyexec "import gymnasium as gym")
 
   (when (search "Cage2" environment-name)
-    (py4cl2:pyexec "import cage2_bridge"))
+    (py4cl2:pyexec "import cage2_bridge")
+    (when (search "Cage2Recorded" environment-name)
+      (py4cl2:pyexec "import cage2_dt.recording_env"))
+    (when (cl-tpg::digital-twin-environment-p environment-name)
+      (py4cl2:pyexec "import cage2_dt")))
 
   (when (search "Cage3" environment-name)
     (py4cl2:pyexec "import cage3_bridge"))

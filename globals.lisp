@@ -111,6 +111,24 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
 (defconstant +cage2-online-promotion-standard-errors+ 1.0d0
   "Required paired standard-error margin for online best-team promotion.")
 
+(defconstant +digital-twin-ensemble-size+ 5
+  "Number of independently trained dynamics models in the CAGE2 twin.")
+
+(defconstant +digital-twin-uncertainty-penalty+ 1.0d0
+  "Standard-deviation penalty applied to digital-twin ensemble returns.")
+
+(defconstant +digital-twin-reference-episodes+ 10
+  "Fixed seed count evaluated on every twin member for best-team promotion.")
+
+(defconstant +digital-twin-fitness-protocol+
+  :digital-twin-five-member-lower-confidence-bound-v1
+  "Version tag for conservative five-member digital-twin fitness.")
+
+(defun digital-twin-environment-p (environment-name)
+  "Return true when ENVIRONMENT-NAME identifies the learned CAGE2 twin."
+  (and (stringp environment-name)
+       (search "Cage2Twin" environment-name)))
+
 (defconstant +online-fitness-stage-two-generation+ 201
   "First online generation evaluated with ten training episodes per team.")
 

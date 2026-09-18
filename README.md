@@ -520,6 +520,25 @@ Future work includes:
 - Additional cyber defence environments
 - Continued synchronization with upstream **cl-tpg**
 
+## CAGE2 digital-twin phase two
+
+Phase-two online search can run against the five-member learned CAGE2 dynamics
+ensemble registered by `cage2-digital-twin`. Every candidate receives the same
+episode seed on each member. Its selection fitness is the mean member return
+minus one population standard deviation, which discourages policies that exploit
+one model's errors. Historical-best promotion uses a separate fixed bank of ten
+seeds per member and a paired standard-error guard.
+
+Set `CAGE2_DT_CHECKPOINT_DIR` to the completed `bline-gru-v2` run, set
+`CAGE2_PHASE2_WARMSTART` to a compatible 62-observation TPG checkpoint, then
+load `scripts/start-dt-online.lisp`. Digital-twin checkpoints are written under
+the independent `digital-twin` filename so they cannot overwrite official
+online or mixed-lineage checkpoints. A checkpoint transferred into this phase
+is always re-baselined under the twin protocol. The supplied launcher uses an
+80-team pilot population because policy execution crosses the Lisp/Python
+boundary at every simulated step; this can be increased after measuring local
+generation time.
+
 ---
 
 # Acknowledgements

@@ -37,6 +37,9 @@
 (defun checkpoint-training-mode ()
   "Return the active search mode as a filename component."
   (cond
+    ((and (eq *current-search-mode* :online)
+          (digital-twin-environment-p *current-gym-environment-name*))
+     "digital-twin")
     ((and (eq *current-search-mode* :online) *mixed-training-lineage*)
      "mix")
     ((eq *current-search-mode* :teacher-forcing)
@@ -163,7 +166,9 @@ checkpoint directory."
     :dataset-fingerprint *current-dataset-fingerprint*
     :online-reference-episodes
       (and (eq *current-search-mode* :online)
-           +cage2-online-reference-episodes+)
+           (if (digital-twin-environment-p *current-gym-environment-name*)
+               +digital-twin-reference-episodes+
+               +cage2-online-reference-episodes+))
     :mixed-training-lineage *mixed-training-lineage*
     :num-observations *num-observations*
     :decoy-order-mode *decoy-order-mode*
@@ -176,6 +181,8 @@ checkpoint directory."
    (cond
      ((eq *current-search-mode* :teacher-forcing)
       (teacher-forcing-fitness-protocol))
+     ((digital-twin-environment-p *current-gym-environment-name*)
+      +digital-twin-fitness-protocol+)
      ((cl-gym:cage2-environment-p *current-gym-environment-name*)
       +cage2-online-fitness-protocol+)
      (*offline-reference-dataset*

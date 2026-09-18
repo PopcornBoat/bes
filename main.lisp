@@ -357,6 +357,69 @@ Any other launch value remains fixed for controlled comparison runs."
          collect
          (cl-gym:rollout team gym-environment-name episode-seed))))
 
+(defun digital-twin-member-environment-name (environment-name member-index)
+  "Return the fixed-member Gym ID derived from aggregate ENVIRONMENT-NAME."
+  (unless (digital-twin-environment-p environment-name)
+    (error "Not a digital-twin environment: ~S" environment-name))
+  (let ((suffix "-v0"))
+    (unless (and (>= (length environment-name) (length suffix))
+                 (string= suffix environment-name
+                          :start2 (- (length environment-name)
+                                     (length suffix))))
+      (error "Digital-twin environment must end in ~A: ~S"
+             suffix environment-name))
+    (format nil "~A-m~D~A"
+            (subseq environment-name
+                    0
+                    (- (length environment-name) (length suffix)))
+            member-index
+            suffix)))
+
+(defun population-standard-deviation (values)
+  "Return the population standard deviation of numeric VALUES."
+  (if (< (length values) 2)
+      0.0d0
+      (let* ((mean (arithmetic-mean values))
+             (variance
+               (/ (loop for value in values
+                        for delta = (- (coerce value 'double-float) mean)
+                        sum (* delta delta) into total
+                        finally (return (coerce total 'double-float)))
+                  (coerce (length values) 'double-float))))
+        (sqrt variance))))
+
+(defun digital-twin-fitness-on-seeds
+       (team gym-environment-name episode-seeds)
+  "Return conservative fitness and per-member means for TEAM on the twin.
+
+Every member receives the same seed bank. The scalar objective is the ensemble
+mean minus a fixed penalty times member disagreement."
+  (let* ((member-means
+           (loop for member-index below +digital-twin-ensemble-size+
+                 collect
+                 (cage2-fitness-on-seeds
+                  team
+                  (digital-twin-member-environment-name
+                   gym-environment-name member-index)
+                  episode-seeds)))
+         (ensemble-mean (arithmetic-mean member-means))
+         (ensemble-standard-deviation
+           (population-standard-deviation member-means))
+         (fitness
+           (- ensemble-mean
+              (* +digital-twin-uncertainty-penalty+
+                 ensemble-standard-deviation))))
+    (values fitness member-means ensemble-mean ensemble-standard-deviation)))
+
+(defun digital-twin-reference-evaluation (team gym-environment-name)
+  "Evaluate TEAM on the protected fixed seed bank across all twin members."
+  (digital-twin-fitness-on-seeds
+   team
+   gym-environment-name
+   (make-online-fitness-episode-seeds
+    +cage2-evaluation-seed+
+    +digital-twin-reference-episodes+)))
+
 (defun cage2-reference-scores (team gym-environment-name)
   "Return TEAM rewards on the protected fixed 100-episode seed bank."
   (let ((seeds
@@ -408,20 +471,29 @@ reference batch."
                (> *online-fitness-episodes* 0))
     (error "*ONLINE-FITNESS-EPISODES* must be a positive integer."))
 
-  (if (cl-gym:cage2-environment-p gym-environment-name)
-      (cage2-fitness-on-seeds
-       team
-       gym-environment-name
-       (or *online-fitness-episode-seeds*
-           (setf *online-fitness-episode-seeds*
-                 (make-online-fitness-episode-seeds))))
-      (arithmetic-mean
+  (cond
+    ((digital-twin-environment-p gym-environment-name)
+     (digital-twin-fitness-on-seeds
+      team
+      gym-environment-name
+      (or *online-fitness-episode-seeds*
+          (setf *online-fitness-episode-seeds*
+                (make-online-fitness-episode-seeds)))))
+    ((cl-gym:cage2-environment-p gym-environment-name)
+     (cage2-fitness-on-seeds
+      team
+      gym-environment-name
+      (or *online-fitness-episode-seeds*
+          (setf *online-fitness-episode-seeds*
+                (make-online-fitness-episode-seeds)))))
+    (t
+     (arithmetic-mean
        (loop repeat *online-fitness-episodes*
              do (abort-search-if-requested)
              collect
              (cl-gym:rollout team
                              gym-environment-name
-                             (random 9999999))))))
+                             (random 9999999)))))))
             	  
 (defun make-fitness-function (&key gym-environment-name dataset-name)
   (cond
@@ -540,6 +612,8 @@ reference batch."
           (cond
             ((eq *current-search-mode* :teacher-forcing)
              :teacher-forcing)
+            ((digital-twin-environment-p *current-gym-environment-name*)
+              :digital-twin)
             ((and *current-gym-environment-name*
                   (cl-gym:cage2-environment-p
                    *current-gym-environment-name*))
@@ -557,6 +631,16 @@ reference batch."
               (ecase reference-kind
                 (:teacher-forcing
                  (values (teacher-forcing-reference-fitness team) nil))
+                (:digital-twin
+                 (multiple-value-bind
+                       (fitness member-means ensemble-mean ensemble-stddev)
+                     (digital-twin-reference-evaluation
+                      team *current-gym-environment-name*)
+                   (emit-message
+                    (format nil
+                            "Digital-twin reference: member-means=~S mean=~,4F stddev=~,4F conservative=~,4F."
+                            member-means ensemble-mean ensemble-stddev fitness))
+                   (values fitness member-means)))
                 (:cage2
                  (let ((scores
                          (cage2-reference-scores
@@ -677,9 +761,15 @@ through serialization/deserialization and save it to disk."
                  (cl-gym:cage2-environment-p
                   *current-gym-environment-name*)
                  *best-fitness*)
-            (online-reference-promotion-p
-             historical-candidate-detail
-             *online-best-reference-scores*)
+            (multiple-value-bind (statistically-better-p delta margin)
+                (online-reference-promotion-p
+                 historical-candidate-detail
+                 *online-best-reference-scores*)
+              (values
+               (and (> historical-candidate-fitness *best-fitness*)
+                    statistically-better-p)
+               delta
+               margin))
             (values (or (null *best-fitness*)
                         (> historical-candidate-fitness *best-fitness*))
                     nil
@@ -904,6 +994,13 @@ the same train/reference file fingerprint."
                           (teacher-forcing-fitness-protocol))
                       (equal saved-agreement-signature
                              (action-agreement-signature))))
+                ((digital-twin-environment-p gym-environment-name)
+                  (and (eq saved-protocol
+                           +digital-twin-fitness-protocol+)
+                       (= (or saved-online-reference-episodes 0)
+                          +digital-twin-reference-episodes+)
+                       (equal saved-agreement-signature
+                              (action-agreement-signature))))
                 ((cl-gym:cage2-environment-p gym-environment-name)
                  (and (eq saved-protocol
                           +cage2-online-fitness-protocol+)
@@ -981,9 +1078,12 @@ checkpoint remains replayable while training continues on changing batches."
                (if (and (eq *current-search-mode* :online)
                         (cl-gym:cage2-environment-p
                          *current-gym-environment-name*))
-                   (online-reference-promotion-p
-                    generation-reference-detail
-                    loaded-reference-detail)
+                   (multiple-value-bind (statistically-better-p)
+                       (online-reference-promotion-p
+                        generation-reference-detail
+                        loaded-reference-detail)
+                     (and (> generation-reference-fitness loaded-baseline)
+                          statistically-better-p))
                    (> generation-reference-fitness loaded-baseline)))
              (chosen-team
                (if generation-won-p
