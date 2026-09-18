@@ -9,9 +9,67 @@
   (teacher-actions (make-array 0) :type simple-vector)
   (decoy-masks (make-array 0) :type simple-vector)
   (semantic-rankings (make-array 0) :type simple-vector)
+  (episode-ids nil)
+  (steps nil)
+  (episode-ranges nil)
   (size 0 :type fixnum)
   (action-format :atomic :type keyword)
   source-path)
+
+(defun make-dataset-episode-ranges (episode-ids)
+  "Return #(START . END) ranges for adjacent rows with the same episode id."
+  (when episode-ids
+    (let ((count (length episode-ids))
+          (ranges nil)
+          (start 0))
+      (loop while (< start count)
+            for episode-id = (aref episode-ids start)
+            for end = (loop for index from (1+ start) below count
+                            while (equal (aref episode-ids index) episode-id)
+                            finally (return index))
+            do (push (cons start end) ranges)
+               (setf start end))
+      (coerce (nreverse ranges) 'vector))))
+
+(defun dataset-episode-metadata-p (dataset)
+  "Return true when DATASET preserves episode ids, steps, and episode ranges."
+  (and (dataset-episode-ids dataset)
+       (dataset-steps dataset)
+       (dataset-episode-ranges dataset)
+       (= (length (dataset-episode-ids dataset)) (dataset-size dataset))
+       (= (length (dataset-steps dataset)) (dataset-size dataset))))
+
+(defun ensure-recurrent-dataset-compatible (dataset description)
+  "Validate that DATASET can reproduce episode-local recurrent execution."
+  (unless (dataset-episode-metadata-p dataset)
+    (error "~A lacks episode-id/step metadata required by recurrent fitness."
+           description))
+  (let ((seen (make-hash-table :test #'equal))
+        (episode-ids (dataset-episode-ids dataset))
+        (steps (dataset-steps dataset)))
+    (loop for range across (dataset-episode-ranges dataset)
+          for start = (car range)
+          for end = (cdr range)
+          for episode-id = (aref episode-ids start)
+          do (when (gethash episode-id seen)
+               (error "~A episode ~S occurs in multiple non-adjacent ranges."
+                      description episode-id))
+             (setf (gethash episode-id seen) t)
+             (loop for index from start below end
+                   for expected-step from (aref steps start)
+                   unless (and (equal (aref episode-ids index) episode-id)
+                               (integerp (aref steps index))
+                               (= (aref steps index) expected-step))
+                     do (error
+                         "~A episode ~S has a missing or unordered step near row ~D."
+                         description episode-id index))))
+  dataset)
+
+(defun recurrent-policy-row-p (dataset index)
+  "Return true when INDEX belongs to the policy-owned part of its episode."
+  (or (eq *cage2-opening-mode* :policy)
+      (>= (aref (dataset-steps dataset) index)
+          (length +cage2-fixed-opening-rankings+))))
 
 (defun convert-list-to-dataset (transitions)
   "Converts a raw list of transitions ((obs act rew term trunc)) ..)
@@ -46,6 +104,9 @@
 		   :teacher-actions (make-array count :initial-element nil)
 		   :decoy-masks (make-array count :initial-element 0)
 		   :semantic-rankings (make-array count :initial-element nil)
+		   :episode-ids nil
+		   :steps nil
+		   :episode-ranges nil
 		   :size count
                    :action-format :atomic)))
 
@@ -172,6 +233,10 @@ teacher action cannot be represented are skipped rather than silently relabelled
         (teacher-action-list nil)
         (decoy-mask-list nil)
         (semantic-ranking-list nil)
+        (episode-id-list nil)
+        (step-list nil)
+        (saw-episode-metadata nil)
+        (saw-missing-episode-metadata nil)
         (saw-ranking nil)
         (saw-unranked nil)
         (skipped 0))
@@ -184,6 +249,9 @@ teacher action cannot be represented are skipped rather than silently relabelled
                      (reward (getf (rest form) :reward))
                      (teacher-action (getf (rest form) :teacher-action))
                      (decoy-mask (getf (rest form) :decoy-mask-before 0))
+                     (episode-id
+                       (getf (rest form) :episode-id :not-present))
+                     (step (getf (rest form) :step :not-present))
                      (ranking
                        (getf (rest form) :semantic-ranking :not-present))
                      (terminated (getf (rest form) :terminated))
@@ -217,6 +285,22 @@ teacher action cannot be represented are skipped rather than silently relabelled
                                     (<= 0 teacher-action 144))
                          (error "Invalid semantic dataset teacher action: ~S"
                                 teacher-action))
+                       (cond
+                         ((and (not (eq episode-id :not-present))
+                               (not (eq step :not-present)))
+                          (unless (and (integerp step) (not (minusp step)))
+                            (error "Invalid semantic dataset step: ~S" step))
+                          (setf saw-episode-metadata t))
+                         ((and (eq episode-id :not-present)
+                               (eq step :not-present))
+                          (setf saw-missing-episode-metadata t))
+                         (t
+                          (error
+                           "Semantic row must provide both :EPISODE-ID and :STEP.")))
+                       (when (and saw-episode-metadata
+                                  saw-missing-episode-metadata)
+                         (error
+                          "Semantic dataset mixes rows with and without episode metadata."))
                        (push (make-cage2-policy-observation observation decoy-mask)
                              observation-list)
                        (push (copy-list action) action-list)
@@ -225,6 +309,10 @@ teacher action cannot be represented are skipped rather than silently relabelled
                        (push (unless (eq ranking :not-present)
                                (mapcar #'copy-list ranking))
                              semantic-ranking-list)
+                       (push (unless (eq episode-id :not-present) episode-id)
+                             episode-id-list)
+                       (push (unless (eq step :not-present) step)
+                             step-list)
                        (push (coerce reward 'double-float) reward-list)
                        (push (if terminated 1 0) termination-list)
                        (push (if truncated 1 0) truncation-list))
@@ -242,6 +330,10 @@ teacher action cannot be represented are skipped rather than silently relabelled
            (teacher-actions (nreverse teacher-action-list))
            (decoy-masks (nreverse decoy-mask-list))
            (semantic-rankings (nreverse semantic-ranking-list))
+           (episode-ids (and saw-episode-metadata
+                             (coerce (nreverse episode-id-list) 'vector)))
+           (steps (and saw-episode-metadata
+                       (coerce (nreverse step-list) 'vector)))
            (count (length observations))
            (obs-arr (make-array count :initial-contents observations))
            (act-arr (make-array count :initial-contents actions))
@@ -265,6 +357,10 @@ teacher action cannot be represented are skipped rather than silently relabelled
                        (make-array count :initial-contents decoy-masks)
                      :semantic-rankings
                        (make-array count :initial-contents semantic-rankings)
+                     :episode-ids episode-ids
+                     :steps steps
+                     :episode-ranges
+                       (make-dataset-episode-ranges episode-ids)
                      :size count
                      :action-format (if saw-ranking
                                         :semantic-ranked
@@ -303,6 +399,16 @@ teacher action cannot be represented are skipped rather than silently relabelled
    :teacher-actions (subseq (dataset-teacher-actions dataset) start end)
    :decoy-masks (subseq (dataset-decoy-masks dataset) start end)
    :semantic-rankings (subseq (dataset-semantic-rankings dataset) start end)
+   :episode-ids
+     (and (dataset-episode-ids dataset)
+          (subseq (dataset-episode-ids dataset) start end))
+   :steps
+     (and (dataset-steps dataset)
+          (subseq (dataset-steps dataset) start end))
+   :episode-ranges
+     (and (dataset-episode-ids dataset)
+          (make-dataset-episode-ranges
+           (subseq (dataset-episode-ids dataset) start end)))
    :size (- end start)
    :action-format (dataset-action-format dataset)
    :source-path (dataset-source-path dataset)))

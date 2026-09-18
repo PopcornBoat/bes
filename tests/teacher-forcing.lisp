@@ -31,6 +31,19 @@
    (= (aref (cl-tpg::dataset-decoy-masks dataset) 0) 17)
    "pre-action Decoy mask is preserved"))
 
+(let* ((observation (loop repeat 142 collect 0.0d0))
+       (dataset
+         (cl-tpg::teacher-trace-to-dataset
+          (list (list observation '(8 3) '((8 3)) 0 153 3)
+                (list observation '(8 0) '((8 0)) 0 153 4)
+                (list observation '(0 0) '((0 0)) 0 154 3)))))
+  (check-teacher-forcing
+   (and (equalp (cl-tpg::dataset-episode-ids dataset) #(153 153 154))
+        (equalp (cl-tpg::dataset-steps dataset) #(3 4 3))
+        (equalp (cl-tpg::dataset-episode-ranges dataset)
+                #((0 . 2) (2 . 3))))
+   "six-field teacher rows preserve complete episode boundaries"))
+
 (let ((cl-tpg::*current-search-mode* :teacher-forcing)
       (cl-tpg::*current-gym-environment-name* "Cage2-b_line-100-v0")
       (cl-tpg::*num-observations* 62)
@@ -48,6 +61,18 @@
      (string= (cl-tpg::best-team-checkpoint-filename)
               "bline-62-11-teacher-forcing-order-fixed-opening-fixed-hamming-off-memory-stateless.lisp")
      "pure teacher rollout retains its explicit checkpoint name")))
+
+(let ((cl-tpg::*recurrent-policy-enabled* t))
+  (let ((cl-tpg::*teacher-forcing-rollout-mode* :teacher))
+    (check-teacher-forcing
+     (eq (cl-tpg::teacher-forcing-fitness-protocol)
+         cl-tpg::+teacher-forcing-recurrent-teacher-protocol+)
+     "recurrent teacher cloning has a distinct checkpoint protocol"))
+  (let ((cl-tpg::*teacher-forcing-rollout-mode* :dagger))
+    (check-teacher-forcing
+     (eq (cl-tpg::teacher-forcing-fitness-protocol)
+         cl-tpg::+teacher-forcing-recurrent-dagger-protocol+)
+     "recurrent DAgger has a distinct checkpoint protocol")))
 
 (let ((cl-tpg::*current-search-mode* :online)
       (cl-tpg::*current-gym-environment-name* "Cage2-b_line-100-v0")
@@ -158,6 +183,22 @@
      (and (= (length sample) 2)
           (= (length (remove-duplicates sample :test #'eq)) 2))
      "DAgger replay samples without replacement")))
+
+(let ((cl-tpg::*teacher-dagger-replay-episodes* nil)
+      (cl-tpg::*teacher-dagger-random-state*
+        (sb-ext:seed-random-state 153)))
+  (let ((observation (loop repeat 142 collect 0.0d0)))
+    (cl-tpg::append-teacher-dagger-replay-episodes
+     (list (list observation '(8 3) '((8 3)) 0 '(:episode 1) 3)
+           (list observation '(8 0) '((8 0)) 0 '(:episode 1) 4)
+           (list observation '(0 0) '((0 0)) 0 '(:episode 2) 3))))
+  (let ((sample (cl-tpg::sample-teacher-dagger-replay-episodes 1)))
+    (check-teacher-forcing
+     (or (= (length sample) 1)
+         (and (= (length sample) 2)
+              (equal (fifth (first sample))
+                     (fifth (second sample)))))
+     "recurrent DAgger replay samples only complete episodes")))
 
 (let ((cl-tpg::*cage2-opening-mode* :fixed))
   (check-teacher-forcing

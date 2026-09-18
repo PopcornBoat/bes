@@ -185,7 +185,7 @@ checkpoint directory."
      ((cl-gym:cage2-environment-p *current-gym-environment-name*)
       +cage2-online-fitness-protocol+)
      (*offline-reference-dataset*
-      +semantic-offline-fitness-protocol+)
+      (semantic-offline-fitness-protocol))
      (t nil)))
 
   (emit-message

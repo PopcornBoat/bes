@@ -18,17 +18,23 @@
                               :element-type 'double-float
                               :initial-element 0.0d0))
          (terminations (make-array count :initial-element 0))
-         (truncations (make-array count :initial-element 0)))
+         (truncations (make-array count :initial-element 0))
+         (episode-ids (make-array count :initial-element nil))
+         (steps (make-array count :initial-element nil))
+         (saw-episode-metadata nil)
+         (saw-missing-episode-metadata nil))
     (when (zerop count)
       (error "Teacher trace generation returned no rows."))
     (loop for raw-row in row-list
           for index fixnum from 0
           for row = (teacher-sequence-list raw-row "row")
-          do (unless (= (length row) 4)
-               (error "Teacher row must contain four fields, got ~S." row))
+          do (unless (member (length row) '(4 6))
+               (error "Teacher row must contain four or six fields, got ~S."
+                      row))
              (destructuring-bind
-                   (raw-observation raw-selected raw-ranking decoy-mask)
-                 row
+                   (raw-observation raw-selected raw-ranking decoy-mask
+                    &optional episode-id step)
+                  row
                (let* ((selected
                         (teacher-sequence-list raw-selected "selected action"))
                       (ranking
@@ -47,11 +53,22 @@
                    (error "Invalid teacher semantic ranking: ~S" ranking))
                  (unless (and (integerp decoy-mask) (not (minusp decoy-mask)))
                    (error "Invalid teacher Decoy mask: ~S" decoy-mask))
+                 (if (= (length row) 6)
+                     (progn
+                       (unless (and (integerp step) (not (minusp step)))
+                         (error "Invalid teacher trace step: ~S" step))
+                       (setf saw-episode-metadata t))
+                     (setf saw-missing-episode-metadata t))
+                 (when (and saw-episode-metadata saw-missing-episode-metadata)
+                   (error
+                    "Teacher trace mixes rows with and without episode metadata."))
                  (setf (aref observations index) observation
                        (aref actions index)
                          (list (first selected) (second selected) 0)
                        (aref rankings index) ranking
-                       (aref masks index) decoy-mask))))
+                       (aref masks index) decoy-mask
+                       (aref episode-ids index) episode-id
+                       (aref steps index) step))))
     (%make-dataset
      :observations observations
      :actions actions
@@ -61,6 +78,11 @@
      :teacher-actions (make-array count :initial-element nil)
      :decoy-masks masks
      :semantic-rankings rankings
+     :episode-ids (and saw-episode-metadata episode-ids)
+     :steps (and saw-episode-metadata steps)
+     :episode-ranges
+       (and saw-episode-metadata
+            (make-dataset-episode-ranges episode-ids))
      :size count
      :action-format :semantic-ranked
      :source-path nil)))
@@ -94,7 +116,8 @@ between simulator calls. Chunking does not change episode seeds or rows."
                             "cage2_bridge.teacher.generate_teacher_trace"
                             environment-name
                             chunk
-                            include-opening-p)
+                            include-opening-p
+                            t)
                            "chunk"))
                    remaining (nthcdr count remaining)))
     all-rows))
@@ -166,58 +189,73 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
     (unwind-protect
          (dolist (episode-seed episode-seeds)
            (abort-search-if-requested)
-           (py4cl2:pymethod teacher "reset")
-           (let ((observation (cl-gym::reset env episode-seed)))
-             (loop for timestep fixnum from 0
-                   do (when (zerop (mod timestep 10))
-                        (abort-search-if-requested))
-                      (let* ((ranking
-                               (mapcar
-                                (lambda (pair)
-                                  (teacher-sequence-list pair "ranking pair"))
-                                (teacher-sequence-list
-                                 (py4cl2:pymethod
-                                  teacher "rank" observation)
-                                 "ranking")))
-                             (decoy-mask
-                               (teacher-observation-decoy-mask observation))
-                             (selected
-                               (resolve-teacher-pair-ranking
-                                ranking decoy-mask))
-                             (opening-action
-                               (cl-gym::cage2-fixed-opening-action
-                                environment-name timestep))
-                             (action
-                               (or opening-action
-                                   (cl-gym::execute-policy-action
-                                    behavior-team observation environment-name))))
-                        ;; Only states where the learner owns the action enter
-                        ;; imitation fitness. The teacher labels the learner's
-                        ;; observation without changing the environment state.
-                        (unless opening-action
-                          (push
-                           (list observation
-                                 (copy-list selected)
-                                 (copy-tree ranking)
-                                 decoy-mask)
-                           rows))
-                        (multiple-value-bind
-                              (next-observation reward terminated truncated info)
-                            (cl-gym::step env action)
-                          (declare (ignore reward info))
-                          (setf observation next-observation)
-                          (when (or terminated truncated)
-                            (return)))))))
+           ;; The behavior policy must experience exactly the same episode-local
+           ;; register lifecycle here as it does during online rollout.
+           (call-with-fresh-policy-episode
+            (lambda ()
+              (py4cl2:pymethod teacher "reset")
+              (let ((observation (cl-gym::reset env episode-seed))
+                    (episode-id
+                      (list :dagger *generation* episode-seed)))
+                (loop for timestep fixnum from 0
+                      do (when (zerop (mod timestep 10))
+                           (abort-search-if-requested))
+                         (let* ((ranking
+                                  (mapcar
+                                   (lambda (pair)
+                                     (teacher-sequence-list
+                                      pair "ranking pair"))
+                                   (teacher-sequence-list
+                                    (py4cl2:pymethod
+                                     teacher "rank" observation)
+                                    "ranking")))
+                                (decoy-mask
+                                  (teacher-observation-decoy-mask observation))
+                                (selected
+                                  (resolve-teacher-pair-ranking
+                                   ranking decoy-mask))
+                                (opening-action
+                                  (cl-gym::cage2-fixed-opening-action
+                                   environment-name timestep))
+                                (action
+                                  (or opening-action
+                                      (cl-gym::execute-policy-action
+                                       behavior-team
+                                       observation
+                                       environment-name))))
+                           ;; Only policy-owned states enter imitation fitness.
+                           ;; Metadata keeps each recurrent episode intact.
+                           (unless opening-action
+                             (push
+                              (list observation
+                                    (copy-list selected)
+                                    (copy-tree ranking)
+                                    decoy-mask
+                                    episode-id
+                                    timestep)
+                              rows))
+                           (multiple-value-bind
+                                 (next-observation reward terminated truncated info)
+                               (cl-gym::step env action)
+                             (declare (ignore reward info))
+                             (setf observation next-observation)
+                             (when (or terminated truncated)
+                               (return)))))))))
       (ignore-errors (py4cl2:pymethod env "close")))
     (nreverse rows)))
 
 (defun compact-teacher-dagger-row (row)
   "Copy one DAgger ROW into replay's compact, independently owned form."
-  (destructuring-bind (observation selected ranking decoy-mask) row
+  (destructuring-bind
+        (observation selected ranking decoy-mask
+         &optional episode-id step)
+      row
     (list (cl-gym:obs->array observation)
           (copy-list selected)
           (copy-tree ranking)
-          decoy-mask)))
+          decoy-mask
+          episode-id
+          step)))
 
 (defun append-teacher-dagger-replay (rows)
   "Append ROWS and keep only the newest bounded DAgger replay entries."
@@ -242,6 +280,62 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
                (random (- size index) *teacher-dagger-random-state*))
           do (rotatef (aref rows index) (aref rows selected-index))
           collect (aref rows index))))
+
+(defun teacher-rows-to-episodes (rows)
+  "Group adjacent six-field teacher ROWS into complete episode lists."
+  (let ((episodes nil)
+        (current nil)
+        (current-id :none))
+    (dolist (row rows)
+      (unless (= (length row) 6)
+        (error "Recurrent teacher row lacks episode metadata: ~S" row))
+      (let ((episode-id (fifth row)))
+        (unless (equal episode-id current-id)
+          (when current
+            (push (nreverse current) episodes))
+          (setf current nil
+                current-id episode-id))
+        (push row current)))
+    (when current
+      (push (nreverse current) episodes))
+    (nreverse episodes)))
+
+(defun append-teacher-dagger-replay-episodes (rows)
+  "Append complete DAgger episodes and enforce the row cap at boundaries."
+  (let* ((episodes
+           (mapcar
+            (lambda (episode)
+              (mapcar #'compact-teacher-dagger-row episode))
+            (teacher-rows-to-episodes rows)))
+         (combined
+           (nconc *teacher-dagger-replay-episodes* episodes))
+         (row-count
+           (loop for episode in combined sum (length episode))))
+    (loop while (and combined
+                     (> row-count +teacher-dagger-replay-capacity+))
+          do (decf row-count (length (first combined)))
+             (setf combined (rest combined)))
+    (setf *teacher-dagger-replay-episodes* combined)))
+
+(defun sample-teacher-dagger-replay-episodes (row-budget)
+  "Sample complete replay episodes without exceeding their sequence context."
+  (unless *teacher-dagger-random-state*
+    (error "DAgger replay random state is not configured."))
+  (let* ((episodes (coerce *teacher-dagger-replay-episodes* 'vector))
+         (size (length episodes))
+         (selected nil)
+         (selected-rows 0))
+    (loop for position fixnum below size
+          while (< selected-rows row-budget)
+          for selected-index =
+            (+ position
+               (random (- size position) *teacher-dagger-random-state*))
+          do (rotatef (aref episodes position)
+                      (aref episodes selected-index))
+             (push (aref episodes position) selected)
+             (incf selected-rows (length (aref episodes position))))
+    (loop for episode in (nreverse selected)
+          append episode)))
 
 (defun make-teacher-reference-seeds ()
   "Return the fixed seed-153 teacher reference bank."
@@ -273,21 +367,24 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
         *offline-training-dataset* nil
         *offline-reference-dataset* nil
         *offline-fitness-batch-indices* nil
+        *offline-fitness-batch-episode-indices* nil
         *current-dataset-fingerprint* nil
         *teacher-training-dataset* nil
         *teacher-reference-dataset* nil
         *teacher-dagger-replay-rows* nil
+        *teacher-dagger-replay-episodes* nil
         *teacher-dagger-random-state*
           (sb-ext:seed-random-state
            (+ *current-search-seed* 32452843)))
   (configure-hamming-observation-space)
   (emit-message
    (format nil
-           "Teacher reference generation started: episodes=~D environment=~A opening=~A rollout=~A~A"
+           "Teacher reference generation started: episodes=~D environment=~A opening=~A rollout=~A memory=~A~A"
            +teacher-reference-episodes+
            environment-name
            *cage2-opening-mode*
            *teacher-forcing-rollout-mode*
+           (if *recurrent-policy-enabled* :recurrent :stateless)
            (if (eq *cage2-opening-mode* :fixed)
                "; first three controller steps excluded from TPG fitness"
                "")))
@@ -295,6 +392,9 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
         (generate-teacher-trace-dataset
          environment-name
          (make-teacher-reference-seeds)))
+  (when *recurrent-policy-enabled*
+    (ensure-recurrent-dataset-compatible
+     *teacher-reference-dataset* "Recurrent teacher reference dataset"))
   (emit-message
    (format nil
            "Teacher reference ready: rows=~D"
@@ -341,21 +441,36 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
                           behavior-team
                           *current-gym-environment-name*
                           seeds)))
-                  (append-teacher-dagger-replay learner-rows)
+                  (if *recurrent-policy-enabled*
+                      (append-teacher-dagger-replay-episodes learner-rows)
+                      (append-teacher-dagger-replay learner-rows))
                   (let ((replay-sample
-                          (sample-teacher-dagger-replay
-                           (length teacher-rows))))
+                          (if *recurrent-policy-enabled*
+                              (sample-teacher-dagger-replay-episodes
+                               (length teacher-rows))
+                              (sample-teacher-dagger-replay
+                               (length teacher-rows)))))
                     (emit-message
                      (format nil
-                             "Generation ~D DAgger rollout: behavior=~A learner-rows=~D replay=~D sampled=~D teacher-rows=~D"
+                             "Generation ~D DAgger rollout: behavior=~A learner-rows=~D replay=~D sampled=~D teacher-rows=~D memory=~A"
                              *generation*
                              (team-id behavior-team)
                              (length learner-rows)
-                             (length *teacher-dagger-replay-rows*)
+                             (if *recurrent-policy-enabled*
+                                 (loop for episode
+                                         in *teacher-dagger-replay-episodes*
+                                       sum (length episode))
+                                 (length *teacher-dagger-replay-rows*))
                              (length replay-sample)
-                             (length teacher-rows)))
+                             (length teacher-rows)
+                             (if *recurrent-policy-enabled*
+                                 :recurrent
+                                 :stateless)))
                     (teacher-trace-to-dataset
                      (append teacher-rows replay-sample)))))))
+    (when *recurrent-policy-enabled*
+      (ensure-recurrent-dataset-compatible
+       *teacher-training-dataset* "Recurrent teacher training dataset"))
     (emit-message
      (format nil
              "Generation ~D teacher trace ready: rows=~D"
@@ -366,10 +481,14 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
   "Evaluate TEAM against the generation-shared teacher trace."
   (unless *teacher-training-dataset*
     (error "Teacher training trace is not prepared."))
-  (semantic-ranked-fitness team *teacher-training-dataset*))
+  (if *recurrent-policy-enabled*
+      (semantic-ranked-sequence-fitness team *teacher-training-dataset*)
+      (semantic-ranked-fitness team *teacher-training-dataset*)))
 
 (defun teacher-forcing-reference-fitness (team)
   "Evaluate TEAM against the fixed teacher reference trace bank."
   (unless *teacher-reference-dataset*
     (error "Teacher reference trace is not configured."))
-  (semantic-ranked-fitness team *teacher-reference-dataset*))
+  (if *recurrent-policy-enabled*
+      (semantic-ranked-sequence-fitness team *teacher-reference-dataset*)
+      (semantic-ranked-fitness team *teacher-reference-dataset*)))

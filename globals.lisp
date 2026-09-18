@@ -40,12 +40,13 @@ actions before consulting TPG; :POLICY lets TPG control the episode from step 0.
 trajectories; :DAGGER also labels states visited by the current best TPG policy.")
 
 (defparameter *recurrent-policy-enabled* nil
-  "When true, each learner keeps its own register vector for one online episode.")
+  "When true, each learner keeps its own register vector for one episode.")
 
 (defvar *policy-episode-registers* nil
   "Dynamically bound EQ hash table of learner to episode-local registers.
-A fresh table is bound around every online rollout. NIL deliberately keeps
-offline row evaluation and all legacy execution stateless.")
+A fresh table is bound around every online rollout or recurrent sequence.
+NIL deliberately keeps independent-row evaluation and legacy execution
+stateless.")
 
 (defconstant +cage2-raw-observation-size+ 52
   "Number of raw values produced by the official CAGE2 ChallengeWrapper.")
@@ -170,6 +171,16 @@ candidate to the independent reference evaluator.")
   :ranked-semantic-behavior-ndcg-reference-v5
   "Version tag for ranked target/response imitation with fixed reference data.")
 
+(defconstant +semantic-offline-recurrent-fitness-protocol+
+  :ranked-semantic-recurrent-sequence-reference-v1
+  "Version tag for episode-ordered recurrent semantic imitation.")
+
+(defun semantic-offline-fitness-protocol ()
+  "Return the active stateless or recurrent offline checkpoint protocol."
+  (if *recurrent-policy-enabled*
+      +semantic-offline-recurrent-fitness-protocol+
+      +semantic-offline-fitness-protocol+))
+
 (defconstant +teacher-forcing-teacher-protocol+
   :teacher-forcing-ranked-reference-opening-v2
   "Version tag for teacher-controlled traces aligned with the opening protocol.")
@@ -178,11 +189,23 @@ candidate to the independent reference evaluator.")
   :teacher-forcing-dagger-ranked-reference-opening-v3
   "Version tag for bounded learner-on-policy DAgger imitation.")
 
+(defconstant +teacher-forcing-recurrent-teacher-protocol+
+  :teacher-forcing-recurrent-sequence-opening-v1
+  "Version tag for recurrent imitation on teacher-controlled episodes.")
+
+(defconstant +teacher-forcing-recurrent-dagger-protocol+
+  :teacher-forcing-recurrent-dagger-sequence-opening-v1
+  "Version tag for recurrent imitation on complete learner-controlled episodes.")
+
 (defun teacher-forcing-fitness-protocol ()
   "Return the checkpoint protocol for the active teacher-forcing rollout mode."
-  (ecase *teacher-forcing-rollout-mode*
-    (:teacher +teacher-forcing-teacher-protocol+)
-    (:dagger +teacher-forcing-dagger-protocol+)))
+  (if *recurrent-policy-enabled*
+      (ecase *teacher-forcing-rollout-mode*
+        (:teacher +teacher-forcing-recurrent-teacher-protocol+)
+        (:dagger +teacher-forcing-recurrent-dagger-protocol+))
+      (ecase *teacher-forcing-rollout-mode*
+        (:teacher +teacher-forcing-teacher-protocol+)
+        (:dagger +teacher-forcing-dagger-protocol+))))
 
 (defconstant +teacher-reference-episodes+ 100
   "Fixed number of deterministic teacher episodes in the reference bank.")
@@ -357,11 +380,17 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 (defvar *teacher-dagger-replay-rows* nil
   "Bounded learner-visited rows retained by teacher-forcing DAgger.")
 
+(defvar *teacher-dagger-replay-episodes* nil
+  "Bounded complete learner episodes retained by recurrent DAgger.")
+
 (defvar *teacher-dagger-random-state* nil
   "Private random state used only to sample DAgger replay rows.")
 
 (defvar *offline-fitness-batch-indices* nil
   "Uniform row indices shared by all semantic-offline candidates in one generation.")
+
+(defvar *offline-fitness-batch-episode-indices* nil
+  "Complete episode ranges shared by recurrent-offline candidates in one generation.")
 
 (defvar *current-dataset-name* nil
   "Dataset requested for the current offline search.")

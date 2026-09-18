@@ -27,7 +27,7 @@
 (defvar tpg-hamming-dataset-name nil
   "Semantic training dataset used by the next Hamming-enabled operation.")
 (defvar tpg-recurrent-registers-enabled nil
-  "Whether the next online CAGE2 operation preserves learner registers per episode.")
+  "Whether the next CAGE2 operation preserves learner registers per episode.")
 
 
 (defun plist-to-cl-sexp (plist)
@@ -335,10 +335,6 @@ selected yet."
           (tpg-read-directory-path
            "Checkpoint directory: "
            "~/Documents/Research/checkpoints/")))
-
-    (when (and tpg-recurrent-registers-enabled
-               (not (eq mode :online)))
-      (user-error "Recurrent registers require online CAGE2 mode"))
 
     (setq payload
           (plist-put payload :dataset-name dataset-name))
@@ -778,10 +774,6 @@ selected yet."
 
              :seed ,seed)))
 
-    (when (and tpg-recurrent-registers-enabled
-               (not (eq mode :online)))
-      (user-error "Recurrent registers require online CAGE2 mode"))
-
     (tpg-send-payload-to-island
      island-id
      payload
@@ -820,7 +812,7 @@ selected yet."
   ["Python"
    ("p" "Set Python Interpreter" tpg-configure-python-interpreter)]
 
-  ["Policy Memory (next operation)"
+  ["Policy Memory (offline/teacher/online)"
    ("M" tpg-recurrent-menu-description tpg-toggle-recurrent-registers)])
 
 

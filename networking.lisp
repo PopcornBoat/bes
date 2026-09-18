@@ -496,11 +496,18 @@ return their fixed configured addresses."
                 (= num-actions +num-semantic-targets+)
                 (or (eq mode :offline)
                     (cl-gym:cage2-environment-p gym-environment-name))))
-       ;; Recurrent registers require an ordered episode and are intentionally
-       ;; unavailable to shuffled offline rows and teacher-forcing row fitness.
+       ;; Recurrent CAGE2 modes preserve complete episode order. Offline mode
+       ;; validates episode metadata after loading the selected ranked dataset.
        (or (not recurrent-policy-enabled)
-           (and (eq mode :online)
-                (cl-gym:cage2-environment-p gym-environment-name)))
+           (case mode
+             (:offline
+              (and (integerp num-observations)
+                   (valid-cage2-policy-observation-size-p num-observations)
+                   (integerp num-actions)
+                   (= num-actions +num-semantic-targets+)))
+             ((:online :teacher-forcing)
+              (cl-gym:cage2-environment-p gym-environment-name))
+             (otherwise nil)))
        (valid-decoy-order-mode-p decoy-order-mode)
        (valid-cage2-opening-mode-p cage2-opening-mode)
        (valid-teacher-forcing-rollout-mode-p

@@ -267,4 +267,115 @@
          nil))
    "changed semantic dataset forces re-baselining"))
 
+(let* ((fingerprint '(:training (:name "train") :reference (:name "val")))
+       (cl-tpg::*offline-reference-dataset* t)
+       (cl-tpg::*current-dataset-fingerprint* fingerprint)
+       (cl-tpg::*recurrent-policy-enabled* t)
+       (cl-tpg::*cage2-opening-mode* :fixed)
+       (cl-tpg::*num-observations* 62)
+       (cl-tpg::*decoy-order-mode* :fixed)
+       (metadata
+         (list :fitness-evaluation-protocol
+               cl-tpg::+semantic-offline-recurrent-fitness-protocol+
+               :dataset-fingerprint fingerprint
+               :recurrent-policy-enabled t
+               :cage2-opening-mode :fixed
+               :num-observations 62
+               :decoy-order-mode :fixed
+               :action-agreement-signature
+                 (cl-tpg::action-agreement-signature))))
+  (check-semantic-offline
+   (cl-tpg::checkpoint-fitness-comparable-p 0.5d0 metadata nil)
+   "matching recurrent offline provenance is comparable")
+  (check-semantic-offline
+   (not
+    (cl-tpg::checkpoint-fitness-comparable-p
+     0.5d0
+     (copy-list
+      (list* :cage2-opening-mode :policy metadata))
+     nil))
+   "recurrent offline opening changes force re-baselining"))
+
+(labels ((increment-bid-program ()
+           (cl-tpg::make-program
+            :instructions
+            (make-array
+             1 :adjustable t :fill-pointer t
+             :initial-contents
+             (list
+              (cl-tpg::%make-instruction
+               :dest 0 :op :add
+               :src1-type :reg :src1-val 0.0d0
+               :src2-type :const :src2-val 1.0d0 :arity 2)))))
+         (constant-bid-program (value)
+           (cl-tpg::make-program
+            :instructions
+            (make-array
+             1 :adjustable t :fill-pointer t
+             :initial-contents
+             (list
+              (cl-tpg::%make-instruction
+               :dest 0 :op :add
+               :src1-type :const :src1-val value
+               :src2-type :const :src2-val 0.0d0 :arity 2)))))
+         (terminal (program target response)
+           (cl-tpg::make-learner
+            :program program
+            :action
+            (cl-tpg::make-action
+             :type :atomic
+             :action
+             (cl-tpg::make-factored-action
+              :primary target :secondary response)))))
+  (let* ((observation
+           (make-array 62
+                       :element-type 'double-float
+                       :initial-element 0.0d0))
+         (dataset
+           (cl-tpg::%make-dataset
+            :observations
+              (make-array 4 :initial-contents
+                          (list observation observation observation observation))
+            :actions
+              (make-array 4 :initial-contents
+                          '((1 1 0) (8 0 0) (1 1 0) (8 0 0)))
+            :rewards (make-array 4 :element-type 'double-float
+                                 :initial-element 0.0d0)
+            :terminations (make-array 4 :initial-element 0)
+            :truncations (make-array 4 :initial-element 0)
+            :teacher-actions (make-array 4 :initial-element nil)
+            :decoy-masks (make-array 4 :initial-element 0)
+            :semantic-rankings
+              (make-array 4 :initial-contents
+                          '(((1 1)) ((8 0)) ((1 1)) ((8 0))))
+            :episode-ids #(0 0 1 1)
+            :steps #(3 4 3 4)
+            :episode-ranges #((0 . 2) (2 . 4))
+            :size 4
+            :action-format :semantic-ranked))
+         (team
+           (cl-tpg::%make-team
+            :learners
+            (list (terminal (increment-bid-program) 8 0)
+                  (terminal (constant-bid-program 1.5d0) 1 1)))))
+    (let ((cl-tpg::*recurrent-policy-enabled* t)
+          (cl-tpg::*factored-actions-enabled* t)
+          (cl-tpg::*num-observations* 62)
+          (cl-tpg::*cage2-opening-mode* :fixed)
+          (cl-tpg::*hamming-space-enabled* nil))
+      (check-semantic-offline
+       (= (cl-tpg::semantic-ranked-sequence-fitness team dataset) 1.0d0)
+       "recurrent sequence fitness preserves state and resets each episode")
+      (let ((cl-tpg::*batch-size* 1)
+            (cl-tpg::*random-state* (sb-ext:seed-random-state 153)))
+        (check-semantic-offline
+         (= (length
+             (cl-tpg::make-uniform-dataset-episode-indices dataset))
+            1)
+         "recurrent batching selects one complete episode for a one-row budget"))
+      (check-semantic-offline
+       (eq (cl-tpg::semantic-offline-fitness-protocol)
+           cl-tpg::+semantic-offline-recurrent-fitness-protocol+)
+       "recurrent offline checkpoints use a distinct fitness protocol"))))
+
 (format t "~D semantic offline checks passed.~%" *semantic-offline-checks*)

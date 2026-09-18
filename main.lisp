@@ -146,51 +146,83 @@ this function so an entire population can share exactly the same batch."
         (/ (coerce correct 'double-float)
            (coerce count 'double-float)))))
 
-(defun semantic-ranked-fitness (team dataset &optional indices)
-  "Score executable top-choice behavior plus teacher ranking agreement.
+(defun semantic-ranked-row-score (team dataset index option-orders)
+  "Return the ranked imitation contribution for one DATASET row."
+  (let* ((teacher-ranking
+           (aref (dataset-semantic-rankings dataset) index))
+         (prediction-limit
+           (min +semantic-ranking-limit+
+                (max 1 (length teacher-ranking))))
+         (predictions
+           (execute-team-semantic-ranked
+            team
+            (policy-observation (aref (observations dataset) index))
+            prediction-limit))
+         (resolved
+           (resolve-semantic-ranking
+            predictions
+            (aref (dataset-decoy-masks dataset) index)
+            option-orders))
+         (expected
+           (semantic-label-category-pair
+            (aref (actions dataset) index))))
+    (+ (if (equal resolved expected)
+           +ranked-behavior-fitness-weight+
+           0.0d0)
+       (* +ranked-order-fitness-weight+
+          (semantic-ranking-ndcg predictions teacher-ranking)))))
 
-The v2 label intentionally ignores concrete Decoy options. Each row contributes
-80% when the first usable predicted target/response equals the demonstrated
-action and 20% NDCG against that observation's frequency-ranked alternatives."
+(defun semantic-ranked-fitness (team dataset &optional indices)
+  "Score independent rows by executable behavior plus teacher ranking agreement."
   (let ((score 0.0d0)
         (count 0)
-        (observations (observations dataset))
-        (labels (actions dataset))
-        (rankings (dataset-semantic-rankings dataset))
-        (decoy-masks (dataset-decoy-masks dataset))
         (option-orders (effective-team-option-orders team)))
     (labels ((score-row (index)
                (when (and *search-active*
                           (zerop (logand count 255)))
                  (abort-search-if-requested))
-               (let* ((teacher-ranking (aref rankings index))
-                      (prediction-limit
-                        (min +semantic-ranking-limit+
-                             (max 1 (length teacher-ranking))))
-                      (predictions
-                        (execute-team-semantic-ranked
-                         team
-                         (policy-observation (aref observations index))
-                         prediction-limit))
-                      (resolved
-                        (resolve-semantic-ranking
-                         predictions
-                         (aref decoy-masks index)
-                         option-orders))
-                      (expected
-                        (semantic-label-category-pair
-                         (aref labels index))))
-                 (when (equal resolved expected)
-                   (incf score +ranked-behavior-fitness-weight+))
-                 (incf score
-                       (* +ranked-order-fitness-weight+
-                          (semantic-ranking-ndcg
-                           predictions teacher-ranking))))
+               (incf score
+                     (semantic-ranked-row-score
+                      team dataset index option-orders))
                (incf count)))
       (if indices
           (loop for index across indices do (score-row index))
           (dotimes (index (dataset-size dataset))
             (score-row index))))
+    (if (zerop count)
+        0.0d0
+        (/ score (coerce count 'double-float)))))
+
+(defun semantic-ranked-sequence-fitness
+       (team dataset &optional episode-indices)
+  "Score complete ordered episodes while preserving learner registers.
+
+Registers start at zero for every episode. Under the fixed opening protocol,
+rows before the first TPG-owned step neither execute programs nor contribute to
+fitness, exactly matching online rollout behavior."
+  (ensure-recurrent-dataset-compatible dataset "Recurrent semantic dataset")
+  (let ((score 0.0d0)
+        (count 0)
+        (ranges (dataset-episode-ranges dataset))
+        (option-orders (effective-team-option-orders team)))
+    (labels ((score-episode (episode-index)
+               (let ((range (aref ranges episode-index)))
+                 (call-with-fresh-policy-episode
+                  (lambda ()
+                    (loop for index from (car range) below (cdr range)
+                          when (recurrent-policy-row-p dataset index)
+                            do (when (and *search-active*
+                                          (zerop (logand count 255)))
+                                 (abort-search-if-requested))
+                               (incf score
+                                     (semantic-ranked-row-score
+                                      team dataset index option-orders))
+                               (incf count)))))))
+      (if episode-indices
+          (loop for episode-index across episode-indices
+                do (score-episode episode-index))
+          (dotimes (episode-index (length ranges))
+            (score-episode episode-index))))
     (if (zerop count)
         0.0d0
         (/ score (coerce count 'double-float)))))
@@ -223,25 +255,82 @@ action and 20% NDCG against that observation's frequency-ranked alternatives."
                    chosen))
         (sort indices #'<)))))
 
+(defun dataset-episode-policy-row-count (dataset episode-index)
+  "Return the number of policy-owned rows in one DATASET episode."
+  (let ((range (aref (dataset-episode-ranges dataset) episode-index)))
+    (loop for index from (car range) below (cdr range)
+          count (recurrent-policy-row-p dataset index))))
+
+(defun make-uniform-dataset-episode-indices (dataset)
+  "Sample complete episodes up to the configured transition budget.
+
+The returned episodes are sorted into source order. Sampling can exceed the
+row budget by the final complete episode; no recurrent context is truncated."
+  (ensure-recurrent-dataset-compatible dataset "Recurrent offline dataset")
+  (unless (and (integerp *batch-size*) (> *batch-size* 0))
+    (error "*BATCH-SIZE* must be a positive integer."))
+  (let* ((ranges (dataset-episode-ranges dataset))
+         (episode-count (length ranges))
+         (total-policy-rows
+           (loop for episode-index below episode-count
+                 sum (dataset-episode-policy-row-count
+                      dataset episode-index))))
+    (when (< *batch-size* total-policy-rows)
+      (let ((candidates
+              (make-array episode-count
+                          :element-type 'fixnum
+                          :initial-contents
+                          (loop for index below episode-count collect index)))
+            (selected nil)
+            (selected-rows 0))
+        (loop for position from 0 below episode-count
+              while (< selected-rows *batch-size*)
+              for selected-position =
+                (+ position (random (- episode-count position)))
+              do (rotatef (aref candidates position)
+                          (aref candidates selected-position))
+                 (let ((episode-index (aref candidates position)))
+                   (push episode-index selected)
+                   (incf selected-rows
+                         (dataset-episode-policy-row-count
+                          dataset episode-index))))
+        (coerce (sort selected #'<) 'vector)))))
+
 (defun semantic-offline-training-fitness (team)
-  "Evaluate TEAM on the uniform row batch shared by this generation."
+  "Evaluate TEAM on the generation-shared row or complete-episode batch."
   (unless *offline-training-dataset*
     (error "Semantic offline training dataset is not configured."))
-  (unless *offline-fitness-batch-indices*
-    (setf *offline-fitness-batch-indices*
-          (or (make-uniform-dataset-indices *offline-training-dataset*)
-              :all)))
-  (semantic-dataset-fitness
-   team
-   *offline-training-dataset*
-   (unless (eq *offline-fitness-batch-indices* :all)
-     *offline-fitness-batch-indices*)))
+  (if *recurrent-policy-enabled*
+      (progn
+        (unless *offline-fitness-batch-episode-indices*
+          (setf *offline-fitness-batch-episode-indices*
+                (or (make-uniform-dataset-episode-indices
+                     *offline-training-dataset*)
+                    :all)))
+        (semantic-ranked-sequence-fitness
+         team
+         *offline-training-dataset*
+         (unless (eq *offline-fitness-batch-episode-indices* :all)
+           *offline-fitness-batch-episode-indices*)))
+      (progn
+        (unless *offline-fitness-batch-indices*
+          (setf *offline-fitness-batch-indices*
+                (or (make-uniform-dataset-indices
+                     *offline-training-dataset*)
+                    :all)))
+        (semantic-dataset-fitness
+         team
+         *offline-training-dataset*
+         (unless (eq *offline-fitness-batch-indices* :all)
+           *offline-fitness-batch-indices*)))))
 
 (defun semantic-offline-reference-fitness (team)
   "Evaluate TEAM on the complete fixed held-out semantic dataset."
   (unless *offline-reference-dataset*
     (error "Semantic offline reference dataset is not configured."))
-  (semantic-dataset-fitness team *offline-reference-dataset*))
+  (if *recurrent-policy-enabled*
+      (semantic-ranked-sequence-fitness team *offline-reference-dataset*)
+      (semantic-dataset-fitness team *offline-reference-dataset*)))
 
 (defun semantic-validation-dataset-path (training-path)
   "Infer the sibling validation path from a semantic training dataset path."
@@ -823,7 +912,9 @@ reference batch."
            *teacher-training-dataset* nil
            *teacher-reference-dataset* nil
            *offline-fitness-batch-indices* nil
+           *offline-fitness-batch-episode-indices* nil
            *teacher-dagger-replay-rows* nil
+           *teacher-dagger-replay-episodes* nil
            *teacher-dagger-random-state* nil
            *current-dataset-fingerprint* nil)
      (configure-hamming-observation-space)
@@ -836,6 +927,7 @@ reference batch."
        (setf *teacher-training-dataset* nil
              *teacher-reference-dataset* nil
              *teacher-dagger-replay-rows* nil
+             *teacher-dagger-replay-episodes* nil
              *teacher-dagger-random-state* nil)
        (setf *factored-actions-enabled*
              (not (null (semantic-dataset-p dataset))))
@@ -852,9 +944,18 @@ reference batch."
                            (dataset-action-format dataset))
                  (error "Semantic validation path contains a legacy dataset: ~A"
                         (namestring reference-file)))
+               (when *recurrent-policy-enabled*
+                 (unless (eq (dataset-action-format dataset) :semantic-ranked)
+                   (error
+                    "Recurrent offline training requires a ranked-v2 semantic dataset."))
+                 (ensure-recurrent-dataset-compatible
+                  dataset "Recurrent offline training dataset")
+                 (ensure-recurrent-dataset-compatible
+                  reference-dataset "Recurrent offline reference dataset"))
                 (setf *offline-training-dataset* dataset
                      *offline-reference-dataset* reference-dataset
                      *offline-fitness-batch-indices* nil
+                     *offline-fitness-batch-episode-indices* nil
                      *current-dataset-fingerprint*
                        (list :training (dataset-file-fingerprint dataset)
                              :reference
@@ -864,6 +965,7 @@ reference batch."
              (setf *offline-training-dataset* nil
                    *offline-reference-dataset* nil
                    *offline-fitness-batch-indices* nil
+                   *offline-fitness-batch-episode-indices* nil
                    *current-dataset-fingerprint* nil)
               (setf *fitness-fn*
                     (lambda (team)
@@ -906,7 +1008,8 @@ reference batch."
   ;; root team reads that same list; the next population evaluation gets a new
   ;; list generated from the search random state.
   (setf *online-fitness-episode-seeds* nil
-        *offline-fitness-batch-indices* nil)
+        *offline-fitness-batch-indices* nil
+        *offline-fitness-batch-episode-indices* nil)
   (when (eq *current-search-mode* :teacher-forcing)
     (setf *teacher-training-dataset* nil)
     (prepare-teacher-training-dataset))
@@ -1279,7 +1382,9 @@ the same train/reference file fingerprint."
                    (= saved-num-observations *num-observations*))
                (or (null saved-decoy-order-mode)
                    (eq saved-decoy-order-mode *decoy-order-mode*))
-               (or (not (cl-gym:cage2-environment-p gym-environment-name))
+               (or (not (or *recurrent-policy-enabled*
+                            (cl-gym:cage2-environment-p
+                             gym-environment-name)))
                    (eq saved-opening-mode *cage2-opening-mode*))
                (eq saved-recurrent-enabled
                    (not (null *recurrent-policy-enabled*)))
@@ -1305,7 +1410,7 @@ the same train/reference file fingerprint."
                              (action-agreement-signature))))
                 (*offline-reference-dataset*
                  (and (eq saved-protocol
-                          +semantic-offline-fitness-protocol+)
+                           (semantic-offline-fitness-protocol))
                       (equal saved-dataset-fingerprint
                              *current-dataset-fingerprint*)
                       (equal saved-agreement-signature
@@ -1461,8 +1566,10 @@ normal evolution."
                        (member
                         (getf checkpoint-metadata
                               :fitness-evaluation-protocol)
-                        (list +teacher-forcing-teacher-protocol+
-                              +teacher-forcing-dagger-protocol+)
+                         (list +teacher-forcing-teacher-protocol+
+                              +teacher-forcing-dagger-protocol+
+                              +teacher-forcing-recurrent-teacher-protocol+
+                              +teacher-forcing-recurrent-dagger-protocol+)
                         :test #'eq))))
 
         (let ((comparable-fitness

@@ -401,20 +401,47 @@ when TPG first acts at step 3. Internal team traversal is unchanged: each
 visited team's learners bid, team-reference winners continue traversal, and the
 final terminal learner supplies the semantic action.
 
-Recurrent mode is intentionally limited to online CAGE2 search and CAGE2
-validation. Current offline and teacher-forcing fitness functions sample
-individual rows rather than complete ordered episodes; even where source files
-contain termination flags, filtered semantic rows do not guarantee intact
-boundaries. Enabling memory there would teach dependencies on an arbitrary row
-order, so the server rejects that combination. A stateless offline checkpoint
-can still warm-start recurrent online training; its saved fitness is
-re-baselined because memory modes are not comparable.
+Recurrent mode is available consistently across semantic offline,
+teacher-forcing, online CAGE2 search, and CAGE2 validation. The two menu controls
+compose as follows:
+
+| Search mode | Recurrent registers | Teacher rollout | Result |
+|---|---|---|---|
+| offline | off | ignored | stateless offline imitation |
+| offline | on | ignored | recurrent behavior cloning from the selected file |
+| teacher-forcing | on | teacher | recurrent behavior cloning from fresh teacher episodes |
+| teacher-forcing | on | dagger | recurrent DAgger |
+| online | on | ignored | recurrent reward optimization |
+
+Recurrent offline loading requires ranked semantic rows with `:episode-id` and
+`:step`. BES validates that each episode is adjacent and step-complete, then
+samples whole episodes instead of unrelated rows. `Batch Size` remains an
+approximate transition budget: the final complete episode may take the batch
+slightly over that number. All population candidates receive the same sampled
+episodes. Registers start at zero for each episode and persist only while its
+rows are evaluated in order.
+
+Under the fixed opening protocol, offline rows at steps 0--2 neither execute
+TPG programs nor contribute fitness. This matches online execution, where the
+controller owns those probes and recurrent TPG state first changes at step 3.
+The existing ranked-v2 collector files already contain the required episode
+metadata; older row-only datasets remain usable only with recurrent mode off.
+
+Teacher-forcing traces now preserve episode and step metadata. In recurrent
+DAgger, the behavior team is wrapped in a fresh register bank for each actual
+environment episode, and replay stores/samples complete episodes rather than
+isolated rows. Teacher-controlled and learner-controlled episodes are scored
+with the same sequence-aware ranked objective. Stateless teacher-forcing keeps
+the previous row-wise replay and fitness behavior.
 
 Register state is runtime-only and is not serialized. The policy graph and
 programs keep their existing checkpoint representation, while checkpoint
 metadata and filenames record `memory-recurrent` or `memory-stateless`.
-Independent staged online evaluators receive the same setting as the search.
-Legacy checkpoints are interpreted as stateless.
+Recurrent offline, recurrent teacher-cloning, recurrent DAgger, and stateless
+imitation use distinct fitness protocol tags, so saved fitness values are never
+compared across incompatible objectives. Independent staged online evaluators
+receive the same setting as the search. Legacy checkpoints are interpreted as
+stateless.
 
 The initial recommended capability run is 62 observations, 11 targets, fixed
 Decoy order, Hamming projection off, five fitness episodes, population 160,
