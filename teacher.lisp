@@ -90,6 +90,10 @@
 (defconstant +teacher-trace-chunk-size+ 5
   "Maximum episodes per bridge call, bounding stop-request latency.")
 
+(defun teacher-backend-python-name ()
+  "Return the selected local teacher backend name for the Python bridge."
+  (string-downcase (symbol-name *teacher-backend*)))
+
 (defun generate-teacher-trace-rows (environment-name episode-seeds)
   "Generate primitive rows from teacher-controlled episodes.
 
@@ -117,7 +121,8 @@ between simulator calls. Chunking does not change episode seeds or rows."
                             environment-name
                             chunk
                             include-opening-p
-                            t)
+                            t
+                            (teacher-backend-python-name))
                            "chunk"))
                    remaining (nthcdr count remaining)))
     all-rows))
@@ -153,7 +158,10 @@ between simulator calls. Chunking does not change episode seeds or rows."
               (return pair))
              ((= response 3)
               (when (integerp
-                     (first-available-decoy-option target decoy-mask))
+                     (first-available-decoy-option
+                      target
+                      decoy-mask
+                      (action-agreement-decoy-orders-for-backend)))
                 (return pair)))
              ((and (> rank 0) (= response 2))
               nil)
@@ -182,8 +190,9 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
   (let* ((env (cl-gym::make environment-name))
          (teacher
            (py4cl2:pycall
-            "cage2_bridge.teacher.TeacherPolicy"
-            (teacher-red-agent-name environment-name)))
+            "cage2_bridge.teacher.make_teacher_policy"
+            (teacher-red-agent-name environment-name)
+            (teacher-backend-python-name)))
          (rows nil))
     (cl-gym::configure-cage2-option-orders env behavior-team)
     (unwind-protect
@@ -363,6 +372,11 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
            *teacher-forcing-rollout-mode*)
     (error "Invalid teacher-forcing rollout mode: ~S."
            *teacher-forcing-rollout-mode*))
+  (unless (valid-teacher-backend-p *teacher-backend*)
+    (error "Invalid local teacher backend: ~S." *teacher-backend*))
+  (when (and (eq *teacher-backend* :heuristic)
+             (not (search "b_line" environment-name)))
+    (error "The heuristic teacher currently supports only b_line environments."))
   (setf *factored-actions-enabled* t
         *offline-training-dataset* nil
         *offline-reference-dataset* nil
@@ -379,9 +393,10 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
   (configure-hamming-observation-space)
   (emit-message
    (format nil
-           "Teacher reference generation started: episodes=~D environment=~A opening=~A rollout=~A memory=~A~A"
+           "Teacher reference generation started: episodes=~D environment=~A backend=~A opening=~A rollout=~A memory=~A~A"
            +teacher-reference-episodes+
            environment-name
+           *teacher-backend*
            *cage2-opening-mode*
            *teacher-forcing-rollout-mode*
            (if *recurrent-policy-enabled* :recurrent :stateless)

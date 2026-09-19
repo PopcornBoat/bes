@@ -72,7 +72,7 @@ order. Evolved mode uses the team's policy-owned table, initializing a missing
 legacy table from the same agreement defaults."
   (ecase *decoy-order-mode*
     (:fixed
-     (action-agreement-decoy-orders (ensure-cage2-action-agreement)))
+     (action-agreement-decoy-orders-for-backend))
     (:evolved
      (or (team-option-orders team)
          (setf (team-option-orders team)

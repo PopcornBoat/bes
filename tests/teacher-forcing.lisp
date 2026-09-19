@@ -51,15 +51,16 @@
       (cl-tpg::*decoy-order-mode* :fixed)
       (cl-tpg::*cage2-opening-mode* :fixed)
       (cl-tpg::*teacher-forcing-rollout-mode* :dagger)
+      (cl-tpg::*teacher-backend* :heuristic)
       (cl-tpg::*hamming-space-enabled* nil))
   (check-teacher-forcing
    (string= (cl-tpg::best-team-checkpoint-filename)
-            "bline-62-11-teacher-forcing-dagger-order-fixed-opening-fixed-hamming-off-memory-stateless.lisp")
+            "bline-62-11-teacher-forcing-dagger-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp")
    "checkpoint name distinguishes DAgger teacher forcing")
   (let ((cl-tpg::*teacher-forcing-rollout-mode* :teacher))
     (check-teacher-forcing
      (string= (cl-tpg::best-team-checkpoint-filename)
-              "bline-62-11-teacher-forcing-order-fixed-opening-fixed-hamming-off-memory-stateless.lisp")
+              "bline-62-11-teacher-forcing-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp")
      "pure teacher rollout retains its explicit checkpoint name")))
 
 (let ((cl-tpg::*recurrent-policy-enabled* t))
@@ -80,11 +81,12 @@
       (cl-tpg::*num-observations* 62)
       (cl-tpg::*num-actions* 11)
       (cl-tpg::*decoy-order-mode* :fixed)
+      (cl-tpg::*teacher-backend* :model)
       (cl-tpg::*cage2-opening-mode* :fixed)
       (cl-tpg::*hamming-space-enabled* nil))
   (check-teacher-forcing
    (string= (cl-tpg::best-team-checkpoint-filename)
-            "bline-62-11-mix-order-fixed-opening-fixed-hamming-off-memory-stateless.lisp")
+            "bline-62-11-mix-order-fixed-teacher-model-opening-fixed-hamming-off-memory-stateless.lisp")
    "online continuation of an offline lineage uses the mix checkpoint name"))
 
 (let ((cl-tpg::*configured-online-fitness-episodes* 5))
@@ -151,6 +153,18 @@
       (cl-tpg::valid-teacher-forcing-rollout-mode-p :teacher)
       (not (cl-tpg::valid-teacher-forcing-rollout-mode-p :online)))
  "only DAgger and pure-teacher rollout modes are accepted")
+
+(check-teacher-forcing
+ (and (cl-tpg::valid-teacher-backend-p :model)
+      (cl-tpg::valid-teacher-backend-p :heuristic)
+      (not (cl-tpg::valid-teacher-backend-p :random)))
+ "only model and deterministic heuristic teacher backends are accepted")
+
+(let ((cl-tpg::*teacher-backend* :heuristic))
+  (check-teacher-forcing
+   (equalp (aref (cl-tpg::action-agreement-decoy-orders-for-backend) 5)
+           #(2 6 0 7 1 3 4 5))
+   "heuristic backend selects its exact Op_Server0 Decoy profile"))
 
 (let* ((all-target-one-decoys-used (1- (ash 1 8)))
        (ranking '((1 3) (2 2) (2 0))))

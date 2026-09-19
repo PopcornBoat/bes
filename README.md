@@ -276,9 +276,12 @@ Both variables are reset appropriately when a new search begins.
 The official CAGE2 bridge always transports 142 values: the original 52-value
 observation, ten episode-local scan-history values in target order, and 80
 binary decoy-availability values in host-major agreement order. BES's existing
-`Number of Observations` setting selects the policy prefix for the 2x2
-experiment: `62` exposes raw plus scan state and ignores the final 80 values;
-`142` exposes the complete bridge observation. Scan hosts are:
+`Number of Observations` setting selects the policy prefix. The active baseline
+is `62`: raw plus scan state, with concrete Decoy availability owned by the
+bridge. The former `142` experiment exposes the complete observation and is
+retained only as an archived/legacy compatibility mode for existing datasets
+and checkpoints. New start, resume, and validation menus default to `62`.
+Scan hosts are:
 Defender, Enterprise0-2, Op_Server0, and User0-4. `0` means unseen, `1` means
 scanned previously, and `2` identifies the most recently detected scan. The
 bridge initializes the state to zero, consumes and maintains it throughout one
@@ -297,7 +300,8 @@ scan-state bridge version. Episode and step indices are not included.
 BES accepts both line-oriented `cage2-semantic-v1` datasets and ranked
 `cage2-semantic-v2` datasets produced by the CAGE2 collector. Start an offline
 search with the `_train.lisp` file, configure
-62 or 142 observations and 11 targets. The source dataset is reusable in both
+62 observations and 11 targets for new experiments. The source dataset remains
+reusable in legacy 142 mode:
 modes: BES reads its stored 62 values directly in 62 mode or appends 80 binary
 availability values from `:decoy-mask-before` in 142 mode. BES automatically loads the sibling `_val.lisp`
 file as the fixed reference dataset. For example,
@@ -326,12 +330,31 @@ fitness remain supported.
 
 ## Teacher forcing
 
-Teacher forcing is a third search mode for CAGE2 b-line and meander tasks. Its
-default `dagger` rollout lets the current best TPG policy control a second copy
-of each episode after the fixed opening. The frozen teacher sees those exact
-learner-visited observations and supplies ranked semantic labels, but never
-acts in or changes that environment. The menu's `teacher` rollout preserves
-the original teacher-controlled behavior-cloning experiment.
+Teacher forcing is a third search mode for CAGE2 tasks. `Teacher Backend`
+selects a packaged local ranked teacher. `model` preserves the existing frozen
+model teachers for b-line and meander. `heuristic` selects the deterministic
+BlueBLineHeuristicSimple-compatible b-line teacher. Its label query is pure:
+scan history and used-Decoy state are read from the current 142-value bridge
+observation, so querying a learner-visited state cannot advance teacher state.
+The TPG still receives only the configured 62-value prefix.
+
+The heuristic backend expands the original concrete action into a stable
+ranking: applicable Analyse/Restore rules first, available Decoy targets in the
+heuristic's global order next, then its former fallback action list in fixed
+order, and finally Monitor. The original random fallback is not used. Its
+teacher-specific per-host Decoy profile is loaded from the shared action
+agreement, ensuring `(target, DECOY)` executes the same concrete option intended
+by the heuristic. Backend/profile identity is stored in checkpoint metadata and
+filenames.
+
+The default `dagger` rollout lets the current best TPG policy control a second
+copy of each episode after the fixed opening. The selected teacher sees those
+exact learner-visited observations and supplies ranked semantic labels, but
+never acts in or changes that environment. The menu's `teacher` rollout
+preserves teacher-controlled behavior cloning.
+
+For the model backend, teacher forcing supports b-line and meander. The current
+heuristic backend is intentionally b-line-only.
 
 Once per generation, the bridge generates the configured number of teacher
 episodes from a seed list shared by the complete population. In `dagger` mode,
@@ -355,11 +378,12 @@ Historical-best comparison deliberately remains a fixed 100-episode
 teacher-controlled reference bank derived from seed 153 and generated once
 when the search starts. It is stable and replayable, while online validation
 remains the final measure of closed-loop behavior. Teacher
-forcing requires 11 targets, either 62 or 142 policy observations, and fixed
+forcing requires 11 targets, 62 policy observations for the active baseline
+(legacy 142 remains accepted), and fixed
 Decoy ordering. No dataset fingerprint is involved. A warm start is comparable
 only when its teacher-forcing protocol, environment, observation prefix,
-fitness-episode count, episode-opening mode, rollout mode, Hamming
-configuration, and action agreement match. `dagger` and `teacher` use
+fitness-episode count, episode-opening mode, rollout mode, teacher backend,
+Hamming configuration, and action agreement match. `dagger` and `teacher` use
 different checkpoint filenames and fitness protocol tags, so changing modes
 safely re-baselines a warm start.
 
@@ -443,11 +467,12 @@ compared across incompatible objectives. Independent staged online evaluators
 receive the same setting as the search. Legacy checkpoints are interpreted as
 stateless.
 
-The initial recommended capability run is 62 observations, 11 targets, fixed
+The recommended capability run is 62 observations, 11 targets, fixed
 Decoy order, Hamming projection off, five fitness episodes, population 160,
 and a fresh search. Batch size is not used in this mode. B-line and meander
-must be trained separately. The bridge loads packaged NumPy teacher artifacts,
-so its runtime does not require the original training framework.
+must be trained separately. The model backend loads packaged NumPy teacher
+artifacts, while the heuristic backend contains only deterministic policy logic;
+neither requires the original training framework.
 
 Each generation uses one uniform, unbalanced training-row sample shared by all
 candidates. Semantic accuracy follows the bridge contract: GLOBAL compares only
@@ -461,10 +486,11 @@ start from those defaults and evolve pair swaps. The effective table is
 installed in the Python environment once per episode. Team tables remain
 serialized in checkpoints, while fixed mode deliberately ignores their values.
 
-The four primary experimental conditions are 62/fixed, 62/evolved, 142/fixed,
-and 142/evolved. Keep Hamming projection off for the initial 2x2 comparison and
-start each observation size from a fresh population. Start and resume menus
-expose both settings; CAGE2 validation asks for them explicitly.
+The completed 62/142 and fixed/evolved comparison is archived as prior
+experimental history. New work uses 62/fixed unless a legacy checkpoint is
+being reproduced. BES continues to accept 142 and evolved-order runs so those
+artifacts remain loadable, but the menus no longer present them as the primary
+path.
 
 Runs require finite learner and program limits. The Emacs defaults use hard
 ceilings of 32 learners per team and 256 instructions per program. Growth

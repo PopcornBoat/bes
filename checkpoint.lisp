@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 13
-  "Checkpoint version recording recurrent policy execution mode.")
+(defconstant +best-team-checkpoint-version+ 14
+  "Checkpoint version recording the local teacher/fixed-Decoy profile.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -56,12 +56,13 @@ A configuration keeps overwriting its own immediate-best file, while agent,
 observation/action shape, mode, and Hamming variants can coexist in one
 checkpoint directory."
   (format nil
-          "~A-~D-~D-~A-order-~A-opening-~A-hamming-~A-memory-~A.lisp"
+          "~A-~D-~D-~A-order-~A-teacher-~A-opening-~A-hamming-~A-memory-~A.lisp"
           (checkpoint-agent-type)
           *num-observations*
           *num-actions*
           (checkpoint-training-mode)
           (string-downcase (symbol-name *decoy-order-mode*))
+          (string-downcase (symbol-name *teacher-backend*))
           (string-downcase (symbol-name *cage2-opening-mode*))
           (if *hamming-space-enabled* "on" "off")
           (if *recurrent-policy-enabled* "recurrent" "stateless")))
@@ -78,7 +79,7 @@ checkpoint directory."
                            online-reference-episodes mixed-training-lineage
                            hamming-space-enabled hamming-dataset-fingerprint
                            num-observations decoy-order-mode cage2-opening-mode
-                           recurrent-policy-enabled)
+                           recurrent-policy-enabled teacher-backend)
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   `(:checkpoint-version ,+best-team-checkpoint-version+
     :fitness ,fitness
@@ -96,6 +97,7 @@ checkpoint directory."
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode
     :recurrent-policy-enabled ,recurrent-policy-enabled
+    :teacher-backend ,teacher-backend
     :hamming-space-enabled ,hamming-space-enabled
     :hamming-dataset-fingerprint ,hamming-dataset-fingerprint
     :team ,(serialize-team team (make-hash-table :test #'equal))))
@@ -115,7 +117,7 @@ checkpoint directory."
                                 hamming-space-enabled hamming-dataset-fingerprint
                                 num-observations decoy-order-mode
                                 cage2-opening-mode
-                                recurrent-policy-enabled)
+                                recurrent-policy-enabled teacher-backend)
   "Write TEAM, FITNESS, and provenance metadata to PATH."
   (ensure-directories-exist path)
 
@@ -145,6 +147,7 @@ checkpoint directory."
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
            :recurrent-policy-enabled recurrent-policy-enabled
+           :teacher-backend teacher-backend
            :hamming-space-enabled hamming-space-enabled
            :hamming-dataset-fingerprint hamming-dataset-fingerprint)
          :stream out))))
@@ -174,6 +177,7 @@ checkpoint directory."
     :decoy-order-mode *decoy-order-mode*
     :cage2-opening-mode *cage2-opening-mode*
     :recurrent-policy-enabled *recurrent-policy-enabled*
+    :teacher-backend *teacher-backend*
     :hamming-space-enabled *hamming-space-enabled*
     :hamming-dataset-fingerprint *current-hamming-dataset-fingerprint*
    :action-agreement-signature
@@ -231,7 +235,7 @@ return NIL for FITNESS and METADATA."
                            hamming-space-enabled hamming-dataset-fingerprint
                            num-observations decoy-order-mode
                            cage2-opening-mode
-                           recurrent-policy-enabled)
+                           recurrent-policy-enabled teacher-backend)
   "Add fitness metadata to a legacy best-team checkpoint.
 
 OUTPUT-PATH defaults to PATH.  Supplying a different path is recommended when
@@ -259,6 +263,7 @@ preserving the original legacy file."
      :cage2-opening-mode cage2-opening-mode
      :hamming-space-enabled hamming-space-enabled
      :recurrent-policy-enabled recurrent-policy-enabled
+     :teacher-backend teacher-backend
      :hamming-dataset-fingerprint hamming-dataset-fingerprint)
     (emit-message
      (format nil

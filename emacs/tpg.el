@@ -218,6 +218,11 @@ selected yet."
            ("dagger" :dagger)
            ("teacher" :teacher)
            (other (error "Invalid teacher-forcing rollout mode: %S" other))))
+        (teacher-backend
+         (pcase (transient-arg-value "--teacher-backend=" args)
+           ("model" :model)
+           ("heuristic" :heuristic)
+           (other (error "Invalid teacher backend: %S" other))))
         (population-size
          (string-to-number
           (transient-arg-value "*population-size=" args)))
@@ -291,6 +296,7 @@ selected yet."
       :decoy-order-mode ,decoy-order-mode
       :cage2-opening-mode ,cage2-opening-mode
       :teacher-forcing-rollout-mode ,teacher-forcing-rollout-mode
+      :teacher-backend ,teacher-backend
       :population-size ,population-size
       :init-num-learners ,init-num-learners
       :max-num-learners ,max-num-learners
@@ -416,7 +422,7 @@ selected yet."
             "*env=none"
            
             "*population-size=160"
-            "*num-observations=142"
+            "*num-observations=62"
             "*num-actions=11"
             "*init-num-learners=3"
             "*max-num-learners=32"
@@ -427,6 +433,7 @@ selected yet."
             "--decoy-order=fixed"
             "--opening=fixed"
             "--teacher-rollout=dagger"
+            "--teacher-backend=heuristic"
             "--mode=online")
   ["Island"
     ("-I" "Island" "--island="
@@ -452,6 +459,8 @@ selected yet."
     :choices ("fixed" "policy"))
    ("-T" "Teacher Rollout" "--teacher-rollout="
      :choices ("dagger" "teacher"))
+   ("-B" "Teacher Backend" "--teacher-backend="
+     :choices ("heuristic" "model"))
    ("-P" "Population Size" "*population-size=")
    ("-g" "Gap" "*gap=")
    ("-n" "Migration Interval" "*migration-interval=") 
@@ -548,7 +557,7 @@ selected yet."
           (string-to-number
            (read-string
             "Number of observations: "
-            "142")))
+            "62")))
 
          (num-actions
           (string-to-number
@@ -593,6 +602,17 @@ selected yet."
                   t
                   "dagger")))
              :dagger))
+
+         (teacher-backend
+           (intern
+            (concat
+             ":"
+             (completing-read
+              "Fixed Decoy profile / teacher backend: "
+              '("heuristic" "model")
+              nil
+              t
+              "heuristic"))))
 
          (population-size
           (string-to-number
@@ -732,6 +752,7 @@ selected yet."
             :decoy-order-mode ,decoy-order-mode
             :cage2-opening-mode ,cage2-opening-mode
             :teacher-forcing-rollout-mode ,teacher-forcing-rollout-mode
+            :teacher-backend ,teacher-backend
             :population-size ,population-size
 
             :init-num-learners ,init-num-learners
@@ -1209,8 +1230,8 @@ selected yet."
                (completing-read
                 "CAGE2 policy observations: "
                 '("62" "142")
-                nil t "142"))
-            142))
+                nil t "62"))
+            62))
          (decoy-order-mode
           (if (eq environment :cage2)
               (intern
@@ -1219,7 +1240,7 @@ selected yet."
                 (completing-read
                  "Decoy order: "
                  '("fixed" "evolved")
-                 nil t "evolved")))
+                 nil t "fixed")))
             :evolved))
          (cage2-opening-mode
           (if (eq environment :cage2)
@@ -1231,6 +1252,16 @@ selected yet."
                  '("fixed" "policy")
                  nil t "fixed")))
             :policy))
+         (teacher-backend
+          (if (eq environment :cage2)
+              (intern
+               (concat
+                ":"
+                (completing-read
+                 "Fixed Decoy profile / teacher backend: "
+                 '("heuristic" "model")
+                 nil t "heuristic")))
+            :model))
          (episodes
           (cond
            ((and (eq environment :cage2)
@@ -1252,6 +1283,7 @@ selected yet."
              :num-observations ,num-observations
              :decoy-order-mode ,decoy-order-mode
              :cage2-opening-mode ,cage2-opening-mode
+             :teacher-backend ,teacher-backend
              :recurrent-policy-enabled
              ,(if tpg-recurrent-registers-enabled :enabled :disabled)
              :hamming-space-enabled

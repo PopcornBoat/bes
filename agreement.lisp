@@ -14,6 +14,7 @@
   decoy-names
   decoy-bases
   decoy-orders
+  decoy-order-profiles
   source-path)
 
 (defvar *action-agreement* nil
@@ -78,6 +79,18 @@
            target-index (1- count) order))
   (coerce order 'simple-vector))
 
+(defun load-decoy-order-section (entries section target-count decoy-count)
+  "Load one named per-target Decoy-order profile."
+  (let ((orders (make-array target-count :initial-element nil)))
+    (loop for target from 1 below target-count
+          for values = (mapcar #'parse-integer
+                               (agreement-comma-list
+                                (agreement-value entries section
+                                                 (write-to-string target))))
+          do (setf (aref orders target)
+                   (validate-decoy-order values decoy-count target)))
+    orders))
+
 (defun load-action-agreement (path)
   "Load and validate PATH once into an ACTION-AGREEMENT structure."
   (let* ((source (truename path))
@@ -101,14 +114,12 @@
                 (unless (= (length parts) 2)
                   (error "Invalid decoy agreement value: ~A" value))
                 (list (first parts) (parse-integer (second parts)))))))
-         (orders (make-array target-count :initial-element nil)))
-    (loop for target from 1 below target-count
-          for values = (mapcar #'parse-integer
-                               (agreement-comma-list
-                                (agreement-value entries "decoy_order"
-                                                 (write-to-string target))))
-          do (setf (aref orders target)
-                   (validate-decoy-order values decoy-count target)))
+         (orders
+           (load-decoy-order-section
+            entries "decoy_order" target-count decoy-count))
+         (heuristic-orders
+           (load-decoy-order-section
+            entries "decoy_order_heuristic" target-count decoy-count)))
     (setf *action-agreement*
           (make-action-agreement
            :schema (agreement-value entries "agreement" "schema")
@@ -124,6 +135,9 @@
            :decoy-names (map 'simple-vector #'first decoy-pairs)
            :decoy-bases (map 'simple-vector #'second decoy-pairs)
            :decoy-orders orders
+           :decoy-order-profiles
+             (list (cons :model orders)
+                   (cons :heuristic heuristic-orders))
            :source-path (namestring source)))))
 
 (defun default-cage2-action-agreement-path ()
@@ -170,6 +184,16 @@
        (copy-action-option-orders
         (action-agreement-decoy-orders
          (ensure-cage2-action-agreement)))))
+
+(defun action-agreement-decoy-orders-for-backend
+       (&optional (backend *teacher-backend*)
+                  (agreement (ensure-cage2-action-agreement)))
+  "Return the fixed Decoy-order profile associated with BACKEND."
+  (or (cdr (assoc backend
+                  (action-agreement-decoy-order-profiles agreement)
+                  :test #'eq))
+      (error "No Decoy-order profile is defined for teacher backend ~S."
+             backend)))
 
 (defun first-available-decoy-option (target decoy-mask &optional option-orders)
   "Resolve TARGET's first available option using the shared agreement order."

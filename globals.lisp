@@ -27,7 +27,7 @@
 response fields. Legacy numeric atomic actions remain executable so historical
 checkpoints can be loaded and gradually mutated into the new representation.")
 
-(defparameter *decoy-order-mode* :evolved
+(defparameter *decoy-order-mode* :fixed
   "CAGE2 Decoy ordering mode. :FIXED always uses the teacher-derived agreement
 order; :EVOLVED uses each root team's serialized, mutable option orders.")
 
@@ -38,6 +38,11 @@ actions before consulting TPG; :POLICY lets TPG control the episode from step 0.
 (defparameter *teacher-forcing-rollout-mode* :dagger
   "Teacher-forcing state distribution. :TEACHER imitates only teacher-controlled
 trajectories; :DAGGER also labels states visited by the current best TPG policy.")
+
+(defparameter *teacher-backend* :model
+  "Local ranked teacher used by teacher forcing and its fixed Decoy profile.
+:MODEL preserves the packaged neural teacher; :HEURISTIC uses the deterministic
+BlueBLineHeuristicSimple-compatible teacher.")
 
 (defparameter *recurrent-policy-enabled* nil
   "When true, each learner keeps its own register vector for one episode.")
@@ -84,6 +89,10 @@ stateless.")
 (defun valid-teacher-forcing-rollout-mode-p (mode)
   "Return true for a supported teacher-forcing trajectory source."
   (member mode '(:teacher :dagger) :test #'eq))
+
+(defun valid-teacher-backend-p (backend)
+  "Return true for a packaged local teacher implementation."
+  (member backend '(:model :heuristic) :test #'eq))
 
 (defconstant +global-target+ 0
   "Target value representing the global Monitor action.")
