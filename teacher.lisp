@@ -28,13 +28,14 @@
     (loop for raw-row in row-list
           for index fixnum from 0
           for row = (teacher-sequence-list raw-row "row")
-          do (unless (member (length row) '(4 6))
-               (error "Teacher row must contain four or six fields, got ~S."
+          do (unless (member (length row) '(4 6 7))
+               (error "Teacher row must contain four, six, or seven fields, got ~S."
                       row))
              (destructuring-bind
                    (raw-observation raw-selected raw-ranking decoy-mask
-                    &optional episode-id step)
+                    &optional episode-id step priority)
                   row
+               (declare (ignore priority))
                (let* ((selected
                         (teacher-sequence-list raw-selected "selected action"))
                       (ranking
@@ -53,7 +54,7 @@
                    (error "Invalid teacher semantic ranking: ~S" ranking))
                  (unless (and (integerp decoy-mask) (not (minusp decoy-mask)))
                    (error "Invalid teacher Decoy mask: ~S" decoy-mask))
-                 (if (= (length row) 6)
+                 (if (>= (length row) 6)
                      (progn
                        (unless (and (integerp step) (not (minusp step)))
                          (error "Invalid teacher trace step: ~S" step))
@@ -193,7 +194,13 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
             "cage2_bridge.teacher.make_teacher_policy"
             (teacher-red-agent-name environment-name)
             (teacher-backend-python-name)))
-         (rows nil))
+         (rows nil)
+         (policy-steps 0)
+         (disagreements 0)
+         (teacher-absent 0)
+         (recoveries 0)
+         (first-disagreement-steps nil)
+         (total-reward 0.0d0))
     (cl-gym::configure-cage2-option-orders env behavior-team)
     (unwind-protect
          (dolist (episode-seed episode-seeds)
@@ -205,7 +212,10 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
               (py4cl2:pymethod teacher "reset")
               (let ((observation (cl-gym::reset env episode-seed))
                     (episode-id
-                      (list :dagger *generation* episode-seed)))
+                      (list :dagger *generation* episode-seed))
+                    (episode-reward 0.0d0)
+                    (first-disagreement nil)
+                    (awaiting-recovery nil))
                 (loop for timestep fixnum from 0
                       do (when (zerop (mod timestep 10))
                            (abort-search-if-requested))
@@ -226,12 +236,37 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
                                 (opening-action
                                   (cl-gym::cage2-fixed-opening-action
                                    environment-name timestep))
+                                (predictions
+                                  (and (not opening-action)
+                                       (execute-team-semantic-ranked
+                                        behavior-team
+                                        (policy-observation observation))))
+                                (predicted-pair
+                                  (and predictions
+                                       (resolve-semantic-ranking
+                                        predictions decoy-mask
+                                        (effective-team-option-orders
+                                         behavior-team))))
+                                (teacher-rank
+                                  (and predictions
+                                       (position selected predictions
+                                                 :test #'equal
+                                                 :key #'semantic-action-category-pair)))
+                                (disagreement-p
+                                  (and predicted-pair
+                                       (not (equal predicted-pair selected))))
+                                (priority
+                                  (if disagreement-p
+                                      (+ 8.0d0
+                                         (if teacher-rank
+                                             (/ 8.0d0 (+ teacher-rank 1.0d0))
+                                             8.0d0)
+                                         (/ 10.0d0 (+ timestep 10.0d0)))
+                                      1.0d0))
                                 (action
                                   (or opening-action
-                                      (cl-gym::execute-policy-action
-                                       behavior-team
-                                       observation
-                                       environment-name))))
+                                      (cl-gym::semantic-ranking->cage2-input
+                                       predictions))))
                            ;; Only policy-owned states enter imitation fitness.
                            ;; Metadata keeps each recurrent episode intact.
                            (unless opening-action
@@ -241,62 +276,125 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
                                     (copy-tree ranking)
                                     decoy-mask
                                     episode-id
-                                    timestep)
+                                    timestep
+                                    priority)
                               rows))
+                           (unless opening-action
+                             (incf policy-steps)
+                             (cond
+                               (disagreement-p
+                                (incf disagreements)
+                                (unless first-disagreement
+                                  (setf first-disagreement timestep)
+                                  (push timestep first-disagreement-steps))
+                                (setf awaiting-recovery t)
+                                (unless teacher-rank
+                                  (incf teacher-absent)))
+                               (awaiting-recovery
+                                (incf recoveries)
+                                (setf awaiting-recovery nil))))
                            (multiple-value-bind
                                  (next-observation reward terminated truncated info)
                                (cl-gym::step env action)
-                             (declare (ignore reward info))
+                             (declare (ignore info))
+                             (incf episode-reward
+                                   (coerce reward 'double-float))
                              (setf observation next-observation)
                              (when (or terminated truncated)
+                               (incf total-reward episode-reward)
                                (return)))))))))
       (ignore-errors (py4cl2:pymethod env "close")))
+    (setf *last-dagger-diagnostics*
+          (list :episodes (length episode-seeds)
+                :policy-steps policy-steps
+                :disagreements disagreements
+                :disagreement-rate
+                  (if (plusp policy-steps)
+                      (/ disagreements (coerce policy-steps 'double-float))
+                      0.0d0)
+                :first-disagreement-mean
+                  (and first-disagreement-steps
+                       (/ (reduce #'+ first-disagreement-steps)
+                          (coerce (length first-disagreement-steps)
+                                  'double-float)))
+                :teacher-absent-top-8 teacher-absent
+                :recoveries recoveries
+                :mean-behavior-return
+                  (/ total-reward
+                     (coerce (max 1 (length episode-seeds)) 'double-float))))
     (nreverse rows)))
 
 (defun compact-teacher-dagger-row (row)
   "Copy one DAgger ROW into replay's compact, independently owned form."
   (destructuring-bind
         (observation selected ranking decoy-mask
-         &optional episode-id step)
+         &optional episode-id step (priority 1.0d0))
       row
     (list (cl-gym:obs->array observation)
           (copy-list selected)
           (copy-tree ranking)
           decoy-mask
           episode-id
-          step)))
+          step
+          (coerce priority 'double-float))))
+
+(defun teacher-dagger-row-priority (row)
+  "Return ROW's disagreement-derived priority, defaulting to one."
+  (if (>= (length row) 7)
+      (seventh row)
+      1.0d0))
+
+(defun prioritized-dagger-sample (entries count row-fn)
+  "Take high-priority and exploratory replay ENTRIES without replacement."
+  (let* ((ordered (stable-sort (copy-list entries) #'>
+                               :key (lambda (entry)
+                                      (teacher-dagger-row-priority
+                                       (funcall row-fn entry)))))
+         (size (length ordered))
+         (sample-size (min count size))
+         (elite-count
+           (min sample-size
+                (ceiling (* sample-size
+                            +teacher-dagger-priority-top-fraction+))))
+         (elite (subseq ordered 0 elite-count))
+         (remainder (coerce (nthcdr elite-count ordered) 'vector)))
+    (loop for index below (- sample-size elite-count)
+          for selected-index =
+            (+ index (random (- (length remainder) index)
+                             *teacher-dagger-random-state*))
+          do (rotatef (aref remainder index) (aref remainder selected-index))
+          finally (return
+                    (append elite
+                            (loop for index below (- sample-size elite-count)
+                                  collect (aref remainder index)))))))
 
 (defun append-teacher-dagger-replay (rows)
-  "Append ROWS and keep only the newest bounded DAgger replay entries."
+  "Append ROWS and retain the strongest bounded disagreement examples."
   (let* ((compact-rows (mapcar #'compact-teacher-dagger-row rows))
          (combined (nconc *teacher-dagger-replay-rows* compact-rows))
          (excess (- (length combined) +teacher-dagger-replay-capacity+)))
     (setf *teacher-dagger-replay-rows*
           (if (plusp excess)
-              (nthcdr excess combined)
+              (subseq (stable-sort combined #'>
+                                   :key #'teacher-dagger-row-priority)
+                      0 +teacher-dagger-replay-capacity+)
               combined))))
 
 (defun sample-teacher-dagger-replay (count)
   "Sample at most COUNT replay rows without replacement."
-  (let* ((rows (coerce *teacher-dagger-replay-rows* 'vector))
-         (size (length rows))
-         (sample-size (min count size)))
+  (let ((sample-size (min count (length *teacher-dagger-replay-rows*))))
     (unless *teacher-dagger-random-state*
       (error "DAgger replay random state is not configured."))
-    (loop for index fixnum below sample-size
-          for selected-index =
-            (+ index
-               (random (- size index) *teacher-dagger-random-state*))
-          do (rotatef (aref rows index) (aref rows selected-index))
-          collect (aref rows index))))
+    (prioritized-dagger-sample
+     *teacher-dagger-replay-rows* sample-size #'identity)))
 
 (defun teacher-rows-to-episodes (rows)
-  "Group adjacent six-field teacher ROWS into complete episode lists."
+  "Group adjacent metadata-bearing teacher ROWS into complete episode lists."
   (let ((episodes nil)
         (current nil)
         (current-id :none))
     (dolist (row rows)
-      (unless (= (length row) 6)
+      (unless (>= (length row) 6)
         (error "Recurrent teacher row lacks episode metadata: ~S" row))
       (let ((episode-id (fifth row)))
         (unless (equal episode-id current-id)
@@ -309,6 +407,11 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
       (push (nreverse current) episodes))
     (nreverse episodes)))
 
+(defun teacher-dagger-episode-priority (episode)
+  "Return the largest disagreement priority in EPISODE."
+  (reduce #'max episode :key #'teacher-dagger-row-priority
+                         :initial-value 1.0d0))
+
 (defun append-teacher-dagger-replay-episodes (rows)
   "Append complete DAgger episodes and enforce the row cap at boundaries."
   (let* ((episodes
@@ -317,32 +420,36 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
               (mapcar #'compact-teacher-dagger-row episode))
             (teacher-rows-to-episodes rows)))
          (combined
-           (nconc *teacher-dagger-replay-episodes* episodes))
-         (row-count
-           (loop for episode in combined sum (length episode))))
-    (loop while (and combined
-                     (> row-count +teacher-dagger-replay-capacity+))
-          do (decf row-count (length (first combined)))
-             (setf combined (rest combined)))
-    (setf *teacher-dagger-replay-episodes* combined)))
+           (stable-sort
+            (nconc *teacher-dagger-replay-episodes* episodes)
+            #'> :key #'teacher-dagger-episode-priority))
+         (kept nil)
+         (row-count 0))
+    (dolist (episode combined)
+      (when (or (null kept)
+                (<= (+ row-count (length episode))
+                    +teacher-dagger-replay-capacity+))
+        (push episode kept)
+        (incf row-count (length episode))))
+    (setf *teacher-dagger-replay-episodes* (nreverse kept))))
 
 (defun sample-teacher-dagger-replay-episodes (row-budget)
   "Sample complete replay episodes without exceeding their sequence context."
   (unless *teacher-dagger-random-state*
     (error "DAgger replay random state is not configured."))
-  (let* ((episodes (coerce *teacher-dagger-replay-episodes* 'vector))
-         (size (length episodes))
+  (let* ((episodes
+           (prioritized-dagger-sample
+            *teacher-dagger-replay-episodes*
+            (length *teacher-dagger-replay-episodes*)
+            (lambda (episode)
+              (first (sort (copy-list episode) #'>
+                           :key #'teacher-dagger-row-priority)))))
          (selected nil)
          (selected-rows 0))
-    (loop for position fixnum below size
+    (loop for episode in episodes
           while (< selected-rows row-budget)
-          for selected-index =
-            (+ position
-               (random (- size position) *teacher-dagger-random-state*))
-          do (rotatef (aref episodes position)
-                      (aref episodes selected-index))
-             (push (aref episodes position) selected)
-             (incf selected-rows (length (aref episodes position))))
+          do (push episode selected)
+             (incf selected-rows (length episode)))
     (loop for episode in (nreverse selected)
           append episode)))
 
@@ -353,7 +460,8 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
     (loop repeat +teacher-reference-episodes+
           collect (random 9999999))))
 
-(defun configure-teacher-forcing-fitness (environment-name)
+(defun configure-teacher-forcing-fitness
+       (environment-name &optional reference-seeds)
   "Configure ranked imitation and build the fixed teacher reference bank."
   (unless (= *num-actions* +num-semantic-targets+)
     (error "Teacher forcing requires ~D semantic targets, got ~S."
@@ -387,6 +495,7 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
         *teacher-reference-dataset* nil
         *teacher-dagger-replay-rows* nil
         *teacher-dagger-replay-episodes* nil
+        *last-dagger-diagnostics* nil
         *teacher-dagger-random-state*
           (sb-ext:seed-random-state
            (+ *current-search-seed* 32452843)))
@@ -394,7 +503,8 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
   (emit-message
    (format nil
            "Teacher reference generation started: episodes=~D environment=~A backend=~A opening=~A rollout=~A memory=~A~A"
-           +teacher-reference-episodes+
+           (length (or reference-seeds
+                       (make-teacher-reference-seeds)))
            environment-name
            *teacher-backend*
            *cage2-opening-mode*
@@ -406,7 +516,7 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
   (setf *teacher-reference-dataset*
         (generate-teacher-trace-dataset
          environment-name
-         (make-teacher-reference-seeds)))
+         (or reference-seeds (make-teacher-reference-seeds))))
   (when *recurrent-policy-enabled*
     (ensure-recurrent-dataset-compatible
      *teacher-reference-dataset* "Recurrent teacher reference dataset"))
@@ -438,7 +548,10 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
 (defun prepare-teacher-training-dataset ()
   "Build one shared teacher-labelled fitness dataset for this generation."
   (maybe-collect-teacher-dagger-garbage)
-  (let ((seeds (make-online-fitness-episode-seeds)))
+  (let ((seeds
+          (or *online-fitness-episode-seeds*
+              (setf *online-fitness-episode-seeds*
+                    (make-online-fitness-episode-seeds)))))
     (emit-message
      (format nil
              "Generation ~D teacher trace generation started: episodes=~D"
@@ -481,6 +594,21 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
                              (if *recurrent-policy-enabled*
                                  :recurrent
                                  :stateless)))
+                    (emit-message
+                     (format nil
+                             "Generation ~D DAgger diagnostics: disagreement=~,2F%% first=~A absent-top8=~D recoveries=~D behavior-return=~,3F"
+                             *generation*
+                             (* 100.0d0
+                                (getf *last-dagger-diagnostics*
+                                      :disagreement-rate 0.0d0))
+                             (or (getf *last-dagger-diagnostics*
+                                       :first-disagreement-mean)
+                                 :none)
+                             (getf *last-dagger-diagnostics*
+                                   :teacher-absent-top-8 0)
+                             (getf *last-dagger-diagnostics* :recoveries 0)
+                             (getf *last-dagger-diagnostics*
+                                   :mean-behavior-return 0.0d0)))
                     (teacher-trace-to-dataset
                      (append teacher-rows replay-sample)))))))
     (when *recurrent-policy-enabled*

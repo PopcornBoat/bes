@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 14
-  "Checkpoint version recording the local teacher/fixed-Decoy profile.")
+(defconstant +best-team-checkpoint-version+ 15
+  "Checkpoint version recording hybrid prioritized-DAgger/twin provenance.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -37,6 +37,10 @@
 (defun checkpoint-training-mode ()
   "Return the active search mode as a filename component."
   (cond
+    ((eq *current-search-mode* :hybrid) "hybrid")
+    ((and (eq *current-search-mode* :online)
+          (digital-twin-environment-p *current-gym-environment-name*))
+     "digital-twin")
     ((and (eq *current-search-mode* :online) *mixed-training-lineage*)
      "mix")
     ((eq *current-search-mode* :teacher-forcing)
@@ -170,8 +174,14 @@ checkpoint directory."
    :dataset-name *current-dataset-name*
     :dataset-fingerprint *current-dataset-fingerprint*
     :online-reference-episodes
-      (and (eq *current-search-mode* :online)
-           +cage2-online-reference-episodes+)
+      (cond
+        ((eq *current-search-mode* :hybrid)
+         (* (length +hybrid-reference-root-seeds+)
+            +digital-twin-reference-episodes+))
+        ((eq *current-search-mode* :online)
+         (if (digital-twin-environment-p *current-gym-environment-name*)
+             +digital-twin-reference-episodes+
+             +cage2-online-reference-episodes+)))
     :mixed-training-lineage *mixed-training-lineage*
     :num-observations *num-observations*
     :decoy-order-mode *decoy-order-mode*
@@ -184,8 +194,12 @@ checkpoint directory."
      (and *factored-actions-enabled* (action-agreement-signature))
    :fitness-evaluation-protocol
    (cond
+     ((eq *current-search-mode* :hybrid)
+      (hybrid-fitness-protocol))
      ((eq *current-search-mode* :teacher-forcing)
       (teacher-forcing-fitness-protocol))
+     ((digital-twin-environment-p *current-gym-environment-name*)
+      +digital-twin-fitness-protocol+)
      ((cl-gym:cage2-environment-p *current-gym-environment-name*)
       +cage2-online-fitness-protocol+)
      (*offline-reference-dataset*

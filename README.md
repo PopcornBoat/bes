@@ -619,6 +619,63 @@ Future work includes:
 - Additional cyber defence environments
 - Continued synchronization with upstream **cl-tpg**
 
+## CAGE2 digital-twin phase two
+
+Phase-two online search can run against the five-member learned CAGE2 dynamics
+ensemble registered by `cage2-digital-twin`. Every candidate receives the same
+episode seed on each member. Its selection fitness is the mean member return
+minus one population standard deviation, which discourages policies that exploit
+one model's errors. Historical-best promotion uses a separate fixed bank of ten
+seeds per member and a paired standard-error guard.
+
+Set `CAGE2_DT_CHECKPOINT_DIR` to the completed `bline-gru-v2` run, set
+`CAGE2_PHASE2_WARMSTART` to a compatible 62-observation TPG checkpoint, then
+load `scripts/start-dt-online.lisp`. Digital-twin checkpoints are written under
+the independent `digital-twin` filename so they cannot overwrite official
+online or mixed-lineage checkpoints. A checkpoint transferred into this phase
+is always re-baselined under the twin protocol. The supplied launcher uses an
+80-team pilot population because policy execution crosses the Lisp/Python
+boundary at every simulated step; this can be increased after measuring local
+generation time.
+
+## Hybrid prioritized DAgger and digital-twin search
+
+The `hybrid` search mode keeps the official local model teacher as the source
+of ranked labels while using the five-member learned twin for closed-loop
+trajectory evidence. The teacher trace, learner-controlled DAgger rollout, and
+twin evaluation share the same per-generation seed bank. All candidates are
+scored on ranked imitation. The best imitation candidates plus an exploratory
+sample (25% of the population in total, with 20% of those slots reserved fo
+non-elites) are also rolled out on every twin member.
+
+The conservative twin reward is
+
+```text
+R_lcb = mean(member returns) - stddev(member returns)
+S_return = exp(min(0, R_lcb) / 100)
+fitness = w_imitation * ranked_imitation + w_return * S_return
+```
+
+The weights are `(0.8, 0.2)` through generation 200, `(0.5, 0.5)` through
+generation 500, and `(0.2, 0.8)` afterward. Candidates not selected for the
+twin receive a conservative zero return component. Historical-best comparison
+always uses the final `(0.2, 0.8)` objective so scores remain comparable across
+stage changes and resume. Its fixed multi-root bank is derived independently
+from roots 153, 42, and 2026, and hybrid checkpoints have their own protocol
+and filename.
+
+DAgger replay is no longer purely uniform. Disagreements, early divergence,
+and cases where the teacher action is absent from the TPG top-eight ranking are
+prioritized, while half of each replay sample remains exploratory. Generation
+logs report disagreement rate, mean first-disagreement step, teacher top-eight
+absence, recovery count, and learner rollout return.
+
+Select `hybrid` in the Emacs search menu with `Cage2-b_line-100-v0`, fixed
+Decoy order, DAgger rollout, and the model teacher. Stateless policy execution
+is the recommended first controlled run; recurrent mode remains supported as a
+separate checkpoint protocol. Online validation resets recurrent registers at
+the start of each episode and preserves them across steps within that episode.
+
 ---
 
 # Acknowledgements

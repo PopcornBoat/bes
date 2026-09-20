@@ -446,6 +446,164 @@ Any other launch value remains fixed for controlled comparison runs."
          collect
          (cl-gym:rollout team gym-environment-name episode-seed))))
 
+(defun digital-twin-member-environment-name (environment-name member-index)
+  "Return the fixed-member Gym ID derived from aggregate ENVIRONMENT-NAME."
+  (unless (digital-twin-environment-p environment-name)
+    (error "Not a digital-twin environment: ~S" environment-name))
+  (let ((suffix "-v0"))
+    (unless (and (>= (length environment-name) (length suffix))
+                 (string= suffix environment-name
+                          :start2 (- (length environment-name)
+                                     (length suffix))))
+      (error "Digital-twin environment must end in ~A: ~S"
+             suffix environment-name))
+    (format nil "~A-m~D~A"
+            (subseq environment-name 0
+                    (- (length environment-name) (length suffix)))
+            member-index suffix)))
+
+(defun population-standard-deviation (values)
+  "Return the population standard deviation of numeric VALUES."
+  (if (< (length values) 2)
+      0.0d0
+      (let* ((mean (arithmetic-mean values))
+             (variance
+               (/ (loop for value in values
+                        for delta = (- (coerce value 'double-float) mean)
+                        sum (* delta delta) into total
+                        finally (return (coerce total 'double-float)))
+                  (coerce (length values) 'double-float))))
+        (sqrt variance))))
+
+(defun digital-twin-fitness-on-seeds
+       (team gym-environment-name episode-seeds)
+  "Return ensemble mean minus one member standard deviation."
+  (let* ((member-means
+           (loop for member-index below +digital-twin-ensemble-size+
+                 collect
+                 (cage2-fitness-on-seeds
+                  team
+                  (digital-twin-member-environment-name
+                   gym-environment-name member-index)
+                  episode-seeds)))
+         (ensemble-mean (arithmetic-mean member-means))
+         (ensemble-standard-deviation
+           (population-standard-deviation member-means))
+         (fitness
+           (- ensemble-mean
+              (* +digital-twin-uncertainty-penalty+
+                 ensemble-standard-deviation))))
+    (values fitness member-means ensemble-mean ensemble-standard-deviation)))
+
+(defun digital-twin-reference-evaluation (team gym-environment-name)
+  "Evaluate TEAM on the protected fixed seed bank across all twin members."
+  (digital-twin-fitness-on-seeds
+   team gym-environment-name
+   (make-online-fitness-episode-seeds
+    +cage2-evaluation-seed+ +digital-twin-reference-episodes+)))
+
+(defun hybrid-digital-twin-environment-name (official-environment-name)
+  "Return the learned-twin Gym ID corresponding to the official B-Line env."
+  (unless (search "Cage2-b_line-100" official-environment-name)
+    (error "Hybrid mode currently supports Cage2-b_line-100 only, got ~S."
+           official-environment-name))
+  "Cage2Twin-b_line-100-v0")
+
+(defun hybrid-fitness-weights (&optional (generation *generation*))
+  "Return imitation and return weights for GENERATION."
+  (loop with selected = (first +hybrid-fitness-schedule+)
+        for stage in +hybrid-fitness-schedule+
+        when (>= generation (first stage)) do (setf selected stage)
+        finally (return (values (second selected) (third selected)))))
+
+(defun normalized-cage2-return (reward)
+  "Map non-positive CAGE2 reward monotonically into [0,1]."
+  (min 1.0d0
+       (max 0.0d0
+            (exp (/ (min 0.0d0 (coerce reward 'double-float))
+                    +hybrid-return-scale+)))))
+
+(defun make-hybrid-reference-seeds ()
+  "Return a deterministic seed bank spanning all protected root seeds."
+  (loop for root in +hybrid-reference-root-seeds+
+        append (make-online-fitness-episode-seeds
+                root +digital-twin-reference-episodes+)))
+
+(defun hybrid-reference-combined-fitness (imitation return-score)
+  "Combine reference components with the stable final-stage objective.
+
+Training weights change by generation, but historical-best scores must remain
+comparable across stage boundaries and after resume."
+  (multiple-value-bind (imitation-weight return-weight)
+      (hybrid-fitness-weights most-positive-fixnum)
+    (+ (* imitation-weight imitation)
+       (* return-weight return-score))))
+
+(defun hybrid-evaluation-entry-p (entry selected-teams)
+  (member (car entry) selected-teams :test #'eq))
+
+(defun select-hybrid-dt-teams (results)
+  "Select imitation elites plus random exploration candidates for the twin."
+  (let* ((ordered (sort (copy-list results) #'> :key #'cdr))
+         (count (max 1 (ceiling (* (length ordered)
+                                   +hybrid-dt-candidate-fraction+))))
+         (explore-count
+           (min (1- count)
+                (floor (* count +hybrid-dt-exploration-fraction+))))
+         (elite-count (- count explore-count))
+         (selected (mapcar #'car (subseq ordered 0 elite-count)))
+         (remainder (coerce (nthcdr elite-count ordered) 'vector)))
+    (loop for index below (min explore-count (length remainder))
+          for selected-index =
+            (+ index (random (- (length remainder) index)))
+          do (rotatef (aref remainder index) (aref remainder selected-index))
+             (push (car (aref remainder index)) selected))
+    selected))
+
+(defun apply-hybrid-dt-fitness (results)
+  "Add closed-loop twin evidence to a bounded subset of imitation results."
+  (let* ((selected (select-hybrid-dt-teams results))
+         (seeds *online-fitness-episode-seeds*)
+         (twin-name
+           (hybrid-digital-twin-environment-name
+            *current-gym-environment-name*))
+         (components nil)
+         (updates nil))
+    (multiple-value-bind (imitation-weight return-weight)
+        (hybrid-fitness-weights)
+      (dolist (entry results)
+        (let ((imitation (coerce (cdr entry) 'double-float)))
+          (if (hybrid-evaluation-entry-p entry selected)
+              (multiple-value-bind (raw-return member-means ensemble-mean spread)
+                  (digital-twin-fitness-on-seeds
+                   (car entry) twin-name seeds)
+                (let ((return-score (normalized-cage2-return raw-return)))
+                  (push (cons entry
+                              (+ (* imitation-weight imitation)
+                                 (* return-weight return-score)))
+                        updates)
+                  (push (list :team (team-id (car entry))
+                              :imitation imitation
+                              :dt-lcb raw-return
+                              :dt-score return-score
+                              :member-means member-means
+                              :ensemble-mean ensemble-mean
+                              :spread spread)
+                        components)))
+              ;; Unevaluated candidates receive a conservative zero return term.
+              (push (cons entry (* imitation-weight imitation)) updates))))
+      ;; Publish only after all selected twin rollouts succeed. A Python error
+      ;; therefore cannot leave a partially converted population.
+      (dolist (update updates)
+        (setf (cdr (car update)) (cdr update)))
+      (setf *hybrid-last-components* (nreverse components))
+      (emit-message
+       (format nil
+               "Generation ~D hybrid fitness: selected=~D/~D weights=~,2F imitation + ~,2F return seeds=~D."
+               *generation* (length selected) (length results)
+               imitation-weight return-weight (length seeds))))
+    results))
+
 (defun cage2-reference-scores (team gym-environment-name)
   "Return TEAM rewards on the protected fixed 100-episode seed bank."
   (let ((seeds
@@ -891,12 +1049,13 @@ reference batch."
     (error "*ONLINE-FITNESS-EPISODES* must be a positive integer."))
 
   (if (cl-gym:cage2-environment-p gym-environment-name)
-      (cage2-fitness-on-seeds
-       team
-       gym-environment-name
-       (or *online-fitness-episode-seeds*
-           (setf *online-fitness-episode-seeds*
-                 (make-online-fitness-episode-seeds))))
+      (let ((seeds
+              (or *online-fitness-episode-seeds*
+                  (setf *online-fitness-episode-seeds*
+                        (make-online-fitness-episode-seeds)))))
+        (if (digital-twin-environment-p gym-environment-name)
+            (digital-twin-fitness-on-seeds team gym-environment-name seeds)
+            (cage2-fitness-on-seeds team gym-environment-name seeds)))
       (arithmetic-mean
        (loop repeat *online-fitness-episodes*
              do (abort-search-if-requested)
@@ -988,7 +1147,23 @@ reference batch."
     (:offline
      (make-fitness-function :dataset-name dataset-name))
     (:teacher-forcing
-     (configure-teacher-forcing-fitness gym-environment-name))))
+     (configure-teacher-forcing-fitness gym-environment-name))
+    (:hybrid
+     (unless (eq *teacher-forcing-rollout-mode* :dagger)
+       (error "Hybrid mode requires DAgger rollout mode."))
+     (unless (eq *teacher-backend* :model)
+       (error "Hybrid mode currently requires the packaged model teacher."))
+     (setf *hybrid-reference-seeds* (make-hybrid-reference-seeds))
+     ;; Hybrid historical selection compares imitation and closed-loop return
+     ;; on the same multi-root episodes.
+     (configure-teacher-forcing-fitness
+      gym-environment-name *hybrid-reference-seeds*)
+     (emit-message
+      (format nil
+              "Hybrid reference ready: roots=~S episodes=~D rows=~D."
+              +hybrid-reference-root-seeds+
+              (length *hybrid-reference-seeds*)
+              (dataset-size *teacher-reference-dataset*))))))
 
 (defun safe-evaluate-team (team)
   (cons team
@@ -1013,7 +1188,7 @@ reference batch."
   (setf *online-fitness-episode-seeds* nil
         *offline-fitness-batch-indices* nil
         *offline-fitness-batch-episode-indices* nil)
-  (when (eq *current-search-mode* :teacher-forcing)
+  (when (member *current-search-mode* '(:teacher-forcing :hybrid) :test #'eq)
     (setf *teacher-training-dataset* nil)
     (prepare-teacher-training-dataset))
   (let* ((results
@@ -1025,6 +1200,10 @@ reference batch."
                           when (eq fitness :bad)
                             collect team))
          (good-results (remove :bad results :key #'cdr)))
+    (when (and (eq *current-search-mode* :hybrid) good-results)
+      ;; A missing or failed twin is a configuration/runtime error. Do not
+      ;; silently continue under a different imitation-only objective.
+      (apply-hybrid-dt-fitness good-results))
     ;; Do mutation/deletion serially.
     (dolist (team bad-teams)
       (delete-team team))
@@ -1034,6 +1213,8 @@ reference batch."
   "Return TEAM's comparable historical score for the active fitness protocol."
   (let ((reference-kind
           (cond
+            ((eq *current-search-mode* :hybrid)
+             :hybrid)
             ((eq *current-search-mode* :teacher-forcing)
              :teacher-forcing)
             ((and *current-gym-environment-name*
@@ -1051,14 +1232,43 @@ reference batch."
                    *generation* reference-kind))
           (multiple-value-bind (result detail)
               (ecase reference-kind
+                (:hybrid
+                 (let* ((imitation
+                          (teacher-forcing-reference-fitness team))
+                        (seeds
+                          (or *hybrid-reference-seeds*
+                              (setf *hybrid-reference-seeds*
+                                    (make-hybrid-reference-seeds))))
+                        (twin-name
+                          (hybrid-digital-twin-environment-name
+                           *current-gym-environment-name*)))
+                   (multiple-value-bind
+                         (raw-return member-means ensemble-mean spread)
+                       (digital-twin-fitness-on-seeds team twin-name seeds)
+                     (let ((return-score
+                             (normalized-cage2-return raw-return)))
+                       (values
+                        (hybrid-reference-combined-fitness
+                         imitation return-score)
+                        (list :imitation imitation
+                              :dt-lcb raw-return
+                              :dt-score return-score
+                              :member-means member-means
+                              :ensemble-mean ensemble-mean
+                              :spread spread
+                              :seeds (copy-list seeds)))))))
                 (:teacher-forcing
                  (values (teacher-forcing-reference-fitness team) nil))
                 (:cage2
-                 (let ((scores
-                         (cage2-reference-scores
-                          team
-                          *current-gym-environment-name*)))
-                   (values (arithmetic-mean scores) scores)))
+                 (if (digital-twin-environment-p
+                      *current-gym-environment-name*)
+                     (digital-twin-reference-evaluation
+                      team *current-gym-environment-name*)
+                     (let ((scores
+                             (cage2-reference-scores
+                              team
+                              *current-gym-environment-name*)))
+                       (values (arithmetic-mean scores) scores))))
                 (:offline
                  (values (semantic-offline-reference-fitness team) nil)))
             (emit-message
@@ -1401,11 +1611,26 @@ the same train/reference file fingerprint."
                    (equal saved-hamming-fingerprint
                           *current-hamming-dataset-fingerprint*))
                (cond
+                ((eq *current-search-mode* :hybrid)
+                 (and (or (null saved-episodes)
+                          (= saved-episodes *online-fitness-episodes*))
+                      (eq saved-protocol (hybrid-fitness-protocol))
+                      (= (or saved-online-reference-episodes 0)
+                         (* (length +hybrid-reference-root-seeds+)
+                            +digital-twin-reference-episodes+))
+                      (equal saved-agreement-signature
+                             (action-agreement-signature))))
                 ((eq *current-search-mode* :teacher-forcing)
                  (and (or (null saved-episodes)
                           (= saved-episodes *online-fitness-episodes*))
                       (eq saved-protocol
                           (teacher-forcing-fitness-protocol))
+                      (equal saved-agreement-signature
+                             (action-agreement-signature))))
+                ((digital-twin-environment-p gym-environment-name)
+                 (and (eq saved-protocol +digital-twin-fitness-protocol+)
+                      (= (or saved-online-reference-episodes 0)
+                         +digital-twin-reference-episodes+)
                       (equal saved-agreement-signature
                              (action-agreement-signature))))
                 ((cl-gym:cage2-environment-p gym-environment-name)
@@ -1576,7 +1801,9 @@ normal evolution."
                          (list +teacher-forcing-teacher-protocol+
                               +teacher-forcing-dagger-protocol+
                               +teacher-forcing-recurrent-teacher-protocol+
-                              +teacher-forcing-recurrent-dagger-protocol+)
+                              +teacher-forcing-recurrent-dagger-protocol+
+                              +hybrid-fitness-protocol+
+                              +hybrid-recurrent-fitness-protocol+)
                         :test #'eq))))
 
         (let ((comparable-fitness

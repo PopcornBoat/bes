@@ -129,6 +129,54 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
 (defconstant +cage2-online-promotion-standard-errors+ 1.0d0
   "Required paired standard-error margin for online best-team promotion.")
 
+(defconstant +digital-twin-ensemble-size+ 5
+  "Number of independently trained dynamics models in the CAGE2 twin.")
+
+(defconstant +digital-twin-uncertainty-penalty+ 1.0d0
+  "Standard-deviation penalty applied to digital-twin ensemble returns.")
+
+(defconstant +digital-twin-reference-episodes+ 10
+  "Fixed seed count evaluated on every twin member for best-team promotion.")
+
+(defconstant +digital-twin-fitness-protocol+
+  :digital-twin-five-member-lower-confidence-bound-v1
+  "Version tag for conservative five-member digital-twin fitness.")
+
+(defun digital-twin-environment-p (environment-name)
+  "Return true when ENVIRONMENT-NAME identifies the learned CAGE2 twin."
+  (and (stringp environment-name)
+       (search "Cage2Twin" environment-name)))
+
+(defparameter +hybrid-reference-root-seeds+ '(153 42 2026)
+  "Independent roots protecting hybrid historical-best selection.")
+
+(defconstant +hybrid-dt-candidate-fraction+ 0.25d0
+  "Population fraction receiving expensive closed-loop twin evaluation.")
+
+(defconstant +hybrid-dt-exploration-fraction+ 0.20d0
+  "Twin slots reserved for non-elite imitation candidates.")
+
+(defconstant +hybrid-return-scale+ 100.0d0
+  "Reward scale used to map non-positive CAGE2 returns into [0,1].")
+
+(defparameter +hybrid-fitness-schedule+
+  '((1 0.8d0 0.2d0) (201 0.5d0 0.5d0) (501 0.2d0 0.8d0))
+  "Generation stages as (start imitation-weight return-weight).")
+
+(defconstant +hybrid-fitness-protocol+
+  :prioritized-dagger-dt-closed-loop-v1
+  "Version tag for stateless prioritized DAgger plus twin return fitness.")
+
+(defconstant +hybrid-recurrent-fitness-protocol+
+  :prioritized-recurrent-dagger-dt-closed-loop-v1
+  "Version tag for recurrent prioritized DAgger plus twin return fitness.")
+
+(defun hybrid-fitness-protocol ()
+  "Return the hybrid protocol matching the current memory mode."
+  (if *recurrent-policy-enabled*
+      +hybrid-recurrent-fitness-protocol+
+      +hybrid-fitness-protocol+))
+
 (defconstant +online-candidate-evaluation-interval+ 10
   "Generations accumulated before submitting one online generation-best
 candidate to the independent reference evaluator.")
@@ -225,6 +273,9 @@ candidate to the independent reference evaluator.")
 (defconstant +teacher-dagger-full-gc-interval+ 25
   "Generations between full collections of retired DAgger trace storage.")
 
+(defconstant +teacher-dagger-priority-top-fraction+ 0.5d0
+  "Replay fraction taken from the highest-priority DAgger examples.")
+
 (defconstant +hamming-raw-mismatch-weight+ 40
   "Integer weight for one raw-observation mismatch.")
 
@@ -262,7 +313,7 @@ search and turn this flag back on.")
   "Gym environment used by the current search, recorded in checkpoints.")
 
 (defvar *current-search-mode* nil
-  "Active search mode: :ONLINE, :OFFLINE, or :TEACHER-FORCING.")
+  "Active mode: :ONLINE, :OFFLINE, :TEACHER-FORCING, or :HYBRID.")
 
 (defvar *current-search-seed* nil
   "Resolved integer seed used by the current search, recorded in checkpoints.")
@@ -394,6 +445,15 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 
 (defvar *teacher-dagger-random-state* nil
   "Private random state used only to sample DAgger replay rows.")
+
+(defvar *last-dagger-diagnostics* nil
+  "Aggregate diagnostics for the latest learner-controlled DAgger traces.")
+
+(defvar *hybrid-last-components* nil
+  "Latest per-candidate imitation and twin-return fitness components.")
+
+(defvar *hybrid-reference-seeds* nil
+  "Fixed multi-root seed bank used by hybrid historical-best selection.")
 
 (defvar *offline-fitness-batch-indices* nil
   "Uniform row indices shared by all semantic-offline candidates in one generation.")

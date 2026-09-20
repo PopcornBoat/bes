@@ -181,11 +181,19 @@ belong to the episode controller rather than the evolved TPG policy."
 Supports:
 - normal single-agent Gymnasium envs
 - Cage2 single-agent envs
-- Cage3 shared-policy multi-agent envs"
+- Cage3 shared-policy multi-agent envs
+
+The fresh policy context is created once here, around the complete episode.
+Consequently recurrent learner registers start at zero on reset and persist
+across steps; online training and validation never clear them per step."
   (py4cl2:pyexec "import gymnasium as gym")
 
   (when (search "Cage2" environment-name)
-    (py4cl2:pyexec "import cage2_bridge"))
+    (py4cl2:pyexec "import cage2_bridge")
+    (when (search "Cage2Recorded" environment-name)
+      (py4cl2:pyexec "import cage2_dt.recording_env"))
+    (when (cl-tpg::digital-twin-environment-p environment-name)
+      (py4cl2:pyexec "import cage2_dt")))
 
   (when (search "Cage3" environment-name)
     (py4cl2:pyexec "import cage3_bridge"))

@@ -477,8 +477,9 @@ return their fixed configured addresses."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
 	   (eq mode :offline)
-           (eq mode :teacher-forcing))
-       ;; 2. Online and teacher-forcing use an environment; offline uses data.
+           (eq mode :teacher-forcing)
+           (eq mode :hybrid))
+       ;; 2. Online, teacher-forcing and hybrid use an environment.
        (case mode
 	 (:online (and gym-environment-name
 		       (not (eq gym-environment-name :none))
@@ -491,6 +492,15 @@ return their fixed configured addresses."
                (or (search "b_line" gym-environment-name)
                    (search "meander" gym-environment-name))
                (eq decoy-order-mode :fixed)))
+         (:hybrid
+          (and gym-environment-name
+               (not (eq gym-environment-name :none))
+               (eq dataset-name :none)
+               (stringp gym-environment-name)
+               (search "Cage2-b_line-100" gym-environment-name)
+               (eq decoy-order-mode :fixed)
+               (eq teacher-forcing-rollout-mode :dagger)
+               (eq teacher-backend :model)))
 	 (:offline (and dataset-name
 			(not (eq dataset-name :none))
 			(eq gym-environment-name :none))))
@@ -512,7 +522,7 @@ return their fixed configured addresses."
                    (valid-cage2-policy-observation-size-p num-observations)
                    (integerp num-actions)
                    (= num-actions +num-semantic-targets+)))
-             ((:online :teacher-forcing)
+             ((:online :teacher-forcing :hybrid)
               (cl-gym:cage2-environment-p gym-environment-name))
              (otherwise nil)))
        (valid-decoy-order-mode-p decoy-order-mode)
