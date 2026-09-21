@@ -879,6 +879,388 @@ promotion still requires the stricter positive one-standard-error improvement."
                  :message (princ-to-string condition)))))))
   t)
 
+(defun official-guided-candidate-evaluation-enabled-p ()
+  "Return true when Phase 1 has an incumbent that challengers may race."
+  (and (official-guided-mode-p)
+       *checkpoint-directory*
+       *best-team*
+       (plusp *official-guided-incumbent-version*)))
+
+(defun official-guided-candidate-directory ()
+  "Return the private worker directory for Phase-1 challenger artifacts."
+  (checkpoint-path *checkpoint-directory* ".official-guided-candidates/"))
+
+(defun official-guided-candidate-path (artifact-id kind type)
+  "Return one unique Phase-1 artifact path for ARTIFACT-ID."
+  (merge-pathnames
+   (make-pathname
+    :name (format nil "generation-~A-~A" artifact-id kind)
+    :type type)
+   (uiop:ensure-directory-pathname
+    (official-guided-candidate-directory))))
+
+(defun write-official-guided-team-checkpoint
+       (team imitation-score generation path)
+  "Write one fully independent graph for the Phase-1 worker."
+  (write-best-team-checkpoint
+   team imitation-score path
+   :generation generation
+   :gym-environment-name *current-gym-environment-name*
+   :online-fitness-episodes *online-fitness-episodes*
+   :search-seed *current-search-seed*
+   :fitness-evaluation-protocol +official-guided-fitness-protocol+
+   :action-agreement-signature (action-agreement-signature)
+   :online-reference-episodes
+     (third +official-guided-promotion-stages+)
+   :mixed-training-lineage *mixed-training-lineage*
+   :hamming-space-enabled nil
+   :num-observations *num-observations*
+   :decoy-order-mode *decoy-order-mode*
+   :cage2-opening-mode *cage2-opening-mode*
+   :recurrent-policy-enabled nil
+   :teacher-backend *teacher-backend*))
+
+(defun launch-official-guided-candidate-evaluation ()
+  "Freeze candidate/incumbent graphs and launch official paired evaluation."
+  (let* ((generation *online-staged-best-generation*)
+         (imitation-score *online-staged-best-fitness*)
+         ;; Warm-start resume resets the displayed generation counter.  Include
+         ;; the incumbent version and wall-clock second so a resumed search can
+         ;; never consume a stale result left by an earlier generation number.
+         (artifact-id
+           (format nil "~D-v~D-t~D"
+                   generation *official-guided-incumbent-version*
+                   (get-universal-time)))
+         (candidate-path
+           (official-guided-candidate-path artifact-id "candidate" "lisp"))
+         (incumbent-path
+           (official-guided-candidate-path artifact-id "incumbent" "lisp"))
+         (request-path
+           (official-guided-candidate-path artifact-id "request" "lisp"))
+         (result-path
+           (official-guided-candidate-path artifact-id "result" "lisp"))
+         (log-path
+           (official-guided-candidate-path artifact-id "worker" "log"))
+         (worker-script
+           (merge-pathnames
+            "scripts/run-official-guided-candidate-evaluation.lisp"
+            (asdf:system-source-directory :cl-tpg)))
+         (racing-seeds
+           (official-guided-take-seeds
+            :racing +official-guided-racing-episodes+))
+         (promotion-seeds
+           (official-guided-take-seeds
+            :promotion (car (last +official-guided-promotion-stages+))))
+         (reference-seeds (official-guided-take-reference-seeds)))
+    (unless (and generation *online-staged-best-team* *best-team*)
+      (error "Cannot submit an empty official-guided challenger."))
+    (write-official-guided-team-checkpoint
+     *online-staged-best-team* imitation-score generation candidate-path)
+    (write-official-guided-team-checkpoint
+     *best-team* *best-fitness* generation incumbent-path)
+    (write-readable-object-atomically
+     (list :version 1
+           :candidate-path (namestring candidate-path)
+           :incumbent-path (namestring incumbent-path)
+           :result-path (namestring result-path)
+           :candidate-generation generation
+           :candidate-imitation-score imitation-score
+           :incumbent-version *official-guided-incumbent-version*
+           :gym-environment-name *current-gym-environment-name*
+           :num-observations *num-observations*
+           :num-actions *num-actions*
+           :decoy-order-mode *decoy-order-mode*
+           :cage2-opening-mode *cage2-opening-mode*
+           :teacher-backend *teacher-backend*
+           :racing-seeds racing-seeds
+           :promotion-seeds promotion-seeds
+           :promotion-stages
+             (copy-list +official-guided-promotion-stages+)
+           :reference-seeds reference-seeds)
+     request-path)
+    (persist-official-guided-runtime-state)
+    (setf *online-candidate-process*
+            (uiop:launch-program
+             (list "sbcl"
+                   "--dynamic-space-size" "4096"
+                   "--noinform" "--non-interactive"
+                   "--load" (namestring worker-script)
+                   "--end-toplevel-options"
+                   (namestring request-path))
+             :input nil
+             :output log-path
+             :error-output :output
+             :if-output-exists :supersede
+             :ignore-error-status t)
+          *online-candidate-job*
+            (list :mode :official-guided
+                  :generation generation
+                  :candidate-path candidate-path
+                  :request-path request-path
+                  :result-path result-path
+                  :log-path log-path
+                  :incumbent-version *official-guided-incumbent-version*)
+          *online-candidate-next-submit-generation*
+            (+ *generation* +online-candidate-evaluation-interval+)
+          *online-staged-best-team* nil
+          *online-staged-best-fitness* nil
+          *online-staged-best-generation* nil)
+    (emit-message
+     (format nil
+             "Generation ~D submitted to official-guided evaluator: imitation=~,4F racing=~D promotion-stages=~S reference-monitor=~D."
+             generation imitation-score (length racing-seeds)
+             +official-guided-promotion-stages+ (length reference-seeds)))))
+
+(defun official-guided-incumbent-current-p (result)
+  "Reject results produced against a superseded incumbent."
+  (= (getf result :incumbent-version -1)
+     *official-guided-incumbent-version*))
+
+(defun consume-official-guided-candidate-result (result)
+  "Apply one completed Phase-1 worker result on the main search thread."
+  (let* ((generation (getf result :candidate-generation))
+         (candidate-path (getf *online-candidate-job* :candidate-path))
+         (record (getf result :evaluation-record)))
+    (setf *official-guided-last-evaluation* (copy-tree record))
+    (cond
+      ((eq (getf result :status) :error)
+       (emit-message
+        (format nil "Official-guided evaluator failed for generation ~D: ~A"
+                generation (getf result :message))))
+      ((not (official-guided-incumbent-current-p result))
+       (emit-message
+        (format nil
+                "Official-guided evaluator discarded stale generation ~D: evaluated-incumbent-version=~D current=~D."
+                generation (getf result :incumbent-version)
+                *official-guided-incumbent-version*)))
+      ((not (getf result :accepted))
+       (emit-message
+        (format nil
+                "Official-guided challenger rejected: generation=~D stage=~A episodes=~D paired-delta=~,4F margin=~,4F corr=~A paired-var=~,4F independent-var=~,4F."
+                generation
+                (getf record :stage)
+                (getf record :episode-count 0)
+                (getf record :paired-mean 0.0d0)
+                (getf result :margin 0.0d0)
+                (or (getf record :same-seed-correlation) :undefined)
+                (getf record :paired-variance 0.0d0)
+                (getf record :unpaired-variance 0.0d0))))
+      (t
+       (let* ((loaded (load-best-team candidate-path))
+              (frozen (deep-copy-team-via-serialization loaded)))
+         (ensure-team-observation-compatible frozen *num-observations*)
+         (incf *official-guided-incumbent-version*)
+         (setf *best-team* frozen
+               *best-fitness* (getf record :official-mean)
+               *official-guided-best-evaluation* (copy-tree record))
+         (emit-message
+          (format nil
+                  "NEW GLOBAL BEST: generation=~D official-mean=~,4F imitation=~,4F paired-delta=~,4F margin=~,4F episodes=~D."
+                  generation *best-fitness*
+                  (getf record :imitation-score 0.0d0)
+                  (getf record :paired-mean 0.0d0)
+                  (getf result :margin 0.0d0)
+                  (getf record :episode-count)))
+         (let ((*generation* generation))
+           (save-best-team)))))
+    (when (getf result :reference-monitoring)
+      (emit-message
+       (format nil "Official reference monitoring (selection-free): ~S"
+               (getf result :reference-monitoring))))
+    (persist-official-guided-runtime-state)))
+
+(defun poll-official-guided-candidate-evaluation ()
+  "Consume one completed Phase-1 worker result without blocking evolution."
+  (when *online-candidate-job*
+    (let ((result-path (getf *online-candidate-job* :result-path)))
+      (cond
+        ((probe-file result-path)
+         (handler-case
+             (consume-official-guided-candidate-result
+              (read-readable-object result-path))
+           (error (condition)
+             (emit-message
+              (format nil "Could not consume official-guided result: ~A"
+                      condition))))
+         (setf *online-candidate-process* nil
+               *online-candidate-job* nil))
+        ((and *online-candidate-process*
+              (not (ignore-errors
+                     (uiop:process-alive-p *online-candidate-process*))))
+         (emit-message
+          (format nil "Official-guided evaluator exited without a result; see ~A"
+                  (namestring (getf *online-candidate-job* :log-path))))
+         (setf *online-candidate-process* nil
+               *online-candidate-job* nil))))))
+
+(defun maybe-launch-official-guided-candidate-evaluation ()
+  "Submit the accumulated imitation challenger at the fixed interval."
+  (when (and (official-guided-candidate-evaluation-enabled-p)
+             (null *online-candidate-job*)
+             *online-staged-best-team*
+             (>= *generation* *online-candidate-next-submit-generation*))
+    (launch-official-guided-candidate-evaluation)))
+
+(defun official-guided-paired-rollouts
+       (candidate incumbent environment-name seeds)
+  "Evaluate CANDIDATE and INCUMBENT from the same initial seed list."
+  (let ((candidate-scores nil)
+        (incumbent-scores nil))
+    (dolist (seed seeds)
+      (push (cl-gym:rollout candidate environment-name seed) candidate-scores)
+      (push (cl-gym:rollout incumbent environment-name seed) incumbent-scores))
+    (values (nreverse candidate-scores) (nreverse incumbent-scores))))
+
+(defun run-official-guided-candidate-evaluation (request-path)
+  "Worker entry point for frozen Phase-1 official challenger evaluation."
+  (let* ((request (read-readable-object request-path))
+         (result-path (pathname (getf request :result-path)))
+         (started (get-universal-time)))
+    (labels
+        ((publish (result)
+           (write-readable-object-atomically
+            (append result
+                    (list :elapsed-seconds
+                          (- (get-universal-time) started)))
+            result-path))
+         (make-record (stage seeds candidate-scores incumbent-scores accepted)
+           (make-official-guided-evaluation-record
+            :stage stage
+            :imitation-score (getf request :candidate-imitation-score)
+            :seeds seeds
+            :candidate-returns candidate-scores
+            :incumbent-returns incumbent-scores
+            :accepted accepted)))
+      (handler-case
+          (let* ((*running* t)
+                 (*search-active* nil)
+                 (*current-search-mode* :official-guided)
+                 (*current-gym-environment-name*
+                   (getf request :gym-environment-name))
+                 (*num-observations* (getf request :num-observations))
+                 (*num-actions* (getf request :num-actions))
+                 (*decoy-order-mode* (getf request :decoy-order-mode))
+                 (*cage2-opening-mode* (getf request :cage2-opening-mode))
+                 (*teacher-backend* (getf request :teacher-backend :model))
+                 (*recurrent-policy-enabled* nil)
+                 (*hamming-space-enabled* nil)
+                 (*factored-actions-enabled* t)
+                 (candidate (load-best-team (getf request :candidate-path)))
+                 (incumbent (load-best-team (getf request :incumbent-path)))
+                 (racing-seeds (getf request :racing-seeds))
+                 (promotion-seeds (getf request :promotion-seeds))
+                 (promotion-stages (getf request :promotion-stages))
+                 (reference-seeds (getf request :reference-seeds)))
+            (ensure-team-observation-compatible candidate *num-observations*)
+            (ensure-team-observation-compatible incumbent *num-observations*)
+            (multiple-value-bind (race-candidate race-incumbent)
+                (official-guided-paired-rollouts
+                 candidate incumbent *current-gym-environment-name* racing-seeds)
+              (multiple-value-bind (continue-p race-delta race-margin)
+                  (official-guided-continue-p race-candidate race-incumbent)
+                (declare (ignore race-delta))
+                (let ((race-record
+                        (make-record :racing racing-seeds
+                                     race-candidate race-incumbent nil)))
+                  (unless continue-p
+                    (publish
+                     (list :status :complete :accepted nil
+                           :candidate-generation
+                             (getf request :candidate-generation)
+                           :incumbent-version
+                             (getf request :incumbent-version)
+                           :margin race-margin
+                           :evaluation-record race-record))
+                    (return-from run-official-guided-candidate-evaluation t))
+                  (let ((candidate-scores nil)
+                        (incumbent-scores nil)
+                        (evaluated-seeds nil)
+                        (previous-count 0))
+                    (dolist (stage-count promotion-stages)
+                      (let ((stage-seeds
+                              (subseq promotion-seeds
+                                      previous-count stage-count)))
+                        (multiple-value-bind (new-candidate new-incumbent)
+                            (official-guided-paired-rollouts
+                             candidate incumbent
+                             *current-gym-environment-name* stage-seeds)
+                          (setf candidate-scores
+                                (nconc candidate-scores new-candidate)
+                                incumbent-scores
+                                (nconc incumbent-scores new-incumbent)
+                                evaluated-seeds
+                                (nconc evaluated-seeds (copy-list stage-seeds))
+                                previous-count stage-count)))
+                      (let ((final-p
+                              (= stage-count (car (last promotion-stages))))
+                            (stage
+                              (ecase stage-count
+                                (12 :promotion-stage-1)
+                                (40 :promotion-stage-2)
+                                (100 :promotion-stage-3))))
+                        (if final-p
+                            (multiple-value-bind (accepted delta margin)
+                                (official-guided-promote-p
+                                 candidate-scores incumbent-scores)
+                              (declare (ignore delta))
+                              (let* ((record
+                                       (make-record stage evaluated-seeds
+                                                    candidate-scores
+                                                    incumbent-scores accepted))
+                                     (reference-monitoring
+                                       (when accepted
+                                         (multiple-value-bind
+                                               (reference-candidate
+                                                reference-incumbent)
+                                             (official-guided-paired-rollouts
+                                              candidate incumbent
+                                              *current-gym-environment-name*
+                                              reference-seeds)
+                                           (make-record
+                                            :reference-monitoring
+                                            reference-seeds
+                                            reference-candidate
+                                            reference-incumbent nil)))))
+                                (publish
+                                 (list :status :complete
+                                       :accepted accepted
+                                       :candidate-generation
+                                         (getf request :candidate-generation)
+                                       :incumbent-version
+                                         (getf request :incumbent-version)
+                                       :margin margin
+                                       :racing-record race-record
+                                       :evaluation-record record
+                                       :reference-monitoring
+                                         reference-monitoring))))
+                            (multiple-value-bind (continue-p delta margin)
+                                (official-guided-continue-p
+                                 candidate-scores incumbent-scores)
+                              (declare (ignore delta))
+                              (unless continue-p
+                                (publish
+                                 (list :status :complete :accepted nil
+                                       :candidate-generation
+                                         (getf request :candidate-generation)
+                                       :incumbent-version
+                                         (getf request :incumbent-version)
+                                       :margin margin
+                                       :racing-record race-record
+                                       :evaluation-record
+                                         (make-record
+                                          stage evaluated-seeds
+                                          candidate-scores incumbent-scores nil)))
+                                (return-from
+                                    run-official-guided-candidate-evaluation
+                                  t)))))))))))
+        (error (condition)
+          (publish
+           (list :status :error :accepted nil
+                 :candidate-generation (getf request :candidate-generation)
+                 :incumbent-version (getf request :incumbent-version)
+                 :message (princ-to-string condition)))))))
+  t)
+
 (defun online-fitness (team gym-environment-name)
   "Evaluate TEAM over *ONLINE-FITNESS-EPISODES* complete episodes.
 
@@ -988,6 +1370,20 @@ reference batch."
     (:offline
      (make-fitness-function :dataset-name dataset-name))
     (:teacher-forcing
+     (configure-teacher-forcing-fitness gym-environment-name))
+    (:official-guided
+     (unless (= *num-observations* +cage2-scan-observation-size+)
+       (error "Official-guided Phase 1 requires exactly ~D observations."
+              +cage2-scan-observation-size+))
+     (unless (= *num-actions* +num-semantic-targets+)
+       (error "Official-guided Phase 1 requires exactly ~D targets."
+              +num-semantic-targets+))
+     (unless (and (eq *teacher-forcing-rollout-mode* :dagger)
+                  (eq *decoy-order-mode* :fixed)
+                  (eq *cage2-opening-mode* :fixed)
+                  (not *recurrent-policy-enabled*)
+                  (not *hamming-space-enabled*))
+       (error "Official-guided Phase 1 requires stateless DAgger, fixed opening/order, and Hamming disabled."))
      (configure-teacher-forcing-fitness gym-environment-name))))
 
 (defun safe-evaluate-team (team)
@@ -1013,7 +1409,9 @@ reference batch."
   (setf *online-fitness-episode-seeds* nil
         *offline-fitness-batch-indices* nil
         *offline-fitness-batch-episode-indices* nil)
-  (when (eq *current-search-mode* :teacher-forcing)
+  (when (member *current-search-mode*
+                '(:teacher-forcing :official-guided)
+                :test #'eq)
     (setf *teacher-training-dataset* nil)
     (prepare-teacher-training-dataset))
   (let* ((results
@@ -1034,6 +1432,8 @@ reference batch."
   "Return TEAM's comparable historical score for the active fitness protocol."
   (let ((reference-kind
           (cond
+            ((eq *current-search-mode* :official-guided)
+             :official-guided)
             ((eq *current-search-mode* :teacher-forcing)
              :teacher-forcing)
             ((and *current-gym-environment-name*
@@ -1051,6 +1451,11 @@ reference batch."
                    *generation* reference-kind))
           (multiple-value-bind (result detail)
               (ecase reference-kind
+                (:official-guided
+                 ;; Official comparison is asynchronous and uses fresh seed
+                 ;; blocks. This branch only establishes a provisional first
+                 ;; incumbent without changing ranked imitation selection.
+                 (values training-fitness nil))
                 (:teacher-forcing
                  (values (teacher-forcing-reference-fitness team) nil))
                 (:cage2
@@ -1146,15 +1551,24 @@ through serialization/deserialization and save it to disk."
                    :initial-value
                    most-positive-double-float))
          (staged-online-p
-           (online-candidate-evaluation-enabled-p)))
+           (online-candidate-evaluation-enabled-p))
+         (staged-guided-p
+           (official-guided-candidate-evaluation-enabled-p))
+         (staged-candidate-p (or staged-online-p staged-guided-p)))
 
-    (when staged-online-p
-      (poll-online-candidate-evaluation)
-      (note-online-generation-candidate
-       generation-best-team generation-best)
-      (maybe-launch-online-candidate-evaluation))
+    (cond
+      (staged-guided-p
+       (poll-official-guided-candidate-evaluation)
+       (note-online-generation-candidate
+        generation-best-team generation-best)
+       (maybe-launch-official-guided-candidate-evaluation))
+      (staged-online-p
+       (poll-online-candidate-evaluation)
+       (note-online-generation-candidate
+        generation-best-team generation-best)
+       (maybe-launch-online-candidate-evaluation)))
 
-    (unless staged-online-p
+    (unless staged-candidate-p
       (multiple-value-setq
           (historical-candidate-fitness historical-candidate-detail)
         (current-reference-evaluation
@@ -1199,6 +1613,15 @@ through serialization/deserialization and save it to disk."
                     (and historical-candidate-detail
                          (copy-list historical-candidate-detail)))
 
+            (when (official-guided-mode-p)
+              (incf *official-guided-incumbent-version*)
+              (setf *official-guided-best-evaluation*
+                    (list :protocol +official-guided-fitness-protocol+
+                          :stage :provisional
+                          :accepted t
+                          :imitation-score generation-best
+                          :episode-count 0)))
+
             (emit-message
              (format nil
                      "NEW GLOBAL BEST: generation=~A reference-fitness=~A training-fitness=~A. "
@@ -1208,7 +1631,9 @@ through serialization/deserialization and save it to disk."
 
             ;; Save immediately, before reproduce/mutation/deletion.
             (when *checkpoint-directory*
-              (save-best-team))))))
+              (save-best-team)
+              (when (official-guided-mode-p)
+                (persist-official-guided-runtime-state)))))))
 
     ;; ------------------------------------------------------------
     ;; Telemetry
@@ -1292,7 +1717,9 @@ through serialization/deserialization and save it to disk."
 
     (select evaluation-scores)
     
-    (reproduce)))
+    (reproduce)
+    (when (official-guided-mode-p)
+      (persist-official-guided-runtime-state))))
 
 (defun run-search (mode gym-environment-name dataset-name seed)
   "Search the solution space with a tangled program graph."
@@ -1305,6 +1732,9 @@ through serialization/deserialization and save it to disk."
           *current-dataset-name* (and (eq mode :offline) dataset-name)
           *mixed-training-lineage* nil
           *online-best-reference-scores* nil
+          *official-guided-last-evaluation* nil
+          *official-guided-best-evaluation* nil
+          *official-guided-incumbent-version* 0
           *search-start-time* (get-universal-time))
 
     (catch 'search-stop-requested
@@ -1313,6 +1743,9 @@ through serialization/deserialization and save it to disk."
       (reset-online-candidate-evaluation-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
+
+      (when (official-guided-mode-p)
+        (initialize-official-guided-seed-streams seed))
 
       (configure-fitness-function mode gym-environment-name dataset-name)
       (make-initial-population)
@@ -1401,6 +1834,11 @@ the same train/reference file fingerprint."
                    (equal saved-hamming-fingerprint
                           *current-hamming-dataset-fingerprint*))
                (cond
+                ((eq *current-search-mode* :official-guided)
+                 (and (eq saved-protocol
+                          +official-guided-fitness-protocol+)
+                      (equal saved-agreement-signature
+                             (action-agreement-signature))))
                 ((eq *current-search-mode* :teacher-forcing)
                  (and (or (null saved-episodes)
                           (= saved-episodes *online-fitness-episodes*))
@@ -1522,6 +1960,51 @@ checkpoint remains replayable while training continues on changing batches."
 
     scores))
 
+(defun initialize-official-guided-best-from-current-population
+       (loaded-best-team saved-best-fitness checkpoint-metadata)
+  "Install LOADED-BEST-TEAM as the official incumbent without imitation takeover.
+
+The fresh population is still evaluated on ranked imitation, but no randomly
+initialized team may replace the incumbent until it passes independent official
+racing and all three fresh promotion stages."
+  ;; Install the frozen graph before EVALUATE so the very first resumed DAgger
+  ;; trajectory is owned by the loaded incumbent, independent of root ordering.
+  (setf *best-team* (deep-copy-team-via-serialization loaded-best-team)
+        *best-fitness* saved-best-fitness)
+  (let* ((scores (evaluate))
+         (loaded-entry (assoc loaded-best-team scores :test #'eq)))
+    (unless loaded-entry
+      (error "Official-guided warm start did not evaluate the loaded team."))
+    (setf *best-fitness* (or saved-best-fitness (cdr loaded-entry))
+          *official-guided-incumbent-version*
+            (max 1
+                 *official-guided-incumbent-version*
+                 (or (getf checkpoint-metadata
+                           :official-guided-incumbent-version)
+                     0))
+          *official-guided-best-evaluation*
+            (or *official-guided-best-evaluation*
+                (copy-tree
+                 (getf checkpoint-metadata
+                       :official-guided-best-evaluation))
+                (list :protocol +official-guided-fitness-protocol+
+                      :stage :imported-incumbent
+                      :accepted t
+                      :imitation-score (cdr loaded-entry)
+                      :official-mean
+                        (and (numberp saved-best-fitness)
+                             saved-best-fitness)
+                      :episode-count 0)))
+    (emit-message
+     (format nil
+             "Official-guided warm start retained loaded incumbent: saved-score=~A current-imitation=~,4F incumbent-version=~D."
+             saved-best-fitness (cdr loaded-entry)
+             *official-guided-incumbent-version*))
+    (when *checkpoint-directory*
+      (save-best-team)
+      (persist-official-guided-runtime-state))
+    scores))
+
 (defun run-search-from-best-team
        (mode gym-environment-name dataset-name seed best-team-path)
   "Warm-start search from a saved best team.
@@ -1539,6 +2022,9 @@ normal evolution."
           *current-dataset-name* (and (eq mode :offline) dataset-name)
           *mixed-training-lineage* nil
           *online-best-reference-scores* nil
+          *official-guided-last-evaluation* nil
+          *official-guided-best-evaluation* nil
+          *official-guided-incumbent-version* 0
           *search-start-time* (get-universal-time))
 
     (catch 'search-stop-requested
@@ -1548,6 +2034,9 @@ normal evolution."
       (reset-online-candidate-evaluation-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
+
+      (when (official-guided-mode-p)
+        (initialize-official-guided-seed-streams seed))
 
       ;; Configure the action contract before creating random learners.
       (configure-fitness-function mode gym-environment-name dataset-name)
@@ -1562,6 +2051,9 @@ normal evolution."
           (load-best-team best-team-path)
         (ensure-team-observation-compatible
          loaded-best-team *num-observations*)
+        (when (official-guided-mode-p)
+          (restore-official-guided-runtime-state
+           checkpoint-metadata best-team-path))
         (inject-loaded-best-team-into-population loaded-best-team)
         (emit-policy-limit-warning loaded-best-team)
 
@@ -1593,10 +2085,16 @@ normal evolution."
                      gym-environment-name
                      *online-fitness-episodes*)))
 
-          ;; Evaluate all roots once and initialize the historical-best floor.
-          (initialize-best-from-current-population
-           loaded-best-team
-           comparable-fitness)))
+          ;; Official-guided resume must never let imitation alone replace the
+          ;; official incumbent. Other modes retain the historical behavior.
+          (if (official-guided-mode-p)
+              (initialize-official-guided-best-from-current-population
+               loaded-best-team
+               (or saved-best-fitness comparable-fitness)
+               checkpoint-metadata)
+              (initialize-best-from-current-population
+               loaded-best-team
+               comparable-fitness))))
 
       ;; Continue normal BES/TPG evolution.
       (loop while *running*

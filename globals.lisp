@@ -129,6 +129,33 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
 (defconstant +cage2-online-promotion-standard-errors+ 1.0d0
   "Required paired standard-error margin for online best-team promotion.")
 
+(defconstant +official-guided-fitness-protocol+
+  :official-guided-dagger-phase1-v1
+  "Frozen Phase-1 protocol: ranked imitation, clean mixed DAgger, and
+independent official paired challenger evaluation.")
+
+(defconstant +official-guided-racing-episodes+ 5
+  "Cheap paired official episodes used to reject a challenger before promotion.")
+
+(defparameter +official-guided-promotion-stages+ '(12 40 100)
+  "Cumulative fresh paired episode counts used by staged promotion.")
+
+(defparameter +official-guided-reference-roots+ '(153 42 2026)
+  "Fixed roots used only for monitoring, never selection or promotion.")
+
+(defconstant +official-guided-reference-episodes-per-root+ 10
+  "Monitoring episodes derived from each fixed reference root.")
+
+(defconstant +official-guided-comparison-standard-errors+ 1.0d0
+  "Standard-error boundary used by racing futility and final promotion.")
+
+(defconstant +official-guided-seed-payload-bits+ 28
+  "Low seed bits reserved for one deterministic stream payload.")
+
+(defconstant +official-guided-seed-payload-mask+
+  (1- (ash 1 +official-guided-seed-payload-bits+))
+  "Mask separating the four official-guided seed namespaces.")
+
 (defconstant +online-candidate-evaluation-interval+ 10
   "Generations accumulated before submitting one online generation-best
 candidate to the independent reference evaluator.")
@@ -225,6 +252,10 @@ candidate to the independent reference evaluator.")
 (defconstant +teacher-dagger-full-gc-interval+ 25
   "Generations between full collections of retired DAgger trace storage.")
 
+(defparameter +official-guided-teacher-mixing-rates+
+  '((0.60d0 . 0.50d0) (0.30d0 . 0.25d0) (0.0d0 . 0.10d0))
+  "Previous-disagreement thresholds and next-generation teacher control rates.")
+
 (defconstant +hamming-raw-mismatch-weight+ 40
   "Integer weight for one raw-observation mismatch.")
 
@@ -262,7 +293,8 @@ search and turn this flag back on.")
   "Gym environment used by the current search, recorded in checkpoints.")
 
 (defvar *current-search-mode* nil
-  "Active search mode: :ONLINE, :OFFLINE, or :TEACHER-FORCING.")
+  "Active search mode: :ONLINE, :OFFLINE, :TEACHER-FORCING, or
+:OFFICIAL-GUIDED.")
 
 (defvar *current-search-seed* nil
   "Resolved integer seed used by the current search, recorded in checkpoints.")
@@ -394,6 +426,22 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 
 (defvar *teacher-dagger-random-state* nil
   "Private random state used only to sample DAgger replay rows.")
+
+(defvar *last-dagger-diagnostics* nil
+  "Diagnostics from the most recent learner-proposal DAgger rollout.")
+
+(defvar *official-guided-seed-streams* nil
+  "Serializable plist holding independent training, racing, promotion, and
+reference stream roots and cursors.")
+
+(defvar *official-guided-last-evaluation* nil
+  "Structured record from the latest completed official challenger evaluation.")
+
+(defvar *official-guided-best-evaluation* nil
+  "Structured official evaluation record associated with *BEST-TEAM*.")
+
+(defvar *official-guided-incumbent-version* 0
+  "Monotonic token used to reject stale asynchronous challenger results.")
 
 (defvar *offline-fitness-batch-indices* nil
   "Uniform row indices shared by all semantic-offline candidates in one generation.")

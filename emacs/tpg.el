@@ -192,6 +192,7 @@ selected yet."
                 ("online" :online)
                 ("offline" :offline)
                 ("teacher-forcing" :teacher-forcing)
+                ("official-guided" :official-guided)
                 (other (error "Invalid mode: %S" other))))
         (gym-environment-name
          (pcase (transient-arg-value "*env=" args)
@@ -440,7 +441,7 @@ selected yet."
     :choices ("all" "0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15"))]
   ["Evaluation"
    ("-M" "Evaluation Mode" "--mode="
-    :choices ("online" "offline" "teacher-forcing"))
+    :choices ("online" "offline" "teacher-forcing" "official-guided"))
    ("-G" "Gym Environment" "*env="
     :choices ("none" 
               "Cage2-b_line-100-v0"
@@ -521,7 +522,7 @@ selected yet."
          (mode-str
           (completing-read
            "Evaluation mode: "
-           '("online" "offline" "teacher-forcing")
+           '("online" "offline" "teacher-forcing" "official-guided")
            nil
            t
            "offline"))
@@ -530,10 +531,11 @@ selected yet."
           (pcase mode-str
             ("online" :online)
             ("offline" :offline)
-            ("teacher-forcing" :teacher-forcing)))
+            ("teacher-forcing" :teacher-forcing)
+            ("official-guided" :official-guided)))
 
          (env
-          (if (memq mode '(:online :teacher-forcing))
+          (if (memq mode '(:online :teacher-forcing :official-guided))
               (completing-read
                "Gym environment: "
                '("Cage2-b_line-100-v0"
@@ -591,7 +593,7 @@ selected yet."
             :policy))
 
          (teacher-forcing-rollout-mode
-           (if (eq mode :teacher-forcing)
+           (if (memq mode '(:teacher-forcing :official-guided))
                (intern
                 (concat
                  ":"

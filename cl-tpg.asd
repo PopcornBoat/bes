@@ -23,4 +23,5 @@
 	       (:file "networking")
 	       (:file "gym")
 	       (:file "teacher")
+	       (:file "official-guided")
 	       (:file "main")))

@@ -33,6 +33,11 @@
 
 (defun finish-search-operation ()
   "Mark the search worker as completely stopped."
+  ;; An official/reference evaluator is a child of this search operation.  Do
+  ;; not leave it consuming the simulator after its owning search is stopped or
+  ;; crashes.  MAIN is loaded after this file, hence the guarded late binding.
+  (when (fboundp 'reset-online-candidate-evaluation-state)
+    (reset-online-candidate-evaluation-state))
   (bt:with-lock-held (*operation-state-lock*)
     (setf *running* nil
           *search-active* nil)))
@@ -476,9 +481,10 @@ return their fixed configured addresses."
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
-	   (eq mode :offline)
-           (eq mode :teacher-forcing))
-       ;; 2. Online and teacher-forcing use an environment; offline uses data.
+		   (eq mode :offline)
+           (eq mode :teacher-forcing)
+           (eq mode :official-guided))
+       ;; 2. Online and teacher modes use an environment; offline uses data.
        (case mode
 	 (:online (and gym-environment-name
 		       (not (eq gym-environment-name :none))
@@ -491,6 +497,22 @@ return their fixed configured addresses."
                (or (search "b_line" gym-environment-name)
                    (search "meander" gym-environment-name))
                (eq decoy-order-mode :fixed)))
+         (:official-guided
+          (and gym-environment-name
+               (not (eq gym-environment-name :none))
+               (eq dataset-name :none)
+               (cl-gym:cage2-environment-p gym-environment-name)
+               (or (search "b_line" gym-environment-name)
+                   (search "meander" gym-environment-name))
+               (integerp num-observations)
+               (integerp num-actions)
+               (= num-observations +cage2-scan-observation-size+)
+               (= num-actions +num-semantic-targets+)
+               (eq decoy-order-mode :fixed)
+               (eq cage2-opening-mode :fixed)
+               (eq teacher-forcing-rollout-mode :dagger)
+               (not recurrent-policy-enabled)
+               (not hamming-space-enabled)))
 	 (:offline (and dataset-name
 			(not (eq dataset-name :none))
 			(eq gym-environment-name :none))))
@@ -520,7 +542,8 @@ return their fixed configured addresses."
        (valid-teacher-forcing-rollout-mode-p
         teacher-forcing-rollout-mode)
        (valid-teacher-backend-p teacher-backend)
-       (or (not (and (eq mode :teacher-forcing)
+       (or (not (and (member mode '(:teacher-forcing :official-guided)
+                                    :test #'eq)
                      (eq teacher-backend :heuristic)))
            (and (stringp gym-environment-name)
                 (search "b_line" gym-environment-name)))

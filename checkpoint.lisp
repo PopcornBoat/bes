@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 14
-  "Checkpoint version recording the local teacher/fixed-Decoy profile.")
+(defconstant +best-team-checkpoint-version+ 15
+  "Checkpoint version recording recoverable official-guided Phase-1 state.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -43,6 +43,8 @@
      (if (eq *teacher-forcing-rollout-mode* :dagger)
          "teacher-forcing-dagger"
          "teacher-forcing"))
+    ((eq *current-search-mode* :official-guided)
+     "official-guided-dagger")
     (*current-dataset-name* "offline")
     ((and *current-gym-environment-name*
           (not (eq *current-gym-environment-name* :none)))
@@ -98,6 +100,15 @@ checkpoint directory."
     :cage2-opening-mode ,cage2-opening-mode
     :recurrent-policy-enabled ,recurrent-policy-enabled
     :teacher-backend ,teacher-backend
+    :official-guided-seed-streams
+      ,(and (eq *current-search-mode* :official-guided)
+            (copy-tree *official-guided-seed-streams*))
+    :official-guided-incumbent-version
+      ,(and (eq *current-search-mode* :official-guided)
+            *official-guided-incumbent-version*)
+    :official-guided-best-evaluation
+      ,(and (eq *current-search-mode* :official-guided)
+            (copy-tree *official-guided-best-evaluation*))
     :hamming-space-enabled ,hamming-space-enabled
     :hamming-dataset-fingerprint ,hamming-dataset-fingerprint
     :team ,(serialize-team team (make-hash-table :test #'equal))))
@@ -170,7 +181,8 @@ checkpoint directory."
    :dataset-name *current-dataset-name*
     :dataset-fingerprint *current-dataset-fingerprint*
     :online-reference-episodes
-      (and (eq *current-search-mode* :online)
+      (and (member *current-search-mode* '(:online :official-guided)
+                   :test #'eq)
            +cage2-online-reference-episodes+)
     :mixed-training-lineage *mixed-training-lineage*
     :num-observations *num-observations*
@@ -186,6 +198,8 @@ checkpoint directory."
    (cond
      ((eq *current-search-mode* :teacher-forcing)
       (teacher-forcing-fitness-protocol))
+     ((eq *current-search-mode* :official-guided)
+      +official-guided-fitness-protocol+)
      ((cl-gym:cage2-environment-p *current-gym-environment-name*)
       +cage2-online-fitness-protocol+)
      (*offline-reference-dataset*

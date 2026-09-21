@@ -178,11 +178,12 @@ between simulator calls. Chunking does not change episode seeds or rows."
      (error "Teacher forcing supports separate b_line and meander environments."))))
 
 (defun generate-dagger-trace-rows (behavior-team environment-name episode-seeds)
-  "Run BEHAVIOR-TEAM and label its visited states with the frozen teacher.
+  "Run a clean mixed DAgger rollout and label every policy-owned state.
 
-The fixed three-step episode opening remains controller-owned. The teacher is
-advanced on those same observations but never acts in the environment; from
-step three onward only BEHAVIOR-TEAM controls the trajectory."
+Teacher and learner queries are proposals only. The bridge owns scan and Decoy
+state, and only the action actually passed to STEP can advance that state. The
+fixed three-step opening remains controller-owned. Outside official-guided mode
+the historical learner-controlled DAgger behavior is preserved."
   (unless behavior-team
     (error "DAgger requires a behavior team."))
   (py4cl2:pyexec
@@ -193,7 +194,18 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
             "cage2_bridge.teacher.make_teacher_policy"
             (teacher-red-agent-name environment-name)
             (teacher-backend-python-name)))
-         (rows nil))
+         (teacher-rate
+           (if (official-guided-mode-p)
+               (official-guided-teacher-mixing-rate)
+               0.0d0))
+         (rows nil)
+         (policy-steps 0)
+         (disagreements 0)
+         (teacher-absent 0)
+         (teacher-controlled 0)
+         (learner-controlled 0)
+         (first-disagreement-steps nil)
+         (total-reward 0.0d0))
     (cl-gym::configure-cage2-option-orders env behavior-team)
     (unwind-protect
          (dolist (episode-seed episode-seeds)
@@ -205,7 +217,9 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
               (py4cl2:pymethod teacher "reset")
               (let ((observation (cl-gym::reset env episode-seed))
                     (episode-id
-                      (list :dagger *generation* episode-seed)))
+                      (list :dagger *generation* episode-seed))
+                    (episode-reward 0.0d0)
+                    (first-disagreement nil))
                 (loop for timestep fixnum from 0
                       do (when (zerop (mod timestep 10))
                            (abort-search-if-requested))
@@ -216,7 +230,7 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
                                       pair "ranking pair"))
                                    (teacher-sequence-list
                                     (py4cl2:pymethod
-                                     teacher "rank" observation)
+                                     teacher "rank" observation timestep)
                                     "ranking")))
                                 (decoy-mask
                                   (teacher-observation-decoy-mask observation))
@@ -226,12 +240,38 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
                                 (opening-action
                                   (cl-gym::cage2-fixed-opening-action
                                    environment-name timestep))
+                                (predictions
+                                  (and (not opening-action)
+                                       (execute-team-semantic-ranked
+                                        behavior-team
+                                        (policy-observation observation))))
+                                (predicted-pair
+                                  (and predictions
+                                       (resolve-semantic-ranking
+                                        predictions
+                                        decoy-mask
+                                        (effective-team-option-orders
+                                         behavior-team))))
+                                (teacher-rank
+                                  (and predictions
+                                       (position
+                                        selected predictions
+                                        :test #'equal
+                                        :key #'semantic-action-category-pair)))
+                                (disagreement-p
+                                  (and predicted-pair
+                                       (not (equal predicted-pair selected))))
+                                (teacher-controls-p
+                                  (and (not opening-action)
+                                       (official-guided-mode-p)
+                                       (official-guided-teacher-controls-p
+                                        episode-seed timestep teacher-rate)))
                                 (action
                                   (or opening-action
-                                      (cl-gym::execute-policy-action
-                                       behavior-team
-                                       observation
-                                       environment-name))))
+                                      (if teacher-controls-p
+                                          ranking
+                                          (cl-gym::semantic-ranking->cage2-input
+                                           predictions)))))
                            ;; Only policy-owned states enter imitation fitness.
                            ;; Metadata keeps each recurrent episode intact.
                            (unless opening-action
@@ -243,14 +283,49 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
                                     episode-id
                                     timestep)
                               rows))
+                           (unless opening-action
+                             (incf policy-steps)
+                             (if teacher-controls-p
+                                 (incf teacher-controlled)
+                                 (incf learner-controlled))
+                             (when disagreement-p
+                               (incf disagreements)
+                               (unless first-disagreement
+                                 (setf first-disagreement timestep)
+                                 (push timestep first-disagreement-steps))
+                               (unless teacher-rank
+                                 (incf teacher-absent))))
                            (multiple-value-bind
                                  (next-observation reward terminated truncated info)
                                (cl-gym::step env action)
-                             (declare (ignore reward info))
+                             (declare (ignore info))
+                             (incf episode-reward
+                                   (coerce reward 'double-float))
                              (setf observation next-observation)
                              (when (or terminated truncated)
+                               (incf total-reward episode-reward)
                                (return)))))))))
       (ignore-errors (py4cl2:pymethod env "close")))
+    (setf *last-dagger-diagnostics*
+          (list :episodes (length episode-seeds)
+                :policy-steps policy-steps
+                :disagreements disagreements
+                :disagreement-rate
+                  (if (plusp policy-steps)
+                      (/ disagreements (coerce policy-steps 'double-float))
+                      0.0d0)
+                :first-disagreement-mean
+                  (and first-disagreement-steps
+                       (/ (reduce #'+ first-disagreement-steps)
+                          (coerce (length first-disagreement-steps)
+                                  'double-float)))
+                :teacher-absent-top-8 teacher-absent
+                :teacher-mixing-rate teacher-rate
+                :teacher-controlled-steps teacher-controlled
+                :learner-controlled-steps learner-controlled
+                :mean-mixed-return
+                  (/ total-reward
+                     (coerce (max 1 (length episode-seeds)) 'double-float))))
     (nreverse rows)))
 
 (defun compact-teacher-dagger-row (row)
@@ -387,6 +462,7 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
         *teacher-reference-dataset* nil
         *teacher-dagger-replay-rows* nil
         *teacher-dagger-replay-episodes* nil
+        *last-dagger-diagnostics* nil
         *teacher-dagger-random-state*
           (sb-ext:seed-random-state
            (+ *current-search-seed* 32452843)))
@@ -438,7 +514,11 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
 (defun prepare-teacher-training-dataset ()
   "Build one shared teacher-labelled fitness dataset for this generation."
   (maybe-collect-teacher-dagger-garbage)
-  (let ((seeds (make-online-fitness-episode-seeds)))
+  (let ((seeds
+          (if (official-guided-mode-p)
+              (official-guided-take-seeds
+               :training *online-fitness-episodes*)
+              (make-online-fitness-episode-seeds))))
     (emit-message
      (format nil
              "Generation ~D teacher trace generation started: episodes=~D"
@@ -481,6 +561,27 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
                              (if *recurrent-policy-enabled*
                                  :recurrent
                                  :stateless)))
+                    (when *last-dagger-diagnostics*
+                      (emit-message
+                       (format nil
+                               "Generation ~D DAgger diagnostics: disagreement=~,2F%% first=~A absent-top8=~D teacher-rate=~,2F source-teacher=~D source-learner=~D mixed-return=~,3F"
+                               *generation*
+                               (* 100.0d0
+                                  (getf *last-dagger-diagnostics*
+                                        :disagreement-rate 0.0d0))
+                               (or (getf *last-dagger-diagnostics*
+                                         :first-disagreement-mean)
+                                   :none)
+                               (getf *last-dagger-diagnostics*
+                                     :teacher-absent-top-8 0)
+                               (getf *last-dagger-diagnostics*
+                                     :teacher-mixing-rate 0.0d0)
+                               (getf *last-dagger-diagnostics*
+                                     :teacher-controlled-steps 0)
+                               (getf *last-dagger-diagnostics*
+                                     :learner-controlled-steps 0)
+                               (getf *last-dagger-diagnostics*
+                                     :mean-mixed-return 0.0d0))))
                     (teacher-trace-to-dataset
                      (append teacher-rows replay-sample)))))))
     (when *recurrent-policy-enabled*
@@ -490,7 +591,9 @@ step three onward only BEHAVIOR-TEAM controls the trajectory."
      (format nil
              "Generation ~D teacher trace ready: rows=~D"
              *generation*
-             (dataset-size *teacher-training-dataset*)))))
+             (dataset-size *teacher-training-dataset*)))
+    (when (official-guided-mode-p)
+      (persist-official-guided-runtime-state))))
 
 (defun teacher-forcing-training-fitness (team)
   "Evaluate TEAM against the generation-shared teacher trace."
