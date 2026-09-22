@@ -22,6 +22,7 @@
 	       (:file "dataset")
 	       (:file "hamming")
 	       (:file "behavioral-locality")
+	       (:file "behavioral-locality-analysis")
 	       (:file "migration")
 	       (:file "networking")
 	       (:file "gym")

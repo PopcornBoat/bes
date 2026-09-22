@@ -26,7 +26,8 @@ and historical promotion remain the Phase 1 implementation.
   frozen direct parent. Child and parent are evaluated on the same racing seed
   block, producing a causal parent-to-child paired-return record. The separate
   candidate-versus-incumbent comparison continues to control promotion.
-- The complete action protocol remains 41 canonical semantic behaviors. Phase
+- The current direct Semantic-36 terminal protocol remains unchanged. Fixed
+  controller-side Decoy expansion is outside the evolved policy. Phase
   2 measures teacher-off-support output but does not mask it.
 
 ## Behavioral measurements
@@ -102,6 +103,23 @@ diagnostic.
 
 The immediate runtime summary reports mean top-1 Hamming, teacher-rank change,
 ranking distance, top-8 overlap, and child off-support rate.
+
+## Offline analysis
+
+The append-only journal can be summarized without loading a checkpoint or
+changing search state:
+
+```bash
+sbcl --load ~/quicklisp/setup.lisp --script scripts/analyze-behavioral-locality.lisp \
+  /path/to/behavioral-locality-records.lisp \
+  /path/to/behavioral-locality-report.md
+```
+
+The report groups semantic disruption by mutation event, links official
+parent-to-child paired return to distance bins, and reports catastrophic-drop
+probabilities at 10, 25, 50, and 100 reward. Event groups overlap for children
+with multiple mutation events and are therefore associations, not isolated
+operator effects.
 
 ## Phase boundary
 
