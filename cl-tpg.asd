@@ -13,6 +13,7 @@
 	       (:file "program")
 	       (:file "action")
 	       (:file "controller")
+	       (:file "heuristic")
 	       (:file "learner")
 	       (:file "team")
 		   (:file "checkpoint")

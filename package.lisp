@@ -25,6 +25,7 @@
                      :cage2-controller-decision-rank
                      :cage2-controller-decision-option
                      :cage2-controller-decision-fallback-p
+                     :cage2-bline-heuristic-ranking
                      :+global-target+
                      :+num-semantic-targets+
                      :+cage2-evaluation-seed+))
