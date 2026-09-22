@@ -56,6 +56,10 @@
        (cl-tpg::*behavioral-probe-fixed-reference* (list probe))
        (cl-tpg::*behavioral-probe-fixed-early* (list probe))
        (cl-tpg::*behavioral-probe-archive* (list probe))
+       (cl-tpg::*behavioral-locality-sample-cursor* 7)
+       (cl-tpg::*behavioral-locality-stratum-counts*
+         '((:probe-neutral . 2) (:ranking-only . 1)
+           (:small-top1 . 3) (:medium-top1 . 4) (:large-top1 . 5)))
        (state (cl-tpg::behavioral-locality-state-copy)))
   (cl-tpg::reset-behavioral-locality-state)
   (cl-tpg::restore-behavioral-locality-state state)
@@ -63,8 +67,54 @@
    (and (= cl-tpg::*behavioral-probe-revision* 9)
         (= (length cl-tpg::*behavioral-probe-archive*) 1)
         (typep (getf (first cl-tpg::*behavioral-probe-archive*) :observation)
-               '(simple-array double-float (*))))
-   "probe archive round-trips with executable double-float observations"))
+               '(simple-array double-float (*)))
+        (= cl-tpg::*behavioral-locality-sample-cursor* 7)
+        (= (cl-tpg::behavioral-locality-stratum-count :large-top1) 5))
+   "probe archive and passive sample cursor round-trip independently"))
+
+(let* ((neutral-team (cl-tpg::%make-team :id "neutral" :learners nil))
+       (small-team (cl-tpg::%make-team :id "small" :learners nil))
+       (record-base '(:mutation-events ((:INSTRUCTION-ADD 1))))
+       (neutral (append record-base
+                        '(:top1-hamming 0.0d0
+                          :ranking-distance-mean 0.0d0)))
+       (small (append record-base
+                      '(:top1-hamming 0.02d0
+                        :ranking-distance-mean 0.01d0)))
+       (cl-tpg::*behavioral-locality-stratum-counts*
+         '((:probe-neutral . 3) (:ranking-only . 0)
+           (:small-top1 . 0) (:medium-top1 . 0) (:large-top1 . 0)))
+       (cl-tpg::*behavioral-locality-sampling-candidates*
+         (list (list :child neutral-team :parent neutral-team
+                     :record neutral :stratum :probe-neutral)
+               (list :child small-team :parent neutral-team
+                     :record small :stratum :small-top1)))
+       (selected (cl-tpg::select-behavioral-locality-sampling-candidate)))
+  (check-behavioral-locality
+   (eq (getf selected :stratum) :small-top1)
+   "passive sampling selects the least-represented available stratum")
+  (check-behavioral-locality
+   (and (eq (cl-tpg::behavioral-locality-sampling-stratum neutral)
+            :probe-neutral)
+        (eq (cl-tpg::behavioral-locality-sampling-stratum small)
+            :small-top1))
+   "behavioral distance maps to stable sampling strata"))
+
+(let ((cl-tpg::*teacher-reference-dataset* nil)
+      (cl-tpg::*behavioral-locality-sample-cursor* 99)
+      (legacy '(:version 1
+                :protocol :behavioral-locality-phase2-v1
+                :revision 4
+                :fixed-reference nil
+                :fixed-early nil
+                :archive nil)))
+  (cl-tpg::restore-behavioral-locality-state legacy)
+  (check-behavioral-locality
+   (and (= cl-tpg::*behavioral-probe-revision* 4)
+        (zerop cl-tpg::*behavioral-locality-sample-cursor*)
+        (every #'zerop
+               (mapcar #'cdr cl-tpg::*behavioral-locality-stratum-counts*)))
+   "version-1 Phase-2 checkpoints restore with a fresh diagnostic cursor"))
 
 ;; Event recording must not consume extra randomness or change action mutation.
 (let* ((seed 24680)

@@ -40,6 +40,16 @@
                  :parent-child-evaluation
                    (list :paired-mean 5.0d0
                          :behavioral-locality good))))
+  (let ((sample
+          (list :type :locality-sample-outcome
+                :sample-id "sample-1"
+                :generation 4
+                :stratum :large-top1
+                :evaluation
+                  (list :paired-mean -40.0d0
+                        :behavioral-locality bad))))
+    (cl-tpg::process-behavioral-locality-form summary sample)
+    (cl-tpg::process-behavioral-locality-form summary sample))
   (check-locality-analysis
    (= (cl-tpg::locality-analysis-summary-mutation-record-count summary) 2)
    "mutation-generation children are counted")
@@ -49,6 +59,9 @@
   (check-locality-analysis
    (= (cl-tpg::locality-analysis-summary-accepted-count summary) 1)
    "accepted promotions are retained")
+  (check-locality-analysis
+   (= (cl-tpg::locality-analysis-summary-stratified-outcome-count summary) 1)
+   "passive official samples are deduplicated by sample id")
   (let ((overall (cl-tpg::locality-analysis-summary-official-overall summary)))
     (check-locality-analysis
      (= (gethash 25.0d0
@@ -83,7 +96,55 @@
     (check-locality-analysis
      (and (search "PROMOTION-STAGE-3" report)
           (search "RACING" report))
-     "report exposes evaluation-stage support")))
+     "report exposes evaluation-stage support")
+    (check-locality-analysis
+     (and (search "Stratified passive official samples" report)
+          (search "LARGE-TOP1" report)
+          (search "-40.0000" report))
+     "report separates passive samples from selection-biased outcomes")))
+
+(let* ((directory
+         (merge-pathnames
+          (format nil "bes-locality-analysis-~D/" (get-internal-real-time))
+          (uiop:temporary-directory)))
+       (outcome-directory
+         (merge-pathnames ".behavioral-locality-samples/" directory))
+       (journal (merge-pathnames "behavioral-locality-records.lisp" directory))
+       (outcome (merge-pathnames "sample-1-outcome.lisp" outcome-directory))
+       (report (merge-pathnames "report.md" directory))
+       (record (analysis-sample-record :instruction-add 0.1d0 0.05d0)))
+  (ensure-directories-exist outcome)
+  (with-open-file (stream journal :direction :output
+                                  :if-exists :supersede
+                                  :if-does-not-exist :create)
+    (write '(:type :mutation-generation :generation 1 :records nil)
+           :stream stream))
+  (with-open-file (stream outcome :direction :output
+                                  :if-exists :supersede
+                                  :if-does-not-exist :create)
+    (write (list :type :locality-sample-outcome
+                 :sample-id "atomic-1"
+                 :generation 1
+                 :stratum :medium-top1
+                 :evaluation
+                   (list :paired-mean -7.0d0
+                         :behavioral-locality record))
+           :stream stream))
+  (unwind-protect
+       (let ((summary
+               (cl-tpg::analyze-behavioral-locality-journal
+                journal :output-path report)))
+         (check-locality-analysis
+          (= (cl-tpg::locality-analysis-summary-stratified-outcome-count
+              summary)
+             1)
+          "analyzer discovers atomic passive outcome files beside the journal"))
+    (dolist (path (list journal outcome report))
+      (when (probe-file path) (delete-file path)))
+    (when (probe-file outcome-directory)
+      (ignore-errors (uiop:delete-empty-directory outcome-directory)))
+    (when (probe-file directory)
+      (ignore-errors (uiop:delete-empty-directory directory)))))
 
 (format t "Behavioral-locality analysis checks passed: ~D.~%"
         *behavioral-locality-analysis-checks*)

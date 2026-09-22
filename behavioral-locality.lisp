@@ -7,6 +7,11 @@
   "Return true when Phase-2 diagnostics should observe this search."
   (and *behavioral-locality-enabled* (official-guided-mode-p)))
 
+(defun make-behavioral-locality-stratum-counts ()
+  "Return a fresh serializable zero-count alist for every sampling stratum."
+  (mapcar (lambda (stratum) (cons stratum 0))
+          +behavioral-locality-sampling-strata+))
+
 (defun note-mutation-event (event)
   "Record one applied mutation EVENT in the dynamically active child trace."
   (when (behavioral-locality-active-p)
@@ -15,6 +20,11 @@
 
 (defun reset-behavioral-locality-state ()
   "Reset run-local Phase-2 archives, caches, and lineage maps."
+  (when (and *behavioral-locality-sample-process*
+             (ignore-errors
+               (uiop:process-alive-p *behavioral-locality-sample-process*)))
+    (ignore-errors
+      (uiop:terminate-process *behavioral-locality-sample-process*)))
   (setf *behavioral-probe-fixed-reference* nil
         *behavioral-probe-fixed-early* nil
         *behavioral-probe-archive* nil
@@ -25,6 +35,12 @@
         *behavioral-team-lineage* (make-hash-table :test #'eq)
         *behavioral-team-parents* (make-hash-table :test #'eq)
         *behavioral-generation-records* nil
+        *behavioral-locality-sampling-candidates* nil
+        *behavioral-locality-sample-cursor* 0
+        *behavioral-locality-stratum-counts*
+          (make-behavioral-locality-stratum-counts)
+        *behavioral-locality-sample-process* nil
+        *behavioral-locality-sample-job* nil
         *online-staged-best-lineage* nil))
 
 (defun behavioral-label-pair (label)
@@ -207,9 +223,11 @@ deterministic and consumes no random state."
 (defun behavioral-locality-state-copy ()
   "Return the serialization-safe Phase-2 probe state."
   (when (behavioral-locality-active-p)
-    (list :version 1
+    (list :version 2
           :protocol +behavioral-locality-protocol+
           :revision *behavioral-probe-revision*
+          :sample-cursor *behavioral-locality-sample-cursor*
+          :stratum-counts (copy-tree *behavioral-locality-stratum-counts*)
           :fixed-reference
             (mapcar #'serialize-behavioral-probe
                     *behavioral-probe-fixed-reference*)
@@ -223,7 +241,7 @@ deterministic and consumes no random state."
 (defun restore-behavioral-locality-state (state)
   "Restore a validated Phase-2 probe STATE without restoring stale lineages."
   (when state
-    (unless (and (= (getf state :version 0) 1)
+    (unless (and (member (getf state :version 0) '(1 2))
                  (eq (getf state :protocol) +behavioral-locality-protocol+))
       (error "Invalid behavioral-locality state: ~S" state))
     (setf *behavioral-probe-revision* (getf state :revision 0)
@@ -239,7 +257,19 @@ deterministic and consumes no random state."
           *behavioral-signature-cache* (make-hash-table :test #'eq)
           *behavioral-team-lineage* (make-hash-table :test #'eq)
           *behavioral-team-parents* (make-hash-table :test #'eq)
-          *behavioral-generation-records* nil)
+          *behavioral-generation-records* nil
+          *behavioral-locality-sampling-candidates* nil
+          *behavioral-locality-sample-cursor*
+            (if (= (getf state :version) 2)
+                (getf state :sample-cursor 0)
+                0)
+          *behavioral-locality-stratum-counts*
+            (if (= (getf state :version) 2)
+                (copy-tree (or (getf state :stratum-counts)
+                               (make-behavioral-locality-stratum-counts)))
+                (make-behavioral-locality-stratum-counts))
+          *behavioral-locality-sample-process* nil
+          *behavioral-locality-sample-job* nil)
     (when *teacher-reference-dataset*
       (rebuild-behavioral-teacher-support *teacher-reference-dataset*)))
   state)
@@ -390,6 +420,89 @@ deterministic and consumes no random state."
             :child-top1-distribution
               (behavioral-distribution-alist child-actions)))))
 
+(defun behavioral-locality-sampling-stratum (record)
+  "Classify RECORD for balanced, passive official evaluation."
+  (let ((top1 (getf record :top1-hamming 0.0d0))
+        (ranking (getf record :ranking-distance-mean 0.0d0)))
+    (cond
+      ((plusp top1)
+       (cond ((<= top1 0.05d0) :small-top1)
+             ((<= top1 0.20d0) :medium-top1)
+             (t :large-top1)))
+      ((plusp ranking) :ranking-only)
+      (t :probe-neutral))))
+
+(defun behavioral-locality-recorded-mutation-p (record)
+  "Return true when RECORD contains at least one applied mutation event."
+  (not (null (getf record :mutation-events))))
+
+(defun behavioral-locality-stratum-count (stratum)
+  "Return the number of submitted passive samples for STRATUM."
+  (or (cdr (assoc stratum *behavioral-locality-stratum-counts*)) 0))
+
+(defun note-behavioral-locality-stratum-sample (stratum)
+  "Advance passive sample state after STRATUM is durably requested."
+  (unless *behavioral-locality-stratum-counts*
+    (setf *behavioral-locality-stratum-counts*
+          (make-behavioral-locality-stratum-counts)))
+  (let ((entry (assoc stratum *behavioral-locality-stratum-counts*)))
+    (if entry
+        (incf (cdr entry))
+        (push (cons stratum 1) *behavioral-locality-stratum-counts*)))
+  (incf *behavioral-locality-sample-cursor*))
+
+(defun select-behavioral-locality-sampling-candidate ()
+  "Choose a deterministic candidate from the least-sampled available stratum."
+  (let ((available
+          (remove-if-not
+           (lambda (candidate)
+             (behavioral-locality-recorded-mutation-p
+              (getf candidate :record)))
+           *behavioral-locality-sampling-candidates*)))
+    (when available
+      (let* ((available-strata
+               (remove-duplicates
+                (mapcar (lambda (candidate) (getf candidate :stratum))
+                        available)
+                :test #'eq))
+             (stratum
+               (first
+                (stable-sort
+                 (copy-list available-strata)
+                 (lambda (left right)
+                   (let ((left-count
+                           (behavioral-locality-stratum-count left))
+                         (right-count
+                           (behavioral-locality-stratum-count right)))
+                     (if (= left-count right-count)
+                         (< (position left +behavioral-locality-sampling-strata+)
+                            (position right +behavioral-locality-sampling-strata+))
+                         (< left-count right-count)))))))
+             (in-stratum
+               (remove-if-not
+                (lambda (candidate)
+                  (eq (getf candidate :stratum) stratum))
+                available)))
+        (first
+         (stable-sort
+          (copy-list in-stratum) #'string<
+          :key (lambda (candidate)
+                 (team-id (getf candidate :child)))))))))
+
+(defun behavioral-locality-sample-seeds
+       (sample-cursor &optional (count +behavioral-locality-sample-episodes+))
+  "Derive COUNT diagnostic seeds without consuming any Phase-1 stream."
+  (unless (and (integerp *current-search-seed*)
+               (integerp sample-cursor) (not (minusp sample-cursor)))
+    (error "Cannot derive locality seeds from search seed ~S and cursor ~S."
+           *current-search-seed* sample-cursor))
+  (let ((root
+          (official-guided-derived-root *current-search-seed* 181081))
+        (start (* sample-cursor count)))
+    (loop for offset below count
+          collect
+          (official-guided-seed-at :locality root (+ start offset)))))
+
 (defun record-behavioral-mutation (parent child mutation-events)
   "Measure and retain one reproduced PARENT/CHILD relationship."
   (when (and (behavioral-locality-active-p)
@@ -406,6 +519,11 @@ deterministic and consumes no random state."
       (setf (gethash child *behavioral-team-lineage*) record
             (gethash child *behavioral-team-parents*) parent)
       (push record *behavioral-generation-records*)
+      (push (list :parent parent
+                  :child child
+                  :record record
+                  :stratum (behavioral-locality-sampling-stratum record))
+            *behavioral-locality-sampling-candidates*)
       record)))
 
 (defun behavioral-lineage-for-team (team)

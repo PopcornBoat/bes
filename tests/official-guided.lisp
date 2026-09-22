@@ -41,6 +41,26 @@
       5)
    "serialized state retains an independent promotion cursor"))
 
+(let* ((cl-tpg::*current-search-seed* 153)
+       (before (cl-tpg::official-guided-seed-state-copy))
+       (locality-a (cl-tpg::behavioral-locality-sample-seeds 0 5))
+       (locality-b (cl-tpg::behavioral-locality-sample-seeds 1 5))
+       (after (cl-tpg::official-guided-seed-state-copy))
+       (phase1-comparison
+         (append (cl-tpg::official-guided-take-seeds :racing 5)
+                 (cl-tpg::official-guided-take-seeds :promotion 5))))
+  (check-official-guided
+   (equal before after)
+   "passive locality seeds do not advance any Phase-1 stream")
+  (check-official-guided
+   (= (length (remove-duplicates (append locality-a locality-b))) 10)
+   "passive locality cursor derives non-overlapping deterministic blocks")
+  (check-official-guided
+   (every (lambda (seed)
+            (not (member seed phase1-comparison)))
+          locality-a)
+   "diagnostic namespace cannot collide with racing or promotion seeds"))
+
 (let ((first
         (cl-tpg::official-guided-teacher-controls-p 12345 17 0.5d0))
       (second

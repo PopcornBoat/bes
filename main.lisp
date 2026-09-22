@@ -1141,6 +1141,232 @@ promotion still requires the stricter positive one-standard-error improvement."
       (push (cl-gym:rollout incumbent environment-name seed) incumbent-scores))
     (values (nreverse candidate-scores) (nreverse incumbent-scores))))
 
+(defun behavioral-locality-sample-directory ()
+  "Return the private directory for passive Phase-2 worker artifacts."
+  (checkpoint-path *checkpoint-directory* ".behavioral-locality-samples/"))
+
+(defun behavioral-locality-sample-path (artifact-id kind type)
+  "Return one unique passive-sample artifact path."
+  (merge-pathnames
+   (make-pathname
+    :name (format nil "sample-~A-~A" artifact-id kind)
+    :type type)
+   (uiop:ensure-directory-pathname
+    (behavioral-locality-sample-directory))))
+
+(defun cleanup-behavioral-locality-sample-job (job)
+  "Remove successful worker artifacts while retaining the compact journal."
+  (dolist (path (getf job :artifact-paths))
+    (when (and path (probe-file path))
+      (ignore-errors (delete-file path)))))
+
+(defun launch-behavioral-locality-sample-evaluation (candidate)
+  "Freeze one sampled child/parent pair and start a selection-free worker."
+  (let* ((generation *generation*)
+         (cursor *behavioral-locality-sample-cursor*)
+         (stratum (getf candidate :stratum))
+         (artifact-id
+           (format nil "~D-c~D-t~D" generation cursor (get-universal-time)))
+         (child-path
+           (behavioral-locality-sample-path artifact-id "child" "lisp"))
+         (parent-path
+           (behavioral-locality-sample-path artifact-id "parent" "lisp"))
+         (request-path
+           (behavioral-locality-sample-path artifact-id "request" "lisp"))
+         (result-path
+           (behavioral-locality-sample-path artifact-id "result" "lisp"))
+         (outcome-path
+           (behavioral-locality-sample-path artifact-id "outcome" "lisp"))
+         (log-path
+           (behavioral-locality-sample-path artifact-id "worker" "log"))
+         (worker-script
+           (merge-pathnames
+            "scripts/run-behavioral-locality-evaluation.lisp"
+            (asdf:system-source-directory :cl-tpg)))
+         (seeds (behavioral-locality-sample-seeds cursor))
+         (sample-id artifact-id))
+    (write-official-guided-team-checkpoint
+     (getf candidate :child) 0.0d0 generation child-path)
+    (write-official-guided-team-checkpoint
+     (getf candidate :parent) 0.0d0 generation parent-path)
+    (write-readable-object-atomically
+     (list :version 1
+           :sample-id sample-id
+           :generation generation
+           :stratum stratum
+           :child-path (namestring child-path)
+           :parent-path (namestring parent-path)
+           :result-path (namestring result-path)
+           :outcome-path (namestring outcome-path)
+           :gym-environment-name *current-gym-environment-name*
+           :num-observations *num-observations*
+           :num-actions *num-actions*
+           :decoy-order-mode *decoy-order-mode*
+           :cage2-opening-mode *cage2-opening-mode*
+           :teacher-backend *teacher-backend*
+           :seeds seeds
+           :behavioral-locality (copy-tree (getf candidate :record)))
+     request-path)
+    ;; Cursor/count state is persisted before launch, so a crash cannot reuse
+    ;; this diagnostic seed block.  It remains independent of Phase-1 streams.
+    (note-behavioral-locality-stratum-sample stratum)
+    (persist-official-guided-runtime-state)
+    (setf *behavioral-locality-sample-process*
+            (uiop:launch-program
+             (list "sbcl"
+                   "--dynamic-space-size" "4096"
+                   "--noinform" "--non-interactive"
+                   "--load" (namestring worker-script)
+                   "--end-toplevel-options"
+                   (namestring request-path))
+             :input nil
+             :output log-path
+             :error-output :output
+             :if-output-exists :supersede
+             :ignore-error-status t)
+          *behavioral-locality-sample-job*
+            (list :sample-id sample-id
+                  :stratum stratum
+                  :result-path result-path
+                  :log-path log-path
+                  :artifact-paths
+                    (list child-path parent-path request-path result-path
+                          log-path)))
+    (emit-message
+     (format nil
+             "Generation ~D passive locality sample submitted: id=~A stratum=~A episodes=~D."
+             generation sample-id stratum (length seeds)))))
+
+(defun poll-behavioral-locality-sample-evaluation ()
+  "Observe worker completion without feeding its result into evolution."
+  (when *behavioral-locality-sample-job*
+    (let ((result-path
+            (getf *behavioral-locality-sample-job* :result-path)))
+      (cond
+        ((probe-file result-path)
+         (handler-case
+             (let ((result (read-readable-object result-path)))
+               (if (eq (getf result :status) :complete)
+                   (progn
+                     (emit-message
+                      (format nil
+                              "Passive locality sample completed: id=~A stratum=~A paired-delta=~,4F episodes=~D."
+                              (getf result :sample-id)
+                              (getf result :stratum)
+                              (getf result :paired-mean 0.0d0)
+                              (getf result :episode-count 0)))
+                     (cleanup-behavioral-locality-sample-job
+                      *behavioral-locality-sample-job*))
+                   (emit-message
+                    (format nil
+                            "Passive locality sample failed: ~A; artifacts retained at ~A."
+                            (getf result :message)
+                            (getf *behavioral-locality-sample-job* :log-path)))))
+           (error (condition)
+             (emit-message
+              (format nil "Could not consume passive locality result: ~A"
+                      condition))))
+         (setf *behavioral-locality-sample-process* nil
+               *behavioral-locality-sample-job* nil))
+        ((and *behavioral-locality-sample-process*
+              (not (ignore-errors
+                     (uiop:process-alive-p
+                      *behavioral-locality-sample-process*))))
+         (emit-message
+          (format nil
+                  "Passive locality worker exited without a result; artifacts retained at ~A."
+                  (getf *behavioral-locality-sample-job* :log-path)))
+         (setf *behavioral-locality-sample-process* nil
+               *behavioral-locality-sample-job* nil))))))
+
+(defun maybe-run-behavioral-locality-sampling ()
+  "Poll and, when idle, launch one passive stratified official sample."
+  (when (behavioral-locality-active-p)
+    (handler-case
+        (progn
+          (poll-behavioral-locality-sample-evaluation)
+          (when (null *behavioral-locality-sample-job*)
+            (let ((candidate
+                    (select-behavioral-locality-sampling-candidate)))
+              (when candidate
+                (launch-behavioral-locality-sample-evaluation candidate)))))
+      (error (condition)
+        ;; Diagnostics must never terminate or change the evolutionary search.
+        (emit-message
+         (format nil "Passive locality sampling skipped after error: ~A"
+                 condition))))
+    (setf *behavioral-locality-sampling-candidates* nil)))
+
+(defun run-behavioral-locality-sample-evaluation (request-path)
+  "Run one frozen child/direct-parent diagnostic comparison in a worker."
+  (let* ((request (read-readable-object request-path))
+         (result-path (pathname (getf request :result-path)))
+         (started (get-universal-time)))
+    (labels ((publish (result)
+               (write-readable-object-atomically
+                (append result
+                        (list :elapsed-seconds
+                              (- (get-universal-time) started)))
+                result-path)))
+      (handler-case
+          (let* ((*running* t)
+                 (*search-active* nil)
+                 (*current-search-mode* :official-guided)
+                 (*current-gym-environment-name*
+                   (getf request :gym-environment-name))
+                 (*num-observations* (getf request :num-observations))
+                 (*num-actions* (getf request :num-actions))
+                 (*decoy-order-mode* (getf request :decoy-order-mode))
+                 (*cage2-opening-mode* (getf request :cage2-opening-mode))
+                 (*teacher-backend* (getf request :teacher-backend :heuristic))
+                 (*recurrent-policy-enabled* nil)
+                 (*hamming-space-enabled* nil)
+                 (*factored-actions-enabled* t)
+                 (child (load-best-team (getf request :child-path)))
+                 (parent (load-best-team (getf request :parent-path)))
+                 (seeds (getf request :seeds)))
+            (ensure-team-observation-compatible child *num-observations*)
+            (ensure-team-observation-compatible parent *num-observations*)
+            (multiple-value-bind (child-returns parent-returns)
+                (official-guided-paired-rollouts
+                 child parent *current-gym-environment-name* seeds)
+              (let* ((evaluation
+                       (append
+                        (make-official-guided-evaluation-record
+                         :stage :locality-sample
+                         :imitation-score nil
+                         :seeds seeds
+                         :candidate-returns child-returns
+                         :incumbent-returns parent-returns
+                         :accepted nil)
+                        (list :behavioral-locality
+                              (copy-tree
+                               (getf request :behavioral-locality)))))
+                     (outcome
+                       (list :type :locality-sample-outcome
+                             :protocol +behavioral-locality-protocol+
+                             :sample-id (getf request :sample-id)
+                             :generation (getf request :generation)
+                             :stratum (getf request :stratum)
+                             :evaluation evaluation)))
+                ;; Each sample owns an immutable atomic outcome file.  This is
+                ;; safe even if an orphaned pre-resume worker finishes late.
+                (write-readable-object-atomically
+                 outcome (getf request :outcome-path))
+                (publish
+                 (list :status :complete
+                       :sample-id (getf request :sample-id)
+                       :stratum (getf request :stratum)
+                       :paired-mean (getf evaluation :paired-mean)
+                       :episode-count (getf evaluation :episode-count))))))
+        (error (condition)
+          (publish
+           (list :status :error
+                 :sample-id (getf request :sample-id)
+                 :stratum (getf request :stratum)
+                 :message (princ-to-string condition)))))))
+  t)
+
 (defun run-official-guided-candidate-evaluation (request-path)
   "Worker entry point for frozen Phase-1 official challenger evaluation."
   (let* ((request (read-readable-object request-path))
@@ -1796,6 +2022,7 @@ through serialization/deserialization and save it to disk."
     (select evaluation-scores)
     
     (reproduce)
+    (maybe-run-behavioral-locality-sampling)
     (when (official-guided-mode-p)
       (persist-official-guided-runtime-state))))
 

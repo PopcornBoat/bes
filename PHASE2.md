@@ -121,6 +121,38 @@ probabilities at 10, 25, 50, and 100 reward. Event groups overlap for children
 with multiple mutation events and are therefore associations, not isolated
 operator effects.
 
+## Passive stratified official sampling
+
+The generation-best challenger stream is selection-biased and may contain too
+few behavior-changing children to estimate the disruption/return relationship.
+While Phase 2 is active, a second independent worker therefore samples mutated
+children from five balanced strata:
+
+```text
+probe-neutral
+ranking-only
+small-top1       (0, 0.05]
+medium-top1      (0.05, 0.20]
+large-top1       (0.20, 1.0]
+```
+
+The least represented available stratum is selected deterministically. Each
+sample freezes the child and its exact direct parent and evaluates both on 12
+common official seeds. The diagnostic seeds use a separately namespaced,
+checkpointed cursor and never consume training, racing, promotion, reference,
+or Common Lisp random state. Each worker atomically publishes one immutable
+result under:
+
+```text
+.behavioral-locality-samples/*-outcome.lisp
+```
+
+Independent files avoid cross-process append races when a pre-resume worker
+finishes late. The offline analyzer automatically reads and deduplicates these
+outcomes, reporting them separately from generation-best results. Sampler
+results never enter fitness, selection, promotion, historical-best replacement,
+or mutation control.
+
 ## Phase boundary
 
 Do not use these values to reject mutation, change operator probabilities,

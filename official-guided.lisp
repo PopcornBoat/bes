@@ -29,7 +29,10 @@
     (:training 0)
     (:racing 1)
     (:promotion 2)
-    (:reference 3)))
+    (:reference 3)
+    ;; Phase-2 diagnostics derive this stream from their own persisted cursor;
+    ;; it is not part of the four Phase-1 stream plists.
+    (:locality 4)))
 
 (defun official-guided-derived-root (search-seed salt)
   "Derive one reproducible stream root from SEARCH-SEED and SALT."

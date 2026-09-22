@@ -22,6 +22,7 @@
   (mutation-record-count 0 :type integer)
   (official-outcome-count 0 :type integer)
   (official-sample-count 0 :type integer)
+  (stratified-outcome-count 0 :type integer)
   (accepted-count 0 :type integer)
   (mutation-overall (make-locality-analysis-aggregate))
   (official-overall (make-locality-analysis-aggregate))
@@ -29,6 +30,12 @@
   (official-events (make-hash-table :test #'eq))
   (top1-bins (make-hash-table :test #'eq))
   (ranking-bins (make-hash-table :test #'eq))
+  (stratified-overall (make-locality-analysis-aggregate))
+  (stratified-events (make-hash-table :test #'eq))
+  (stratified-top1-bins (make-hash-table :test #'eq))
+  (stratified-ranking-bins (make-hash-table :test #'eq))
+  (stratified-ids (make-hash-table :test #'equal))
+  (stratified-samples nil)
   (stages (make-hash-table :test #'eq))
   (official-samples nil))
 
@@ -136,6 +143,51 @@
                   :delta (coerce delta 'double-float))
             (locality-analysis-summary-official-samples summary)))))
 
+(defun process-locality-stratified-outcome (summary form)
+  "Accumulate one deduplicated, selection-free official parent/child sample."
+  (let ((sample-id (getf form :sample-id)))
+    (unless (gethash sample-id
+                     (locality-analysis-summary-stratified-ids summary))
+      (setf (gethash sample-id
+                     (locality-analysis-summary-stratified-ids summary)) t)
+      (let* ((evaluation (getf form :evaluation))
+             (record (getf evaluation :behavioral-locality))
+             (delta (getf evaluation :paired-mean)))
+        (when (and record (numberp delta))
+          (incf (locality-analysis-summary-stratified-outcome-count summary))
+          (update-locality-analysis-aggregate
+           (locality-analysis-summary-stratified-overall summary) record delta)
+          (dolist (event (locality-record-events record))
+            (update-locality-analysis-aggregate
+             (locality-table-aggregate
+              (locality-analysis-summary-stratified-events summary) event)
+             record delta))
+          (update-locality-analysis-aggregate
+           (locality-table-aggregate
+            (locality-analysis-summary-stratified-top1-bins summary)
+            (locality-distance-bin
+             (locality-double (getf record :top1-hamming))))
+           record delta)
+          (update-locality-analysis-aggregate
+           (locality-table-aggregate
+            (locality-analysis-summary-stratified-ranking-bins summary)
+            (locality-distance-bin
+             (locality-double (getf record :ranking-distance-mean))))
+           record delta)
+          (push (list :sample-id sample-id
+                      :generation (getf form :generation)
+                      :stratum (getf form :stratum)
+                      :top1-hamming
+                        (locality-double (getf record :top1-hamming))
+                      :teacher-rank-change
+                        (locality-double
+                         (getf record :teacher-rank-changed-rate))
+                      :ranking-distance
+                        (locality-double
+                         (getf record :ranking-distance-mean))
+                      :delta (coerce delta 'double-float))
+                (locality-analysis-summary-stratified-samples summary)))))))
+
 (defun process-behavioral-locality-form (summary form)
   "Accumulate one journal FORM into SUMMARY."
   (case (getf form :type)
@@ -144,7 +196,9 @@
      (dolist (record (getf form :records))
        (process-locality-mutation-record summary record)))
     (:official-outcome
-     (process-locality-official-outcome summary form)))
+     (process-locality-official-outcome summary form))
+    (:locality-sample-outcome
+     (process-locality-stratified-outcome summary form)))
   summary)
 
 (defun locality-analysis-correlation (left right)
@@ -286,6 +340,56 @@
                    #'string< :key #'symbol-name))
     (format stream "| ~A | ~D |~%" stage (gethash stage stages))))
 
+(defun locality-report-stratum-counts (stream samples)
+  "Write passive sample counts by requested sampling stratum."
+  (let ((counts (make-hash-table :test #'eq)))
+    (dolist (sample samples)
+      (incf (gethash (getf sample :stratum) counts 0)))
+    (format stream "~%### Submitted strata represented~%~%")
+    (format stream "| Stratum | N |~%|---|---:|~%")
+    (dolist (stratum +behavioral-locality-sampling-strata+)
+      (format stream "| ~A | ~D |~%" stratum (gethash stratum counts 0)))))
+
+(defun locality-report-stratified-summary (summary stream)
+  "Write the selection-free official sample section of the report."
+  (let* ((samples
+           (nreverse
+            (copy-list
+             (locality-analysis-summary-stratified-samples summary))))
+         (overall (locality-analysis-summary-stratified-overall summary))
+         (deltas (mapcar (lambda (sample) (getf sample :delta)) samples))
+         (top1 (mapcar (lambda (sample) (getf sample :top1-hamming)) samples))
+         (ranking
+           (mapcar (lambda (sample) (getf sample :ranking-distance)) samples)))
+    (format stream "~%## Stratified passive official samples~%~%")
+    (format stream "- Outcomes: ~D~%"
+            (locality-analysis-summary-stratified-outcome-count summary))
+    (when samples
+      (format stream "- Mean paired return delta: ~,4F~%- Positive paired-delta rate: ~,3F~%- P(drop > 10): ~,3F~%- P(drop > 25): ~,3F~%- P(drop > 50): ~,3F~%- P(drop > 100): ~,3F~%- Corr(top-1 Hamming, paired delta): ~A~%- Corr(ranking distance, paired delta): ~A~%"
+              (locality-aggregate-mean
+               overall #'locality-analysis-aggregate-delta-sum :delta-p t)
+              (locality-aggregate-rate
+               (locality-analysis-aggregate-positive-count overall)
+               (locality-analysis-aggregate-delta-count overall))
+              (locality-catastrophic-rate overall 10.0d0)
+              (locality-catastrophic-rate overall 25.0d0)
+              (locality-catastrophic-rate overall 50.0d0)
+              (locality-catastrophic-rate overall 100.0d0)
+              (locality-format-correlation
+               (locality-analysis-correlation top1 deltas))
+              (locality-format-correlation
+               (locality-analysis-correlation ranking deltas)))
+      (locality-report-stratum-counts stream samples)
+      (locality-report-event-table
+       stream "Passive official outcomes by mutation event"
+       (locality-analysis-summary-stratified-events summary) t)
+      (locality-report-bin-table
+       stream "Passive official outcomes by top-1 Hamming distance"
+       (locality-analysis-summary-stratified-top1-bins summary))
+      (locality-report-bin-table
+       stream "Passive official outcomes by ranking distance"
+       (locality-analysis-summary-stratified-ranking-bins summary)))))
+
 (defun write-behavioral-locality-report (summary stream source)
   (let* ((samples (locality-analysis-summary-official-samples summary))
          (deltas (mapcar (lambda (sample) (getf sample :delta)) samples))
@@ -336,6 +440,7 @@
              (locality-analysis-correlation ranking deltas)))
     (locality-report-stage-counts
      stream (locality-analysis-summary-stages summary))
+    (locality-report-stratified-summary summary stream)
     (locality-report-event-table
      stream "All reproduced children by mutation event"
      (locality-analysis-summary-mutation-events summary) nil)
@@ -350,17 +455,45 @@
      (locality-analysis-summary-ranking-bins summary))
     (format stream "~%## Interpretation constraint~%~%Mutation-event rows overlap when one child received multiple events. They are conditional associations, not isolated operator effects. Correlations are descriptive and should not drive Phase 3 when the number of behavior-changing official samples is small. Phase 2 does not alter mutation or selection.~%")))
 
-(defun analyze-behavioral-locality-journal (input &key output-path)
-  "Incrementally analyze an append-only Phase-2 journal and write Markdown."
-  (let ((summary (make-locality-analysis-summary))
-        (eof (gensym "EOF")))
+(defun process-behavioral-locality-journal-file (summary input)
+  "Incrementally add readable forms from INPUT to SUMMARY."
+  (let ((eof (gensym "EOF")))
     (with-open-file (stream input :direction :input)
       (with-standard-io-syntax
         (loop for form = (read stream nil eof)
               until (eq form eof)
-              do (process-behavioral-locality-form summary form))))
+              do (process-behavioral-locality-form summary form)))))
+  summary)
+
+(defun behavioral-locality-sample-journal-beside (input)
+  "Return the legacy passive-sample journal beside INPUT."
+  (merge-pathnames
+   #P"behavioral-locality-official-samples.lisp"
+   (uiop:pathname-directory-pathname (pathname input))))
+
+(defun behavioral-locality-outcome-files-beside (input)
+  "Return deterministic immutable passive outcome files beside INPUT."
+  (sort
+   (directory
+    (merge-pathnames
+     #P".behavioral-locality-samples/*-outcome.lisp"
+     (uiop:pathname-directory-pathname (pathname input))))
+   #'string< :key #'namestring))
+
+(defun analyze-behavioral-locality-journal (input &key output-path)
+  "Incrementally analyze an append-only Phase-2 journal and write Markdown."
+  (let* ((summary (make-locality-analysis-summary))
+         (sample-journal (behavioral-locality-sample-journal-beside input)))
+    (process-behavioral-locality-journal-file summary input)
+    (when (probe-file sample-journal)
+      (process-behavioral-locality-journal-file summary sample-journal))
+    (dolist (outcome
+               (behavioral-locality-outcome-files-beside input))
+      (process-behavioral-locality-journal-file summary outcome))
     (setf (locality-analysis-summary-official-samples summary)
-          (nreverse (locality-analysis-summary-official-samples summary)))
+          (nreverse (locality-analysis-summary-official-samples summary))
+          (locality-analysis-summary-stratified-samples summary)
+          (nreverse (locality-analysis-summary-stratified-samples summary)))
     (if output-path
         (with-open-file (stream output-path
                                 :direction :output

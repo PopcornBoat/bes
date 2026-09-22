@@ -204,12 +204,19 @@ independent official paired challenger evaluation.")
   (* 4 +behavioral-probe-section-size+)
   "Maximum observations in the versioned Phase-2 probe archive.")
 
+(defconstant +behavioral-locality-sample-episodes+ 12
+  "Paired official episodes used by one passive Phase-2 locality sample.")
+
+(defparameter +behavioral-locality-sampling-strata+
+  '(:probe-neutral :ranking-only :small-top1 :medium-top1 :large-top1)
+  "Deterministic strata used to balance passive official mutation samples.")
+
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
 (defconstant +official-guided-seed-payload-mask+
   (1- (ash 1 +official-guided-seed-payload-bits+))
-  "Mask separating the four official-guided seed namespaces.")
+  "Mask separating the official-guided and diagnostic seed namespaces.")
 
 (defconstant +online-candidate-evaluation-interval+ 10
   "Generations accumulated before submitting one online generation-best
@@ -545,6 +552,21 @@ reference stream roots and cursors.")
 
 (defvar *behavioral-generation-records* nil
   "Phase-2 child diagnostics waiting to be persisted for this generation.")
+
+(defvar *behavioral-locality-sampling-candidates* nil
+  "Live parent/child pairs eligible for passive sampling this generation.")
+
+(defvar *behavioral-locality-sample-cursor* 0
+  "Monotonic cursor for the independent Phase-2 diagnostic seed sequence.")
+
+(defvar *behavioral-locality-stratum-counts* nil
+  "Serializable alist counting submitted passive samples by distance stratum.")
+
+(defvar *behavioral-locality-sample-process* nil
+  "UIOP process information for the active passive-locality worker.")
+
+(defvar *behavioral-locality-sample-job* nil
+  "Metadata for the active passive-locality worker, never used by selection.")
 
 (defvar *offline-fitness-batch-indices* nil
   "Uniform row indices shared by all semantic-offline candidates in one generation.")
