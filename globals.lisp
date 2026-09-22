@@ -149,6 +149,17 @@ independent official paired challenger evaluation.")
 (defconstant +official-guided-comparison-standard-errors+ 1.0d0
   "Standard-error boundary used by racing futility and final promotion.")
 
+(defconstant +behavioral-locality-protocol+
+  :behavioral-locality-phase2-v1
+  "Version tag for observation-only Phase-2 parent/child diagnostics.")
+
+(defconstant +behavioral-probe-section-size+ 16
+  "Number of observations retained in each Phase-2 probe archive section.")
+
+(defconstant +behavioral-probe-archive-size+
+  (* 4 +behavioral-probe-section-size+)
+  "Maximum observations in the versioned Phase-2 probe archive.")
+
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
@@ -183,6 +194,12 @@ candidate to the independent reference evaluator.")
 
 (defvar *online-staged-best-generation* nil
   "Source generation associated with *ONLINE-STAGED-BEST-TEAM*.")
+
+(defvar *online-staged-best-lineage* nil
+  "Phase-2 parent/child diagnostic associated with the staged challenger.")
+
+(defvar *online-staged-best-parent-team* nil
+  "Independent direct-parent graph associated with the staged challenger.")
 
 (defconstant +online-fitness-stage-two-generation+ 201
   "First online generation evaluated with ten training episodes per team.")
@@ -430,6 +447,15 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 (defvar *last-dagger-diagnostics* nil
   "Diagnostics from the most recent learner-proposal DAgger rollout.")
 
+(defvar *teacher-dagger-behavior-team-snapshot* nil
+  "Independent deep copy of the prior imitation champion used for DAgger.")
+
+(defvar *teacher-dagger-behavior-fitness* nil
+  "Ranked-imitation fitness associated with the DAgger behavior snapshot.")
+
+(defvar *teacher-dagger-behavior-generation* nil
+  "Generation that produced the current DAgger behavior snapshot.")
+
 (defvar *official-guided-seed-streams* nil
   "Serializable plist holding independent training, racing, promotion, and
 reference stream roots and cursors.")
@@ -442,6 +468,39 @@ reference stream roots and cursors.")
 
 (defvar *official-guided-incumbent-version* 0
   "Monotonic token used to reject stale asynchronous challenger results.")
+
+(defvar *behavioral-locality-enabled* nil
+  "When true, observe parent/child semantic disruption without changing mutation.")
+
+(defvar *active-mutation-events* nil
+  "Dynamically bound list of mutation-layer events for one reproduced child.")
+
+(defvar *behavioral-probe-fixed-reference* nil
+  "Long-lived teacher/reference quarter of the Phase-2 probe archive.")
+
+(defvar *behavioral-probe-fixed-early* nil
+  "Long-lived early-critical quarter of the Phase-2 probe archive.")
+
+(defvar *behavioral-probe-archive* nil
+  "Current versioned mixture of fixed and rolling Phase-2 probes.")
+
+(defvar *behavioral-probe-revision* 0
+  "Monotonic revision of the active Phase-2 probe archive.")
+
+(defvar *behavioral-teacher-action-support* nil
+  "EQUAL hash set of semantic pairs emitted by the active teacher reference.")
+
+(defvar *behavioral-signature-cache* nil
+  "Per-archive EQ cache of policy rankings on Phase-2 probes.")
+
+(defvar *behavioral-team-lineage* nil
+  "EQ map from live reproduced teams to their parent/child diagnostic record.")
+
+(defvar *behavioral-team-parents* nil
+  "EQ map from live reproduced children to their unmodified direct parents.")
+
+(defvar *behavioral-generation-records* nil
+  "Phase-2 child diagnostics waiting to be persisted for this generation.")
 
 (defvar *offline-fitness-batch-indices* nil
   "Uniform row indices shared by all semantic-offline candidates in one generation.")

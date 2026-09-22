@@ -13,6 +13,9 @@ Phase 1 answers only two questions:
   bridge-resolved concrete action, and real transition.
 - Teacher mixing records proposal disagreement and the source of the executed
   action independently.
+- Official-guided DAgger uses an independent serialize/deserialize snapshot of
+  the previous generation's ranked-imitation champion. The protected official
+  incumbent is never reused as the evolving behavior policy.
 - Training, racing, promotion, and reference seeds use disjoint namespaces and
   separately checkpointed cursors.
 - Candidate and incumbent use the same initial seeds within every paired round.
@@ -24,6 +27,8 @@ Phase 1 answers only two questions:
   Only Stage 3 (100 cumulative pairs) may promote.
 - Roots 153, 42, and 2026 are monitoring only and never affect selection.
 - Historical best graphs remain independent serialize/deserialize copies.
+- Warm-start initialization never overwrites an existing incumbent checkpoint.
+  Only an accepted Stage-3 official promotion may replace that file.
 - Population survival remains the existing ranked-imitation selection. Phase 1
   does not introduce lexicase or mutation changes.
 

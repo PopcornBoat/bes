@@ -347,8 +347,11 @@ agreement, ensuring `(target, DECOY)` executes the same concrete option intended
 by the heuristic. Backend/profile identity is stored in checkpoint metadata and
 filenames.
 
-The default `dagger` rollout lets the current best TPG policy control a second
-copy of each episode after the fixed opening. The selected teacher sees those
+The default `dagger` rollout lets the previous generation's ranked-imitation
+champion control a second copy of each episode after the fixed opening. In
+official-guided mode that behavior policy is a complete serialize/deserialize
+snapshot, independent of both the live population and the protected official
+incumbent. The selected teacher sees those
 exact learner-visited observations and supplies ranked semantic labels, but
 never acts in or changes that environment. The menu's `teacher` rollout
 preserves teacher-controlled behavior cloning.
@@ -386,6 +389,36 @@ fitness-episode count, episode-opening mode, rollout mode, teacher backend,
 Hamming configuration, and action agreement match. `dagger` and `teacher` use
 different checkpoint filenames and fitness protocol tags, so changing modes
 safely re-baselines a warm start.
+
+## Behavioral-locality diagnostics
+
+The `behavioral-locality` research branch implements Phase 2 of the
+official-guided design. It does not change mutation or selection. After each
+shared DAgger trace it maintains a versioned 64-state probe archive containing
+fixed teacher/reference states, fixed early-critical states, current on-policy
+states, and current disagreement states. Every reproduced child is compared
+with its actual parent on that archive without consuming the search RNG.
+
+The per-child record includes top-1 action Hamming distance, teacher-action rank
+change, top-8 overlap, symmetric ranking NDCG/distance, task-specific
+teacher-off-support output, reachable complexity, and the mutation layers that
+were applied. When a staged challenger reaches official evaluation, its direct
+parent is also frozen independently. Child and parent run on the same racing
+seeds, so the record contains a true mutation return delta. This is separate
+from candidate-versus-incumbent racing, which alone controls promotion.
+
+Detailed readable records are appended to
+`behavioral-locality-records.lisp` in the checkpoint directory. Probe archive
+state is included in both the best-team checkpoint and the official-guided
+runtime journal so a resume preserves the meaning of cross-generation
+distances. See `PHASE2.md` for formulas and the frozen boundary: these metrics
+are observational only and cannot reject or resize a mutation in Phase 2.
+
+The DAgger behavior snapshot and its source generation/fitness are also stored
+in both places. Resume therefore continues the learner trajectory distribution
+without sharing graph references. Warm-start setup creates a run-local
+incumbent checkpoint only when none exists; an existing file is protected, and
+only final Stage-3 official promotion may overwrite it.
 
 ## CAGE2 episode opening
 

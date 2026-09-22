@@ -557,7 +557,9 @@ promotion still requires the stricter positive one-standard-error improvement."
           (+ *generation* +online-candidate-evaluation-interval+)
         *online-staged-best-team* nil
         *online-staged-best-fitness* nil
-        *online-staged-best-generation* nil))
+        *online-staged-best-generation* nil
+        *online-staged-best-lineage* nil
+        *online-staged-best-parent-team* nil))
 
 (defun online-candidate-directory ()
   "Return the private staged-evaluation directory for this checkpoint run."
@@ -599,10 +601,16 @@ promotion still requires the stricter positive one-standard-error improvement."
   "Retain the strongest training winner seen in the current submission window."
   (when (or (null *online-staged-best-fitness*)
             (> fitness *online-staged-best-fitness*))
-    (setf *online-staged-best-team*
-            (deep-copy-team-via-serialization team)
-          *online-staged-best-fitness* fitness
-          *online-staged-best-generation* *generation*)))
+    (let ((parent (behavioral-parent-for-team team)))
+      (setf *online-staged-best-team*
+              (deep-copy-team-via-serialization team)
+            *online-staged-best-fitness* fitness
+            *online-staged-best-generation* *generation*
+            *online-staged-best-lineage*
+              (behavioral-lineage-for-team team)
+            *online-staged-best-parent-team*
+              (and parent
+                   (deep-copy-team-via-serialization parent))))))
 
 (defun launch-online-candidate-evaluation ()
   "Publish the accumulated candidate and start its independent SBCL worker."
@@ -669,7 +677,9 @@ promotion still requires the stricter positive one-standard-error improvement."
             (+ *generation* +online-candidate-evaluation-interval+)
           *online-staged-best-team* nil
           *online-staged-best-fitness* nil
-          *online-staged-best-generation* nil)
+          *online-staged-best-generation* nil
+          *online-staged-best-lineage* nil
+          *online-staged-best-parent-team* nil)
     (emit-message
      (format nil
              "Generation ~D submitted to independent online evaluator: training-fitness=~A screen=~D reference=~D."
@@ -935,6 +945,10 @@ promotion still requires the stricter positive one-standard-error improvement."
            (official-guided-candidate-path artifact-id "candidate" "lisp"))
          (incumbent-path
            (official-guided-candidate-path artifact-id "incumbent" "lisp"))
+         (parent-path
+           (and *online-staged-best-parent-team*
+                (official-guided-candidate-path
+                 artifact-id "direct-parent" "lisp")))
          (request-path
            (official-guided-candidate-path artifact-id "request" "lisp"))
          (result-path
@@ -958,10 +972,15 @@ promotion still requires the stricter positive one-standard-error improvement."
      *online-staged-best-team* imitation-score generation candidate-path)
     (write-official-guided-team-checkpoint
      *best-team* *best-fitness* generation incumbent-path)
+    (when parent-path
+      (write-official-guided-team-checkpoint
+       *online-staged-best-parent-team*
+       imitation-score generation parent-path))
     (write-readable-object-atomically
      (list :version 1
            :candidate-path (namestring candidate-path)
            :incumbent-path (namestring incumbent-path)
+           :direct-parent-path (and parent-path (namestring parent-path))
            :result-path (namestring result-path)
            :candidate-generation generation
            :candidate-imitation-score imitation-score
@@ -972,6 +991,8 @@ promotion still requires the stricter positive one-standard-error improvement."
            :decoy-order-mode *decoy-order-mode*
            :cage2-opening-mode *cage2-opening-mode*
            :teacher-backend *teacher-backend*
+           :behavioral-locality
+             (copy-tree *online-staged-best-lineage*)
            :racing-seeds racing-seeds
            :promotion-seeds promotion-seeds
            :promotion-stages
@@ -1004,7 +1025,9 @@ promotion still requires the stricter positive one-standard-error improvement."
             (+ *generation* +online-candidate-evaluation-interval+)
           *online-staged-best-team* nil
           *online-staged-best-fitness* nil
-          *online-staged-best-generation* nil)
+          *online-staged-best-generation* nil
+          *online-staged-best-lineage* nil
+          *online-staged-best-parent-team* nil)
     (emit-message
      (format nil
              "Generation ~D submitted to official-guided evaluator: imitation=~,4F racing=~D promotion-stages=~S reference-monitor=~D."
@@ -1022,6 +1045,8 @@ promotion still requires the stricter positive one-standard-error improvement."
          (candidate-path (getf *online-candidate-job* :candidate-path))
          (record (getf result :evaluation-record)))
     (setf *official-guided-last-evaluation* (copy-tree record))
+    (persist-behavioral-official-outcome
+     generation (getf record :behavioral-locality) record)
     (cond
       ((eq (getf result :status) :error)
        (emit-message
@@ -1045,6 +1070,11 @@ promotion still requires the stricter positive one-standard-error improvement."
                 (or (getf record :same-seed-correlation) :undefined)
                 (getf record :paired-variance 0.0d0)
                 (getf record :unpaired-variance 0.0d0))))
+      ((not (eq (getf record :stage) :promotion-stage-3))
+       (emit-message
+        (format nil
+                "Official-guided accepted result rejected defensively: generation=~D stage=~A; only final Stage-3 evidence may overwrite the incumbent checkpoint."
+                generation (getf record :stage))))
       (t
        (let* ((loaded (load-best-team candidate-path))
               (frozen (deep-copy-team-via-serialization loaded)))
@@ -1115,7 +1145,8 @@ promotion still requires the stricter positive one-standard-error improvement."
   "Worker entry point for frozen Phase-1 official challenger evaluation."
   (let* ((request (read-readable-object request-path))
          (result-path (pathname (getf request :result-path)))
-         (started (get-universal-time)))
+         (started (get-universal-time))
+         (parent-child-record nil))
     (labels
         ((publish (result)
            (write-readable-object-atomically
@@ -1124,13 +1155,18 @@ promotion still requires the stricter positive one-standard-error improvement."
                           (- (get-universal-time) started)))
             result-path))
          (make-record (stage seeds candidate-scores incumbent-scores accepted)
-           (make-official-guided-evaluation-record
-            :stage stage
-            :imitation-score (getf request :candidate-imitation-score)
-            :seeds seeds
-            :candidate-returns candidate-scores
-            :incumbent-returns incumbent-scores
-            :accepted accepted)))
+           (append
+            (make-official-guided-evaluation-record
+             :stage stage
+             :imitation-score (getf request :candidate-imitation-score)
+             :seeds seeds
+             :candidate-returns candidate-scores
+             :incumbent-returns incumbent-scores
+             :accepted accepted)
+            (list :behavioral-locality
+                    (copy-tree (getf request :behavioral-locality))
+                  :parent-child-evaluation
+                    (copy-tree parent-child-record)))))
       (handler-case
           (let* ((*running* t)
                  (*search-active* nil)
@@ -1147,15 +1183,34 @@ promotion still requires the stricter positive one-standard-error improvement."
                  (*factored-actions-enabled* t)
                  (candidate (load-best-team (getf request :candidate-path)))
                  (incumbent (load-best-team (getf request :incumbent-path)))
+                 (direct-parent-path (getf request :direct-parent-path))
+                 (direct-parent
+                   (and direct-parent-path
+                        (load-best-team direct-parent-path)))
                  (racing-seeds (getf request :racing-seeds))
                  (promotion-seeds (getf request :promotion-seeds))
                  (promotion-stages (getf request :promotion-stages))
                  (reference-seeds (getf request :reference-seeds)))
             (ensure-team-observation-compatible candidate *num-observations*)
             (ensure-team-observation-compatible incumbent *num-observations*)
+            (when direct-parent
+              (ensure-team-observation-compatible
+               direct-parent *num-observations*))
             (multiple-value-bind (race-candidate race-incumbent)
                 (official-guided-paired-rollouts
                  candidate incumbent *current-gym-environment-name* racing-seeds)
+              (when direct-parent
+                (let ((parent-scores
+                        (loop for seed in racing-seeds
+                              collect
+                              (cl-gym:rollout
+                               direct-parent
+                               *current-gym-environment-name*
+                               seed))))
+                  (setf parent-child-record
+                        (make-official-guided-parent-child-evaluation-record
+                         race-candidate parent-scores racing-seeds
+                         (getf request :behavioral-locality)))))
               (multiple-value-bind (continue-p race-delta race-margin)
                   (official-guided-continue-p race-candidate race-incumbent)
                 (declare (ignore race-delta))
@@ -1364,6 +1419,7 @@ reference batch."
 
 (defun configure-fitness-function (mode gym-environment-name dataset-name)
   "Configure *FITNESS-FN* according to MODE."
+  (setf *behavioral-locality-enabled* (eq mode :official-guided))
   (ecase mode
     (:online
      (make-fitness-function :gym-environment-name gym-environment-name))
@@ -1556,6 +1612,14 @@ through serialization/deserialization and save it to disk."
            (official-guided-candidate-evaluation-enabled-p))
          (staged-candidate-p (or staged-online-p staged-guided-p)))
 
+    ;; DAgger follows the evolving learner distribution, not the protected
+    ;; official incumbent.  The independent snapshot is consumed next
+    ;; generation and cannot be mutated by selection or reproduction.
+    (when (and (official-guided-mode-p)
+               (eq *teacher-forcing-rollout-mode* :dagger))
+      (install-teacher-dagger-behavior-team
+       generation-best-team generation-best *generation*))
+
     (cond
       (staged-guided-p
        (poll-official-guided-candidate-evaluation)
@@ -1666,7 +1730,9 @@ through serialization/deserialization and save it to disk."
     ;; ------------------------------------------------------------
 
     (dolist (entry worst-entries)
-      (delete-team (car entry)))))
+      (delete-team (car entry)))
+    (when (behavioral-locality-active-p)
+      (prune-behavioral-team-lineage))))
 
 (defun should-send-migrants-p ()
   "Returns T periodically when the generation matches the migration interval."
@@ -1698,8 +1764,15 @@ through serialization/deserialization and save it to disk."
 	do (push root-team *teams*)))
 
 (defun reproduce ()
+  "Refill the root population and passively observe parent/child disruption."
   (loop while (< (length (root-teams)) *population-size*)
-	do (mutate-team (clone-team (random-choice (root-teams))))))
+        for parent = (random-choice (root-teams))
+        for child = (clone-team parent)
+        do (let ((*active-mutation-events* nil))
+             (mutate-team child)
+             (record-behavioral-mutation
+              parent child (nreverse *active-mutation-events*))))
+  (persist-behavioral-generation-records))
 
 (defun evolve ()
   "Evolve the population for a single generation."
@@ -1741,6 +1814,7 @@ through serialization/deserialization and save it to disk."
       (setf *teams* nil)
       (setf *generation* 1)
       (reset-online-candidate-evaluation-state)
+      (reset-behavioral-locality-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
@@ -1749,6 +1823,11 @@ through serialization/deserialization and save it to disk."
 
       (configure-fitness-function mode gym-environment-name dataset-name)
       (make-initial-population)
+
+      (when (and (official-guided-mode-p)
+                 (eq *teacher-forcing-rollout-mode* :dagger))
+        (install-teacher-dagger-behavior-team
+         (first (root-teams)) nil 0))
 
       (loop while *running*
             do (evolve)
@@ -1960,6 +2039,24 @@ checkpoint remains replayable while training continues on changing batches."
 
     scores))
 
+(defun ensure-official-guided-incumbent-checkpoint ()
+  "Create the run-local incumbent checkpoint once, never overwrite it here.
+
+Only a challenger that passes final Stage-3 promotion may subsequently call
+SAVE-BEST-TEAM on this path.  This prevents warm-start/resume bookkeeping from
+rewriting a protected on-disk incumbent."
+  (let ((destination (best-team-checkpoint-path)))
+    (cond
+      ((probe-file destination)
+       (emit-message
+        (format nil
+                "Protected existing warm-start incumbent checkpoint (not overwritten): ~A"
+                (namestring destination)))
+       :preserved)
+      (t
+       (save-best-team destination)
+       :created))))
+
 (defun initialize-official-guided-best-from-current-population
        (loaded-best-team saved-best-fitness checkpoint-metadata)
   "Install LOADED-BEST-TEAM as the official incumbent without imitation takeover.
@@ -1968,13 +2065,32 @@ The fresh population is still evaluated on ranked imitation, but no randomly
 initialized team may replace the incumbent until it passes independent official
 racing and all three fresh promotion stages."
   ;; Install the frozen graph before EVALUATE so the very first resumed DAgger
-  ;; trajectory is owned by the loaded incumbent, independent of root ordering.
+  ;; trajectory has an explicit independent owner.  A recovered behavior
+  ;; snapshot takes precedence; otherwise seed it from another deep copy of the
+  ;; loaded incumbent rather than sharing *BEST-TEAM*.
   (setf *best-team* (deep-copy-team-via-serialization loaded-best-team)
         *best-fitness* saved-best-fitness)
+  (unless *teacher-dagger-behavior-team-snapshot*
+    (install-teacher-dagger-behavior-team
+     *best-team* nil 0 :announce nil))
   (let* ((scores (evaluate))
-         (loaded-entry (assoc loaded-best-team scores :test #'eq)))
+         (loaded-entry (assoc loaded-best-team scores :test #'eq))
+         (best-entry
+           (first
+            (stable-sort
+             (copy-list scores)
+             (lambda (left right)
+               (if (= (cdr left) (cdr right))
+                   (complexity-key-less-p
+                    (policy-complexity-key (car left))
+                    (policy-complexity-key (car right)))
+                   (> (cdr left) (cdr right))))))))
     (unless loaded-entry
       (error "Official-guided warm start did not evaluate the loaded team."))
+    (unless best-entry
+      (error "Official-guided warm start produced no valid imitation champion."))
+    (install-teacher-dagger-behavior-team
+     (car best-entry) (cdr best-entry) *generation*)
     (setf *best-fitness* (or saved-best-fitness (cdr loaded-entry))
           *official-guided-incumbent-version*
             (max 1
@@ -2001,7 +2117,7 @@ racing and all three fresh promotion stages."
              saved-best-fitness (cdr loaded-entry)
              *official-guided-incumbent-version*))
     (when *checkpoint-directory*
-      (save-best-team)
+      (ensure-official-guided-incumbent-checkpoint)
       (persist-official-guided-runtime-state))
     scores))
 
@@ -2032,6 +2148,7 @@ normal evolution."
       (setf *teams* nil)
       (setf *generation* 1)
       (reset-online-candidate-evaluation-state)
+      (reset-behavioral-locality-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 

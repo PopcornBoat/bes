@@ -117,15 +117,38 @@ allowing permanent positive bloat pressure."
   "Mutate a program by adding/deleting/swapping instructions
    or mutating constants with likelihood *p-mut*."
   (when (mutate-program-p)
-    (when (add-instruction-p
-           (length (program-instructions program)))
-      (add-instruction program))
-    (when (delete-instruction-p)
-      (delete-instruction program))
-    (when (swap-instructions-p)
-      (swap-instructions program))
-    (when (mutate-constant-p)
-      (mutate-constant program)))
+    (let ((changed-p nil))
+      (when (add-instruction-p
+             (length (program-instructions program)))
+        (let ((before (length (program-instructions program))))
+          (add-instruction program)
+          (when (> (length (program-instructions program)) before)
+            (setf changed-p t)
+            (note-mutation-event :instruction-add))))
+      (when (delete-instruction-p)
+        (let ((before (length (program-instructions program))))
+          (delete-instruction program)
+          (when (< (length (program-instructions program)) before)
+            (setf changed-p t)
+            (note-mutation-event :instruction-delete))))
+      (when (swap-instructions-p)
+        (let ((before (copy-seq (program-instructions program))))
+          (swap-instructions program)
+          (unless (and (= (length before)
+                          (length (program-instructions program)))
+                       (loop for prior across before
+                             for current across (program-instructions program)
+                             always (eq prior current)))
+            (setf changed-p t)
+            (note-mutation-event :instruction-swap))))
+      (when (mutate-constant-p)
+        (let ((before (pprint-program program)))
+          (mutate-constant program)
+          (unless (equal before (pprint-program program))
+            (setf changed-p t)
+            (note-mutation-event :constant-mutation))))
+      (when changed-p
+        (note-mutation-event :program-mutation))))
   program)
   					; team mutations
 
@@ -154,7 +177,8 @@ allowing permanent positive bloat pressure."
 (defun add-learner (team)
   "Add a new learner to a team."
   (when (< (length (team-learners team)) *max-num-learners*)
-    (push (make-learner) (team-learners team)))
+    (push (make-learner) (team-learners team))
+    (note-mutation-event :learner-add))
   team)
 
 (defun delete-learner (team)
@@ -166,7 +190,8 @@ allowing permanent positive bloat pressure."
     (when (> num-learners 1)
       (when (eq (action-type (learner-action learner)) :reference)
 	(delete-reference (action-action (learner-action learner))))
-      (setf (team-learners team) (delete learner learners :count 1 :test #'eq))))
+      (setf (team-learners team) (delete learner learners :count 1 :test #'eq))
+      (note-mutation-event :learner-delete)))
   team)
 
 (defun swap-learners (team)
@@ -179,7 +204,8 @@ allowing permanent positive bloat pressure."
 	     (learner-2 (random-choice (remove learner-1 learners :test #'eq)))
 	     (learner-2-action (learner-action learner-2)))
 	(setf (learner-action learner-1) learner-2-action)
-	(setf (learner-action learner-2) learner-1-action))))
+	(setf (learner-action learner-2) learner-1-action)
+        (note-mutation-event :learner-action-swap))))
   team)
 
 (defun random-different-category (current category-count)
@@ -193,13 +219,17 @@ allowing permanent positive bloat pressure."
   "Copy PAYLOAD and mutate exactly one categorical policy component."
   (let ((mutated (copy-factored-action payload)))
     (if (zerop (random 2))
-        (setf (factored-action-primary mutated)
-              (random-different-category
-               (factored-action-primary mutated) *num-actions*))
-        (setf (factored-action-secondary mutated)
-              (random-different-category
-               (factored-action-secondary mutated)
-               +num-semantic-responses+)))
+        (progn
+          (setf (factored-action-primary mutated)
+                (random-different-category
+                 (factored-action-primary mutated) *num-actions*))
+          (note-mutation-event :terminal-target-mutation))
+        (progn
+          (setf (factored-action-secondary mutated)
+                (random-different-category
+                 (factored-action-secondary mutated)
+                 +num-semantic-responses+))
+          (note-mutation-event :terminal-response-mutation)))
     mutated))
 
 (defun mutated-atomic-action-value (old-payload)
@@ -227,6 +257,8 @@ allowing permanent positive bloat pressure."
                (second
                  (random-different-category first (length order))))
           (rotatef (aref order first) (aref order second))))))
+  (when (eq *decoy-order-mode* :evolved)
+    (note-mutation-event :decoy-order-mutation))
   team)
 
 (defun mutate-action (team)
@@ -236,17 +268,18 @@ allowing permanent positive bloat pressure."
   (let* ((learners (team-learners team))
 	 (learner (random-choice learners))
 	 (action (learner-action learner))
+	 (old-type (action-type action))
+	 (old-payload (and (eq old-type :atomic)
+                           (action-action action)))
 	 (new-type (random-choice '(:atomic :reference))))
     ;; if the old action was a reference, we decrement the target's count.
     (when (eq (action-type action) :reference)
       (delete-reference (action-action action)))
     (case new-type
       (:atomic
-       (let ((old-payload (and (eq (action-type action) :atomic)
-                               (action-action action))))
 	 (setf (action-type action) :atomic
                (action-action action)
-               (mutated-atomic-action-value old-payload))))
+               (mutated-atomic-action-value old-payload)))
       (:reference
        (let ((target (random-choice (remove team *teams* :test #'equal))))
 	 (if (creates-cycle-p team target)
@@ -258,7 +291,12 @@ allowing permanent positive bloat pressure."
 	     (progn
 	       (setf (action-type action) :reference)
 	       (setf (action-action action) target)
-	       (add-reference target)))))))
+	       (add-reference target))))))
+    (cond
+      ((or (eq old-type :reference) (eq new-type :reference))
+       (note-mutation-event :team-edge-mutation))
+      ((not (factored-action-p old-payload))
+       (note-mutation-event :terminal-action-mutation))))
   team)
 
 (defun mutate-learner (team)

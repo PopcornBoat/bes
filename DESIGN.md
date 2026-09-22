@@ -20,6 +20,11 @@ Phase 1 must not implement mutation-locality control, lexicase, recurrent TPG,
 soft teacher distillation, or counterfactual advantage. Existing ranked
 semantic imitation and mutation operators remain unchanged.
 
+Phase 2 preserves those operators and selection rules. It adds only passive
+parent/child measurement on a versioned probe archive. The measurements must
+not draw from the search random state, reject a child, choose a parent, or alter
+a mutation probability. Mutation-locality control remains Phase 3 work.
+
 The baseline contract is 62 policy inputs (52 raw plus 10 scan state), 11
 semantic targets, stateless TPG execution, fixed controller-owned opening, and
 fixed bridge-owned Decoy ordering. The bridge owns scan and used-Decoy state.

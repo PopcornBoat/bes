@@ -66,6 +66,67 @@
         (= (getf record :same-seed-correlation) 1.0d0))
    "structured record preserves scalar, uncertainty, seeds, and CRN evidence"))
 
+(let* ((lineage '(:top1-hamming 0.25d0 :mutation-events ((:LEARNER-ADD 1))))
+       (record
+         (cl-tpg::make-official-guided-parent-child-evaluation-record
+          '(3.0d0 1.0d0) '(1.0d0 2.0d0) '(11 12) lineage)))
+  (check-official-guided
+   (and (eq (getf record :stage) :parent-child-racing)
+        (= (getf record :paired-mean) 0.5d0)
+        (equal (getf record :behavioral-locality) lineage))
+   "direct-parent record pairs child and parent on the exact same seeds"))
+
+(let* ((program
+         (cl-tpg::make-program
+          :instructions (make-array 0 :fill-pointer t :adjustable t)))
+       (source
+         (cl-tpg::%make-team
+          :id "dagger-source"
+          :learners
+            (list
+             (cl-tpg::make-learner
+              :program program
+              :action
+                (cl-tpg::make-action
+                 :type :atomic
+                 :action
+                   (cl-tpg::make-factored-action
+                    :primary 2 :secondary 0))))))
+       (cl-tpg::*num-observations* 62)
+       (cl-tpg::*teacher-dagger-behavior-team-snapshot* nil)
+       (cl-tpg::*teacher-dagger-behavior-fitness* nil)
+       (cl-tpg::*teacher-dagger-behavior-generation* nil))
+  (cl-tpg::install-teacher-dagger-behavior-team
+   source 0.75d0 9 :announce nil)
+  (let* ((snapshot cl-tpg::*teacher-dagger-behavior-team-snapshot*)
+         (state (cl-tpg::teacher-dagger-behavior-state-copy))
+         (source-payload
+           (cl-tpg::action-action
+            (cl-tpg::learner-action
+             (first (cl-tpg::team-learners source))))))
+    (setf (cl-tpg::factored-action-primary source-payload) 7)
+    (check-official-guided
+     (and (not (eq source snapshot))
+          (= (cl-tpg::factored-action-primary
+              (cl-tpg::action-action
+               (cl-tpg::learner-action
+                (first (cl-tpg::team-learners snapshot)))))
+             2))
+     "DAgger behavior snapshot shares no mutable learner/action state")
+    (cl-tpg::reset-teacher-dagger-behavior-state)
+    (cl-tpg::restore-teacher-dagger-behavior-state state)
+    (check-official-guided
+     (and (= cl-tpg::*teacher-dagger-behavior-generation* 9)
+          (= cl-tpg::*teacher-dagger-behavior-fitness* 0.75d0)
+          (= (cl-tpg::factored-action-primary
+              (cl-tpg::action-action
+               (cl-tpg::learner-action
+                (first
+                 (cl-tpg::team-learners
+                  cl-tpg::*teacher-dagger-behavior-team-snapshot*)))))
+             2))
+     "DAgger behavior state resumes as an independent serialized graph")))
+
 (multiple-value-bind (continue-p mean margin)
     (cl-tpg::official-guided-continue-p
      '(-10.0d0 -10.0d0 -10.0d0)
@@ -118,6 +179,44 @@
           "10-v1-t101" "result" "lisp")))
    "candidate artifacts remain distinct when generation numbers repeat"))
 
+(let* ((token (format nil "protected-~D-~D"
+                      (get-universal-time) (get-internal-real-time)))
+       (directory
+         (merge-pathnames (format nil "~A/" token)
+                          (uiop:temporary-directory)))
+       (cl-tpg::*checkpoint-directory* directory)
+       (cl-tpg::*current-search-mode* :official-guided)
+       (cl-tpg::*current-gym-environment-name* "Cage2-b_line-100-v0")
+       (cl-tpg::*num-observations* 62)
+       (cl-tpg::*num-actions* 11)
+       (cl-tpg::*decoy-order-mode* :fixed)
+       (cl-tpg::*teacher-backend* :model)
+       (cl-tpg::*cage2-opening-mode* :fixed)
+       (cl-tpg::*hamming-space-enabled* nil)
+       (cl-tpg::*recurrent-policy-enabled* nil)
+       (path (cl-tpg::best-team-checkpoint-path)))
+  (unwind-protect
+       (progn
+         (ensure-directories-exist path)
+         (with-open-file (stream path :direction :output
+                                      :if-exists :supersede
+                                      :if-does-not-exist :create)
+           (write-string "protected-warm-start" stream))
+         (check-official-guided
+          (eq (cl-tpg::ensure-official-guided-incumbent-checkpoint)
+              :preserved)
+          "warm-start initialization refuses to overwrite an existing incumbent")
+         (check-official-guided
+          (string=
+           (with-open-file (stream path :direction :input)
+             (let ((text (make-string (file-length stream))))
+               (read-sequence text stream)
+               text))
+           "protected-warm-start")
+          "protected warm-start bytes remain unchanged"))
+    (when (probe-file path)
+      (delete-file path))))
+
 ;; Exercise the complete racing -> staged promotion -> monitoring worker without
 ;; starting CAGE2.  The temporary rollout function gives the candidate a
 ;; deterministic +1 return on every common seed.
@@ -130,6 +229,9 @@
        (incumbent-path
          (merge-pathnames (format nil "phase1-~A-incumbent.lisp" token)
                           directory))
+       (parent-path
+         (merge-pathnames (format nil "phase1-~A-parent.lisp" token)
+                          directory))
        (request-path
          (merge-pathnames (format nil "phase1-~A-request.lisp" token)
                           directory))
@@ -138,16 +240,19 @@
                           directory))
        (candidate (cl-tpg::%make-team :id "phase1-candidate" :learners nil))
        (incumbent (cl-tpg::%make-team :id "phase1-incumbent" :learners nil))
+       (parent (cl-tpg::%make-team :id "phase1-parent" :learners nil))
        (original-rollout (symbol-function 'cl-gym:rollout))
        (rollout-count 0))
   (unwind-protect
        (progn
          (cl-tpg::write-best-team-checkpoint candidate 0.75d0 candidate-path)
          (cl-tpg::write-best-team-checkpoint incumbent 0.50d0 incumbent-path)
+         (cl-tpg::write-best-team-checkpoint parent 0.70d0 parent-path)
          (cl-tpg::write-readable-object-atomically
           (list :version 1
                 :candidate-path (namestring candidate-path)
                 :incumbent-path (namestring incumbent-path)
+                :direct-parent-path (namestring parent-path)
                 :result-path (namestring result-path)
                 :candidate-generation 10
                 :candidate-imitation-score 0.75d0
@@ -166,9 +271,16 @@
          (setf (symbol-function 'cl-gym:rollout)
                (lambda (team environment seed &key video-path)
                  (declare (ignore team environment seed video-path))
-                 ;; OFFICIAL-GUIDED-PAIRED-ROLLOUTS always invokes candidate
-                 ;; first and incumbent second for each common seed.
-                 (if (oddp (incf rollout-count)) 1.0d0 0.0d0)))
+                 (incf rollout-count)
+                 (cond
+                   ;; Racing invokes five candidate/incumbent pairs first.
+                   ((<= rollout-count 10)
+                    (if (oddp rollout-count) 1.0d0 0.0d0))
+                   ;; The same five seeds then evaluate the direct parent.
+                   ((<= rollout-count 15) 0.5d0)
+                   ;; Remaining promotion/monitoring calls are paired again.
+                   (t
+                    (if (oddp (- rollout-count 15)) 1.0d0 0.0d0)))))
          (cl-tpg::run-official-guided-candidate-evaluation request-path)
          (let ((result (cl-tpg::read-readable-object result-path)))
            (check-official-guided
@@ -178,13 +290,19 @@
                      :promotion-stage-3)
                  (= (getf (getf result :evaluation-record) :episode-count)
                     100)
+                 (= (getf
+                     (getf (getf result :evaluation-record)
+                           :parent-child-evaluation)
+                     :paired-mean)
+                    0.5d0)
                  (= (getf (getf result :reference-monitoring) :episode-count)
                     6))
             (format nil
                     "worker promotes only after Stage 3 and keeps monitoring separate: ~S"
                     result))))
     (setf (symbol-function 'cl-gym:rollout) original-rollout)
-    (dolist (path (list candidate-path incumbent-path request-path result-path))
+    (dolist (path (list candidate-path incumbent-path parent-path
+                        request-path result-path))
       (when (probe-file path)
         (delete-file path)))))
 

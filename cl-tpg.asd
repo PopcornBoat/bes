@@ -19,6 +19,7 @@
 	       (:file "mutation")
 	       (:file "dataset")
 	       (:file "hamming")
+	       (:file "behavioral-locality")
 	       (:file "migration")
 	       (:file "networking")
 	       (:file "gym")

@@ -463,6 +463,9 @@ the historical learner-controlled DAgger behavior is preserved."
         *teacher-dagger-replay-rows* nil
         *teacher-dagger-replay-episodes* nil
         *last-dagger-diagnostics* nil
+        *teacher-dagger-behavior-team-snapshot* nil
+        *teacher-dagger-behavior-fitness* nil
+        *teacher-dagger-behavior-generation* nil
         *teacher-dagger-random-state*
           (sb-ext:seed-random-state
            (+ *current-search-seed* 32452843)))
@@ -492,9 +495,70 @@ the historical learner-controlled DAgger behavior is preserved."
            (dataset-size *teacher-reference-dataset*)))
   (setf *fitness-fn* #'teacher-forcing-training-fitness))
 
+(defun reset-teacher-dagger-behavior-state ()
+  "Discard the run-local DAgger behavior snapshot and its provenance."
+  (setf *teacher-dagger-behavior-team-snapshot* nil
+        *teacher-dagger-behavior-fitness* nil
+        *teacher-dagger-behavior-generation* nil))
+
+(defun install-teacher-dagger-behavior-team
+       (team fitness generation &key (announce t))
+  "Install a fully independent DAgger behavior snapshot of TEAM.
+
+Serialization/deserialization is deliberately used instead of CLONE-TEAM so
+referenced subgraphs cannot remain shared with the live population, the
+official incumbent, or the warm-start graph stored on disk."
+  (unless team
+    (error "Cannot install a NIL DAgger behavior team."))
+  (let ((snapshot (deep-copy-team-via-serialization team)))
+    (setf *teacher-dagger-behavior-team-snapshot* snapshot
+          *teacher-dagger-behavior-fitness* fitness
+          *teacher-dagger-behavior-generation* generation)
+    (when announce
+      (emit-message
+       (format nil
+               "Generation ~D DAgger behavior snapshot advanced: source=~A imitation=~A complexity=~S (independent deep copy)."
+               generation (team-id team) fitness
+               (policy-complexity-key snapshot))))
+    snapshot))
+
+(defun teacher-dagger-behavior-state-copy ()
+  "Return a serialization-safe copy of the independent DAgger behavior state."
+  (when *teacher-dagger-behavior-team-snapshot*
+    (list :version 1
+          :source-generation *teacher-dagger-behavior-generation*
+          :imitation-fitness *teacher-dagger-behavior-fitness*
+          :team
+            (serialize-team
+             *teacher-dagger-behavior-team-snapshot*
+             (make-hash-table :test #'equal)))))
+
+(defun restore-teacher-dagger-behavior-state (state)
+  "Restore STATE as an independent, non-population DAgger behavior graph."
+  (when state
+    (unless (and (= (getf state :version 0) 1)
+                 (getf state :team))
+      (error "Invalid DAgger behavior state: ~S" state))
+    (let ((snapshot
+            (deserialize-team
+             (getf state :team)
+             (make-hash-table :test #'equal))))
+      (ensure-team-observation-compatible snapshot *num-observations*)
+      (setf *teacher-dagger-behavior-team-snapshot* snapshot
+            *teacher-dagger-behavior-fitness*
+              (getf state :imitation-fitness)
+            *teacher-dagger-behavior-generation*
+              (getf state :source-generation))))
+  *teacher-dagger-behavior-team-snapshot*)
+
 (defun teacher-dagger-behavior-team ()
-  "Return the policy that owns this generation's DAgger rollout."
-  (or *best-team*
+  "Return the isolated policy that owns this generation's DAgger rollout.
+
+Official-guided search advances this snapshot from the previous generation's
+ranked-imitation champion.  *BEST-TEAM* remains the independently protected
+official incumbent and is never repurposed as mutable DAgger state."
+  (or *teacher-dagger-behavior-team-snapshot*
+      *best-team*
       (first (root-teams))
       (error "DAgger cannot choose a behavior team from an empty population.")))
 
@@ -592,6 +656,8 @@ the historical learner-controlled DAgger behavior is preserved."
              "Generation ~D teacher trace ready: rows=~D"
              *generation*
              (dataset-size *teacher-training-dataset*)))
+    (when (behavioral-locality-active-p)
+      (update-behavioral-probe-archive *teacher-training-dataset*))
     (when (official-guided-mode-p)
       (persist-official-guided-runtime-state))))
 

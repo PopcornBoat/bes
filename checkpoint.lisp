@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 15
-  "Checkpoint version recording recoverable official-guided Phase-1 state.")
+(defconstant +best-team-checkpoint-version+ 17
+  "Checkpoint version recording independent DAgger behavior state.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -109,6 +109,14 @@ checkpoint directory."
     :official-guided-best-evaluation
       ,(and (eq *current-search-mode* :official-guided)
             (copy-tree *official-guided-best-evaluation*))
+    :behavioral-locality-state
+      ,(and *behavioral-locality-enabled*
+            (fboundp 'behavioral-locality-state-copy)
+            (behavioral-locality-state-copy))
+    :teacher-dagger-behavior-state
+      ,(and (eq *current-search-mode* :official-guided)
+            (fboundp 'teacher-dagger-behavior-state-copy)
+            (teacher-dagger-behavior-state-copy))
     :hamming-space-enabled ,hamming-space-enabled
     :hamming-dataset-fingerprint ,hamming-dataset-fingerprint
     :team ,(serialize-team team (make-hash-table :test #'equal))))

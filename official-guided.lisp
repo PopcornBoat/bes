@@ -142,14 +142,18 @@
 
 (defun official-guided-runtime-state ()
   "Return the small recoverable state journaled beside the best checkpoint."
-  (list :version 1
+  (list :version 3
         :fitness-protocol +official-guided-fitness-protocol+
         :checkpoint-filename (best-team-checkpoint-filename)
         :generation *generation*
         :search-seed *current-search-seed*
         :seed-streams (official-guided-seed-state-copy)
         :incumbent-version *official-guided-incumbent-version*
-        :best-evaluation (copy-tree *official-guided-best-evaluation*)))
+        :best-evaluation (copy-tree *official-guided-best-evaluation*)
+        :teacher-dagger-behavior-state
+          (teacher-dagger-behavior-state-copy)
+        :behavioral-locality-state
+          (behavioral-locality-state-copy)))
 
 (defun official-guided-state-path ()
   "Return the lightweight runtime-state journal path for the active run."
@@ -210,7 +214,17 @@
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
                (getf journal :seed-streams)
-               metadata-state)))
+               metadata-state))
+         (behavioral-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :behavioral-locality-state)
+               (getf metadata :behavioral-locality-state)))
+         (dagger-behavior-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :teacher-dagger-behavior-state)
+               (getf metadata :teacher-dagger-behavior-state))))
     (when chosen-state
       (restore-official-guided-seed-streams chosen-state))
     (setf *official-guided-incumbent-version*
@@ -224,6 +238,10 @@
                     (>= journal-version metadata-version))
                (getf journal :best-evaluation)
                (getf metadata :official-guided-best-evaluation))))
+    (when behavioral-state
+      (restore-behavioral-locality-state behavioral-state))
+    (when dagger-behavior-state
+      (restore-teacher-dagger-behavior-state dagger-behavior-state))
     (values chosen-state journal-matches-p)))
 
 (defun official-guided-teacher-mixing-rate ()
@@ -342,6 +360,19 @@
           :same-seed-correlation correlation
           :paired-variance paired-variance
           :unpaired-variance unpaired-variance)))
+
+(defun make-official-guided-parent-child-evaluation-record
+       (child-returns parent-returns seeds behavioral-locality)
+  "Return a causal paired record for one mutated child and its direct parent."
+  (append
+   (make-official-guided-evaluation-record
+    :stage :parent-child-racing
+    :imitation-score nil
+    :seeds seeds
+    :candidate-returns child-returns
+    :incumbent-returns parent-returns
+    :accepted nil)
+   (list :behavioral-locality (copy-tree behavioral-locality))))
 
 (defun official-guided-continue-p (candidate-returns incumbent-returns)
   "Return true unless paired evidence already establishes futility."
