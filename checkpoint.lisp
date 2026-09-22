@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 17
-  "Checkpoint version recording independent DAgger behavior state.")
+(defconstant +best-team-checkpoint-version+ 18
+  "Checkpoint version recording the terminal action representation.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -81,7 +81,8 @@ checkpoint directory."
                            online-reference-episodes mixed-training-lineage
                            hamming-space-enabled hamming-dataset-fingerprint
                            num-observations decoy-order-mode cage2-opening-mode
-                           recurrent-policy-enabled teacher-backend)
+                           recurrent-policy-enabled teacher-backend
+                           (terminal-action-format *terminal-action-format*))
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   `(:checkpoint-version ,+best-team-checkpoint-version+
     :fitness ,fitness
@@ -96,6 +97,7 @@ checkpoint directory."
     :online-reference-episodes ,online-reference-episodes
     :mixed-training-lineage ,mixed-training-lineage
     :num-observations ,num-observations
+    :terminal-action-format ,terminal-action-format
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode
     :recurrent-policy-enabled ,recurrent-policy-enabled
@@ -136,7 +138,9 @@ checkpoint directory."
                                 hamming-space-enabled hamming-dataset-fingerprint
                                 num-observations decoy-order-mode
                                 cage2-opening-mode
-                                recurrent-policy-enabled teacher-backend)
+                                recurrent-policy-enabled teacher-backend
+                                (terminal-action-format
+                                  *terminal-action-format*))
   "Write TEAM, FITNESS, and provenance metadata to PATH."
   (ensure-directories-exist path)
 
@@ -163,6 +167,7 @@ checkpoint directory."
            :online-reference-episodes online-reference-episodes
            :mixed-training-lineage mixed-training-lineage
            :num-observations num-observations
+           :terminal-action-format terminal-action-format
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
            :recurrent-policy-enabled recurrent-policy-enabled
@@ -194,6 +199,7 @@ checkpoint directory."
            +cage2-online-reference-episodes+)
     :mixed-training-lineage *mixed-training-lineage*
     :num-observations *num-observations*
+    :terminal-action-format *terminal-action-format*
     :decoy-order-mode *decoy-order-mode*
     :cage2-opening-mode *cage2-opening-mode*
     :recurrent-policy-enabled *recurrent-policy-enabled*
@@ -257,7 +263,8 @@ return NIL for FITNESS and METADATA."
                            hamming-space-enabled hamming-dataset-fingerprint
                            num-observations decoy-order-mode
                            cage2-opening-mode
-                           recurrent-policy-enabled teacher-backend)
+                           recurrent-policy-enabled teacher-backend
+                           terminal-action-format)
   "Add fitness metadata to a legacy best-team checkpoint.
 
 OUTPUT-PATH defaults to PATH.  Supplying a different path is recommended when
@@ -281,6 +288,8 @@ preserving the original legacy file."
      :online-reference-episodes online-reference-episodes
      :mixed-training-lineage mixed-training-lineage
      :num-observations num-observations
+     :terminal-action-format
+       (or terminal-action-format *terminal-action-format*)
      :decoy-order-mode decoy-order-mode
      :cage2-opening-mode cage2-opening-mode
      :hamming-space-enabled hamming-space-enabled

@@ -94,6 +94,81 @@
   "Return the selected local teacher backend name for the Python bridge."
   (string-downcase (symbol-name *teacher-backend*)))
 
+(defun lisp-heuristic-controller-path-p (environment-name)
+  "Return true when the direct Semantic-36 B-line stack is active."
+  (and (eq *terminal-action-format* :target-response-36)
+       (eq *teacher-backend* :heuristic)
+       (stringp environment-name)
+       (search "b_line" environment-name)))
+
+(defun semantic-actions-to-pairs (actions)
+  "Return primitive target/response pairs for semantic ACTIONS."
+  (mapcar #'semantic-action-category-pair actions))
+
+(defun generate-lisp-heuristic-trace-rows (environment-name episode-seeds)
+  "Generate teacher-controlled rows with the canonical Lisp Controller."
+  (py4cl2:pyexec "import gymnasium as gym; import cage2_bridge")
+  (let* ((env (cl-gym::make environment-name))
+         (controller
+           (make-cage2-controller :decoy-order-profile :heuristic))
+         (include-opening-p (eq *cage2-opening-mode* :policy))
+         (rows nil))
+    (cl-gym::configure-cage2-controller-option-orders env controller)
+    (unwind-protect
+         (dolist (episode-seed episode-seeds)
+           (abort-search-if-requested)
+           (cage2-controller-reset controller)
+           (let ((observation (cl-gym::reset env episode-seed)))
+             (loop for timestep fixnum from 0
+                   do (when (zerop (mod timestep 10))
+                        (abort-search-if-requested))
+                      (let* ((policy-observation
+                               (cage2-controller-observe
+                                controller observation))
+                             (opening-pairs
+                               (cl-gym::cage2-fixed-opening-action
+                                environment-name timestep))
+                             (ranking
+                               (if opening-pairs
+                                   (loop for pair in opening-pairs
+                                         for action =
+                                           (cage2-semantic-pair-action pair)
+                                         when action collect action)
+                                   (cage2-bline-heuristic-ranking
+                                    controller policy-observation)))
+                             (decision
+                               (cage2-controller-resolve-ranking
+                                controller ranking))
+                             (selected
+                               (semantic-action-category-pair
+                                (cage2-controller-decision-semantic-action
+                                 decision)))
+                             (decoy-mask
+                               (cage2-controller-decoy-mask controller)))
+                        (when (or include-opening-p (not opening-pairs))
+                          (push
+                           (list observation
+                                 (copy-list selected)
+                                 (semantic-actions-to-pairs ranking)
+                                 decoy-mask
+                                 episode-seed
+                                 timestep)
+                           rows))
+                        (multiple-value-bind
+                              (next-observation reward terminated truncated info)
+                            (cl-gym::step
+                             env
+                             (cl-gym::controller-decision->cage2-input
+                              decision))
+                          (declare (ignore reward))
+                          (cl-gym::commit-controller-step
+                           controller decision info)
+                          (setf observation next-observation)
+                          (when (or terminated truncated)
+                            (return)))))))
+      (ignore-errors (py4cl2:pymethod env "close")))
+    (nreverse rows)))
+
 (defun generate-teacher-trace-rows (environment-name episode-seeds)
   "Generate primitive rows from teacher-controlled episodes.
 
@@ -105,16 +180,21 @@ between simulator calls. Chunking does not change episode seeds or rows."
            environment-name))
   (unless episode-seeds
     (error "Teacher forcing requires at least one episode seed."))
-  (py4cl2:pyexec "import cage2_bridge; import cage2_bridge.teacher")
-  (let ((remaining (coerce episode-seeds 'list))
-        (include-opening-p (eq *cage2-opening-mode* :policy))
-        (all-rows nil))
-    (loop while remaining
-          for count = (min +teacher-trace-chunk-size+ (length remaining))
-          for chunk = (subseq remaining 0 count)
-          do (abort-search-if-requested)
-             (setf all-rows
-                   (nconc all-rows
+  (if (lisp-heuristic-controller-path-p environment-name)
+      (generate-lisp-heuristic-trace-rows environment-name episode-seeds)
+      (progn
+        (py4cl2:pyexec "import cage2_bridge; import cage2_bridge.teacher")
+        (let ((remaining (coerce episode-seeds 'list))
+              (include-opening-p (eq *cage2-opening-mode* :policy))
+              (all-rows nil))
+          (loop while remaining
+                for count =
+                  (min +teacher-trace-chunk-size+ (length remaining))
+                for chunk = (subseq remaining 0 count)
+                do (abort-search-if-requested)
+                   (setf all-rows
+                         (nconc
+                          all-rows
                           (teacher-sequence-list
                            (py4cl2:pycall
                             "cage2_bridge.teacher.generate_teacher_trace"
@@ -124,8 +204,8 @@ between simulator calls. Chunking does not change episode seeds or rows."
                             t
                             (teacher-backend-python-name))
                            "chunk"))
-                   remaining (nthcdr count remaining)))
-    all-rows))
+                         remaining (nthcdr count remaining)))
+          all-rows))))
 
 (defun generate-teacher-trace-dataset (environment-name episode-seeds)
   "Generate one teacher-controlled trace bank through the Python bridge."
@@ -177,7 +257,8 @@ between simulator calls. Chunking does not change episode seeds or rows."
     (t
      (error "Teacher forcing supports separate b_line and meander environments."))))
 
-(defun generate-dagger-trace-rows (behavior-team environment-name episode-seeds)
+(defun generate-legacy-dagger-trace-rows
+       (behavior-team environment-name episode-seeds)
   "Run a clean mixed DAgger rollout and label every policy-owned state.
 
 Teacher and learner queries are proposals only. The bridge owns scan and Decoy
@@ -328,6 +409,164 @@ the historical learner-controlled DAgger behavior is preserved."
                      (coerce (max 1 (length episode-seeds)) 'double-float))))
     (nreverse rows)))
 
+(defun generate-lisp-controller-dagger-trace-rows
+       (behavior-team environment-name episode-seeds)
+  "Run mixed DAgger with one canonical Lisp Controller per episode.
+
+Teacher and TPG queries are side-effect-free proposals.  Scan/Decoy state is
+updated only from the observation and concrete action that actually occurred."
+  (unless behavior-team
+    (error "DAgger requires a behavior team."))
+  (py4cl2:pyexec "import gymnasium as gym; import cage2_bridge")
+  (let* ((env (cl-gym::make environment-name))
+         (controller
+           (make-cage2-controller :decoy-order-profile :heuristic))
+         (teacher-rate
+           (if (official-guided-mode-p)
+               (official-guided-teacher-mixing-rate)
+               0.0d0))
+         (rows nil)
+         (policy-steps 0)
+         (disagreements 0)
+         (teacher-absent 0)
+         (teacher-controlled 0)
+         (learner-controlled 0)
+         (first-disagreement-steps nil)
+         (total-reward 0.0d0))
+    (cl-gym::configure-cage2-controller-option-orders env controller)
+    (unwind-protect
+         (dolist (episode-seed episode-seeds)
+           (abort-search-if-requested)
+           (call-with-fresh-policy-episode
+            (lambda ()
+              (cage2-controller-reset controller)
+              (let ((observation (cl-gym::reset env episode-seed))
+                    (episode-id (list :dagger *generation* episode-seed))
+                    (episode-reward 0.0d0)
+                    (first-disagreement nil))
+                (loop for timestep fixnum from 0
+                      do (when (zerop (mod timestep 10))
+                           (abort-search-if-requested))
+                         (let* ((policy-observation
+                                  (cage2-controller-observe
+                                   controller observation))
+                                (opening-pairs
+                                  (cl-gym::cage2-fixed-opening-action
+                                   environment-name timestep))
+                                (teacher-ranking
+                                  (cage2-bline-heuristic-ranking
+                                   controller policy-observation))
+                                (teacher-decision
+                                  (cage2-controller-resolve-ranking
+                                   controller teacher-ranking))
+                                (selected
+                                  (semantic-action-category-pair
+                                   (cage2-controller-decision-semantic-action
+                                    teacher-decision)))
+                                (decoy-mask
+                                  (cage2-controller-decoy-mask controller))
+                                (predictions
+                                  (and (not opening-pairs)
+                                       (execute-team-semantic-ranked
+                                        behavior-team policy-observation)))
+                                (predicted-decision
+                                  (and predictions
+                                       (cage2-controller-resolve-ranking
+                                        controller predictions)))
+                                (predicted-pair
+                                  (and predicted-decision
+                                       (semantic-action-category-pair
+                                        (cage2-controller-decision-semantic-action
+                                         predicted-decision))))
+                                (teacher-rank
+                                  (and predictions
+                                       (position
+                                        selected predictions
+                                        :test #'equal
+                                        :key #'semantic-action-category-pair)))
+                                (disagreement-p
+                                  (and predicted-pair
+                                       (not (equal predicted-pair selected))))
+                                (teacher-controls-p
+                                  (and (not opening-pairs)
+                                       (official-guided-mode-p)
+                                       (official-guided-teacher-controls-p
+                                        episode-seed timestep teacher-rate)))
+                                (opening-decision
+                                  (and opening-pairs
+                                       (cage2-controller-resolve-pair-ranking
+                                        controller opening-pairs)))
+                                (executed-decision
+                                  (or opening-decision
+                                      (if teacher-controls-p
+                                          teacher-decision
+                                          predicted-decision))))
+                           (unless opening-pairs
+                             (push
+                              (list observation
+                                    (copy-list selected)
+                                    (semantic-actions-to-pairs teacher-ranking)
+                                    decoy-mask
+                                    episode-id
+                                    timestep)
+                              rows)
+                             (incf policy-steps)
+                             (if teacher-controls-p
+                                 (incf teacher-controlled)
+                                 (incf learner-controlled))
+                             (when disagreement-p
+                               (incf disagreements)
+                               (unless first-disagreement
+                                 (setf first-disagreement timestep)
+                                 (push timestep first-disagreement-steps))
+                               (unless teacher-rank
+                                 (incf teacher-absent))))
+                           (multiple-value-bind
+                                 (next-observation reward terminated truncated info)
+                               (cl-gym::step
+                                env
+                                (cl-gym::controller-decision->cage2-input
+                                 executed-decision))
+                             (cl-gym::commit-controller-step
+                              controller executed-decision info)
+                             (incf episode-reward
+                                   (coerce reward 'double-float))
+                             (setf observation next-observation)
+                             (when (or terminated truncated)
+                               (incf total-reward episode-reward)
+                               (return)))))))))
+      (ignore-errors (py4cl2:pymethod env "close")))
+    (setf *last-dagger-diagnostics*
+          (list :episodes (length episode-seeds)
+                :policy-steps policy-steps
+                :disagreements disagreements
+                :disagreement-rate
+                  (if (plusp policy-steps)
+                      (/ disagreements (coerce policy-steps 'double-float))
+                      0.0d0)
+                :first-disagreement-mean
+                  (and first-disagreement-steps
+                       (/ (reduce #'+ first-disagreement-steps)
+                          (coerce (length first-disagreement-steps)
+                                  'double-float)))
+                :teacher-absent-top-8 teacher-absent
+                :teacher-mixing-rate teacher-rate
+                :teacher-controlled-steps teacher-controlled
+                :learner-controlled-steps learner-controlled
+                :mean-mixed-return
+                  (/ total-reward
+                     (coerce (max 1 (length episode-seeds)) 'double-float))))
+    (nreverse rows)))
+
+(defun generate-dagger-trace-rows
+       (behavior-team environment-name episode-seeds)
+  "Dispatch DAgger to the active policy/controller contract."
+  (if (lisp-heuristic-controller-path-p environment-name)
+      (generate-lisp-controller-dagger-trace-rows
+       behavior-team environment-name episode-seeds)
+      (generate-legacy-dagger-trace-rows
+       behavior-team environment-name episode-seeds)))
+
 (defun compact-teacher-dagger-row (row)
   "Copy one DAgger ROW into replay's compact, independently owned form."
   (destructuring-bind
@@ -430,10 +669,19 @@ the historical learner-controlled DAgger behavior is preserved."
 
 (defun configure-teacher-forcing-fitness (environment-name)
   "Configure ranked imitation and build the fixed teacher reference bank."
-  (unless (= *num-actions* +num-semantic-targets+)
-    (error "Teacher forcing requires ~D semantic targets, got ~S."
+  (unless (cage2-semantic-action-count-p *num-actions*)
+    (error "Teacher forcing requires ~D or ~D semantic actions, got ~S."
            +num-semantic-targets+
+           +num-semantic-36-actions+
            *num-actions*))
+  (configure-cage2-terminal-action-format)
+  (when (eq *terminal-action-format* :target-response-36)
+    (setf *teacher-backend* :heuristic)
+    (unless (= *num-observations* +cage2-scan-observation-size+)
+      (error "Direct Semantic-36 teacher forcing requires exactly ~D observations."
+             +cage2-scan-observation-size+))
+    (unless (search "b_line" environment-name)
+      (error "The Lisp heuristic Semantic-36 path currently supports B-line only.")))
   (unless (valid-cage2-policy-observation-size-p *num-observations*)
     (error "Teacher forcing requires ~D or ~D observations, got ~S."
            +cage2-scan-observation-size+

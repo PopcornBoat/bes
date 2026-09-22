@@ -107,6 +107,31 @@ function. Values are 0=unseen, 1=previous scan, and 2=latest scan."
 (defun cage2-controller-response-index (response)
   (position response *semantic-response-types* :test #'eq))
 
+(defun cage2-semantic-pair-action (pair)
+  "Convert one primitive (TARGET RESPONSE-INDEX) pair to a semantic action."
+  (when (and (typep pair 'sequence)
+             (= (length pair) 2))
+    (let ((target (elt pair 0))
+          (response (elt pair 1)))
+      (when (and (integerp target)
+                 (integerp response)
+                 (<= 0 response)
+                 (< response +num-semantic-responses+))
+        (make-semantic-action
+         :target target
+         :response (if (= target +global-target+)
+                       :monitor
+                       (aref *semantic-response-types* response))
+         :option nil)))))
+
+(defun cage2-controller-resolve-pair-ranking (controller pairs)
+  "Purely resolve primitive target/response PAIRS through CONTROLLER."
+  (cage2-controller-resolve-ranking
+   controller
+   (loop for pair in (coerce pairs 'list)
+         for action = (cage2-semantic-pair-action pair)
+         when action collect action)))
+
 (defun cage2-controller-valid-semantic-components (candidate)
   "Return TARGET, response index, and validity for CANDIDATE."
   (if (semantic-action-p candidate)

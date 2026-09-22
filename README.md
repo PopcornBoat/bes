@@ -420,6 +420,23 @@ without sharing graph references. Warm-start setup creates a run-local
 incumbent checkpoint only when none exists; an existing file is protected, and
 only final Stage-3 official promotion may overwrite it.
 
+## Direct Semantic-36 Lisp controller path
+
+For B-line experiments, selecting 62 observations and 36 actions activates the
+direct target-response-36 terminal genotype. The first field is one of the
+nine learned hosts and the second is Analyse, Remove, Restore, or Decoy. TPG
+still evolves normal programs, learners, team references, and graph structure.
+
+The Lisp Controller owns scan history and Decoy availability for each episode.
+The deterministic Lisp heuristic and TPG both make side-effect-free ranked
+target/response proposals against that same state. The Controller chooses the
+first executable proposal, supplies an exact Decoy option when required, and
+predicts the official concrete action. State is committed only after the
+Python bridge reports that the same concrete action executed. Availability is
+never appended to the 62 policy inputs. Checkpoints record the terminal action
+format so validation and resume cannot silently interpret a direct Semantic-36
+policy as the older 11-target representation.
+
 ## CAGE2 episode opening
 
 The start, resume, and validation menus expose `Episode Opening` with two

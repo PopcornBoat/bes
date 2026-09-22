@@ -424,7 +424,7 @@ selected yet."
            
             "*population-size=160"
             "*num-observations=62"
-            "*num-actions=11"
+            "*num-actions=36"
             "*init-num-learners=3"
             "*max-num-learners=32"
             "*migration-interval=50"

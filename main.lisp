@@ -1357,6 +1357,10 @@ reference batch."
            *teacher-dagger-replay-episodes* nil
            *teacher-dagger-random-state* nil
            *current-dataset-fingerprint* nil)
+     (when (cl-gym:cage2-environment-p gym-environment-name)
+       (configure-cage2-terminal-action-format)
+       (when (eq *terminal-action-format* :target-response-36)
+         (setf *teacher-backend* :heuristic)))
      (configure-hamming-observation-space)
      (setf *fitness-fn*
            (lambda (team)
@@ -1431,15 +1435,16 @@ reference batch."
      (unless (= *num-observations* +cage2-scan-observation-size+)
        (error "Official-guided Phase 1 requires exactly ~D observations."
               +cage2-scan-observation-size+))
-     (unless (= *num-actions* +num-semantic-targets+)
-       (error "Official-guided Phase 1 requires exactly ~D targets."
-              +num-semantic-targets+))
+     (unless (= *num-actions* +num-semantic-36-actions+)
+       (error "Official-guided direct policy requires exactly ~D target/response actions."
+              +num-semantic-36-actions+))
      (unless (and (eq *teacher-forcing-rollout-mode* :dagger)
                   (eq *decoy-order-mode* :fixed)
                   (eq *cage2-opening-mode* :fixed)
+                  (eq *teacher-backend* :heuristic)
                   (not *recurrent-policy-enabled*)
                   (not *hamming-space-enabled*))
-       (error "Official-guided Phase 1 requires stateless DAgger, fixed opening/order, and Hamming disabled."))
+       (error "Official-guided direct policy requires the heuristic teacher, stateless DAgger, fixed opening/order, and Hamming disabled."))
      (configure-teacher-forcing-fitness gym-environment-name))))
 
 (defun safe-evaluate-team (team)
@@ -1883,6 +1888,8 @@ the same train/reference file fingerprint."
                 (getf metadata :hamming-dataset-fingerprint))
               (saved-num-observations
                 (getf metadata :num-observations))
+              (saved-terminal-action-format
+                (or (getf metadata :terminal-action-format) :factored))
               (saved-decoy-order-mode
                 (getf metadata :decoy-order-mode))
               (saved-opening-mode
@@ -1898,6 +1905,7 @@ the same train/reference file fingerprint."
                    (equal saved-environment gym-environment-name))
                (or (null saved-num-observations)
                    (= saved-num-observations *num-observations*))
+               (eq saved-terminal-action-format *terminal-action-format*)
                (or (null saved-decoy-order-mode)
                    (eq saved-decoy-order-mode *decoy-order-mode*))
                (or (not (or *recurrent-policy-enabled*

@@ -502,15 +502,15 @@ return their fixed configured addresses."
                (not (eq gym-environment-name :none))
                (eq dataset-name :none)
                (cl-gym:cage2-environment-p gym-environment-name)
-               (or (search "b_line" gym-environment-name)
-                   (search "meander" gym-environment-name))
+               (search "b_line" gym-environment-name)
                (integerp num-observations)
                (integerp num-actions)
                (= num-observations +cage2-scan-observation-size+)
-               (= num-actions +num-semantic-targets+)
+               (= num-actions +num-semantic-36-actions+)
                (eq decoy-order-mode :fixed)
                (eq cage2-opening-mode :fixed)
                (eq teacher-forcing-rollout-mode :dagger)
+               (eq teacher-backend :heuristic)
                (not recurrent-policy-enabled)
                (not hamming-space-enabled)))
 	 (:offline (and dataset-name
@@ -522,7 +522,7 @@ return their fixed configured addresses."
                 (integerp num-observations)
                 (valid-cage2-policy-observation-size-p num-observations)
                 (integerp num-actions)
-                (= num-actions +num-semantic-targets+)
+                (cage2-semantic-action-count-p num-actions)
                 (or (eq mode :offline)
                     (cl-gym:cage2-environment-p gym-environment-name))))
        ;; Recurrent CAGE2 modes preserve complete episode order. Offline mode
@@ -554,7 +554,11 @@ return their fixed configured addresses."
            (and (integerp num-observations)
                 (integerp num-actions)
                 (valid-cage2-policy-observation-size-p num-observations)
-                (= num-actions +num-semantic-targets+)))))
+                (cage2-semantic-action-count-p num-actions)
+                (or (/= num-actions +num-semantic-36-actions+)
+                    (and (= num-observations
+                            +cage2-scan-observation-size+)
+                         (search "b_line" gym-environment-name)))))))
 
 (defun who-am-i ()
   "Returns the island ID of the currently running server."

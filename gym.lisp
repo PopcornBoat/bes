@@ -116,6 +116,45 @@ GLOBAL and defensive :MONITOR fallbacks canonicalize to (0 0)."
   "Convert ranked BES semantic actions to primitive bridge candidates."
   (mapcar #'semantic-action->cage2-input actions))
 
+(defun controller-decision->cage2-input (decision)
+  "Return the single exact semantic action selected by the Lisp Controller."
+  (semantic-action->cage2-input
+   (cl-tpg:cage2-controller-decision-semantic-action decision)))
+
+(defun cage2-info-value (info name)
+  "Read NAME from a py4cl2-converted Gym info mapping."
+  (let ((keyword (intern (string-upcase name) :keyword)))
+    (cond
+      ((hash-table-p info)
+       (multiple-value-bind (value found-p) (gethash name info)
+         (if found-p value (gethash keyword info))))
+      ((listp info)
+       (or (ignore-errors (cdr (assoc name info :test #'string=)))
+           (ignore-errors (cdr (assoc keyword info :test #'eq)))
+           (ignore-errors (getf info keyword))))
+      (t nil))))
+
+(defun commit-controller-step (controller decision info)
+  "Commit DECISION using the concrete action reported by the bridge."
+  (let ((actual (cage2-info-value info "concrete_action")))
+    (unless (integerp actual)
+      (error "CAGE2 bridge did not report an integer concrete_action: ~S"
+             info))
+    (cl-tpg:cage2-controller-commit-decision controller decision actual)))
+
+(defun configure-cage2-controller-option-orders (env controller)
+  "Install CONTROLLER's fixed option permutations in the Python bridge."
+  (let ((orders (cl-tpg::cage2-controller-option-orders controller)))
+    (py4cl2:pycall
+     "cage2_bridge.cage2.configure_env_decoy_orders"
+     env
+     (loop for target from 1 below (length orders)
+           collect (coerce (aref orders target) 'list)))))
+
+(defun cage2-controller-rollout-p ()
+  "Return true for the direct Semantic-36 Lisp-controller contract."
+  (eq cl-tpg::*terminal-action-format* :target-response-36))
+
 (defun execute-policy-action (root-team observation environment-name)
   "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
   (if (cage2-environment-p environment-name)
@@ -191,29 +230,56 @@ Supports:
     (py4cl2:pyexec "import cage3_bridge"))
 
   (let* ((env (make environment-name :video-path video-path))
-         (episode-reward 0.0))
+         (episode-reward 0.0)
+         (controller
+           (and (cage2-environment-p environment-name)
+                (cage2-controller-rollout-p)
+                (cl-tpg:make-cage2-controller
+                 :decoy-order-profile
+                 cl-tpg::*cage2-controller-decoy-order-profile*))))
     (when (cage2-environment-p environment-name)
-      (configure-cage2-option-orders env root-team))
+      (if controller
+          (configure-cage2-controller-option-orders env controller)
+          (configure-cage2-option-orders env root-team)))
     (cl-tpg::call-with-fresh-policy-episode
      (lambda ()
        (let ((observation (reset env seed)))
+         (when controller
+           (cl-tpg:cage2-controller-reset controller))
          (unwind-protect
               (loop for timestep from 0
                     do (let* ((opening-action
                                 (cage2-fixed-opening-action
                                  environment-name timestep))
+                              (policy-observation
+                                (and controller
+                                     (cl-tpg:cage2-controller-observe
+                                      controller observation)))
+                              (decision
+                                (and controller
+                                     (if opening-action
+                                         (cl-tpg::cage2-controller-resolve-pair-ranking
+                                          controller opening-action)
+                                         (cl-tpg:cage2-controller-resolve-ranking
+                                          controller
+                                          (cl-tpg:execute-team-semantic-ranked
+                                           root-team policy-observation)))))
                               (action
-                                (or opening-action
-                                    (if (shared-policy-observation-p observation)
-                                        (shared-policy-actions
-                                         root-team observation)
-                                        (execute-policy-action
-                                         root-team
-                                         observation
-                                         environment-name)))))
+                                (if controller
+                                    (controller-decision->cage2-input decision)
+                                    (or opening-action
+                                        (if (shared-policy-observation-p observation)
+                                            (shared-policy-actions
+                                             root-team observation)
+                                            (execute-policy-action
+                                             root-team
+                                             observation
+                                             environment-name))))))
                          (multiple-value-bind (obs rew term trunc info)
                              (step env action)
-                           (declare (ignore info))
+                           (when controller
+                             (commit-controller-step
+                              controller decision info))
                            (incf episode-reward rew)
                            (setf observation obs)
                            (when (or term trunc)

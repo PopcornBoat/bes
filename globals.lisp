@@ -36,6 +36,27 @@ future comparison representation with one catalogue index.")
   "Return true for a supported categorical terminal-action representation."
   (member format '(:factored :target-response-36 :flat-36) :test #'eq))
 
+(defvar *num-actions*)
+
+(defun cage2-semantic-action-count-p (count)
+  "Return true when COUNT selects a supported CAGE2 terminal contract."
+  (and (integerp count)
+       (member count
+               (list +num-semantic-targets+ +num-semantic-36-actions+)
+               :test #'=)))
+
+(defun configure-cage2-terminal-action-format (&optional (count *num-actions*))
+  "Select the categorical terminal representation implied by COUNT.
+
+Eleven retains checkpoint compatibility with the earlier target/response-gene
+head.  Thirty-six selects the direct two-field target/response genotype."
+  (setf *terminal-action-format*
+        (cond
+          ((= count +num-semantic-targets+) :factored)
+          ((= count +num-semantic-36-actions+) :target-response-36)
+          (t
+           (error "Unsupported CAGE2 semantic action count: ~S." count)))))
+
 (defconstant +cage2-controller-protocol+ :cage2-lisp-controller-v1
   "Version tag for the canonical Lisp-side CAGE2 controller semantics.")
 

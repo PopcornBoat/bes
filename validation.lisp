@@ -197,6 +197,15 @@ CAGE3 MODE:
 
     (let ((team (load-best-team best-team-path)))
       (when cage2-p
+        (let ((saved-format
+                (or (getf *loaded-checkpoint-metadata*
+                          :terminal-action-format)
+                    :factored)))
+          (unless (valid-terminal-action-format-p saved-format)
+            (error "Unsupported checkpoint terminal action format: ~S."
+                   saved-format))
+          (setf *terminal-action-format* saved-format)))
+      (when cage2-p
         (ensure-team-observation-compatible team *num-observations*))
       (emit-message
        (format nil
