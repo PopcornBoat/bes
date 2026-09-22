@@ -28,12 +28,13 @@
 (defparameter *terminal-action-format* :factored
   "Categorical atomic-action representation used when
 *FACTORED-ACTIONS-ENABLED* is true. :FACTORED preserves the historical
-11-target plus response-gene representation; :SEMANTIC-36 uses one explicit
-index into the versioned 36-category target/response catalogue.")
+11-target plus response-gene representation; :TARGET-RESPONSE-36 stores the
+nine-host target and four-way response as two direct fields; :FLAT-36 is the
+future comparison representation with one catalogue index.")
 
 (defun valid-terminal-action-format-p (format)
   "Return true for a supported categorical terminal-action representation."
-  (member format '(:factored :semantic-36) :test #'eq))
+  (member format '(:factored :target-response-36 :flat-36) :test #'eq))
 
 (defconstant +cage2-controller-protocol+ :cage2-lisp-controller-v1
   "Version tag for the canonical Lisp-side CAGE2 controller semantics.")

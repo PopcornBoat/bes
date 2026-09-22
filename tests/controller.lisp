@@ -139,7 +139,7 @@
      (zerop (logand #xff (cl-tpg::cage2-controller-decoy-mask controller)))
      "rank-zero Restore clears only its target Decoys")))
 
-;; A Semantic-36 terminal decodes directly into a controller proposal.
+;; A direct target/response Semantic-36 terminal becomes a controller proposal.
 (let* ((controller
          (cl-tpg:make-cage2-controller :decoy-order-profile :heuristic))
        (registers
@@ -148,7 +148,8 @@
                      :initial-element 0.0d0))
        (semantic
          (cl-tpg::make-semantic-action-from-terminal
-          (cl-tpg::make-semantic-36-action :index 35)
+          (cl-tpg::make-target-response-36-action
+           :target 5 :response 3)
           registers))
        (decision
          (cl-tpg:cage2-controller-resolve-ranking

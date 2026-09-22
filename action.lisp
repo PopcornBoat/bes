@@ -34,8 +34,17 @@ nine learned hosts and four response types, ordered to match the existing
 (defconstant +semantic-36-catalogue-version+ :cage2-semantic-36-v1
   "Stable schema identifier for *SEMANTIC-36-CATALOGUE*.")
 
-(defstruct semantic-36-action
-  "One categorical terminal gene in the versioned Semantic-36 catalogue."
+(defun random-semantic-36-target ()
+  "Return one of the nine learned host target IDs."
+  (aref *semantic-36-targets* (random (length *semantic-36-targets*))))
+
+(defstruct target-response-36-action
+  "Direct two-field genotype for the 9 host x 4 response action space."
+  (target (random-semantic-36-target) :type integer)
+  (response (random +num-semantic-responses+) :type integer))
+
+(defstruct flat-36-action
+  "Future comparison genotype containing one Semantic-36 catalogue index."
   (index (random +num-semantic-36-actions+) :type integer))
 
 (defun semantic-36-index-pair (index)
@@ -58,8 +67,10 @@ nine learned hosts and four response types, ordered to match the existing
      (random *num-actions*))
     ((eq *terminal-action-format* :factored)
      (make-factored-action))
-    ((eq *terminal-action-format* :semantic-36)
-     (make-semantic-36-action))
+    ((eq *terminal-action-format* :target-response-36)
+     (make-target-response-36-action))
+    ((eq *terminal-action-format* :flat-36)
+     (make-flat-36-action))
     (t
      (error "Unsupported terminal action format: ~S"
             *terminal-action-format*))))
@@ -150,15 +161,34 @@ option. GLOBAL always maps to Monitor."
          (make-semantic-action
           :target target :response response :option nil))))))
 
-(defun make-semantic-action-from-semantic-36-terminal (payload registers)
-  "Decode the explicit Semantic-36 category in PAYLOAD.
+(defun make-semantic-action-from-target-response-36-terminal
+       (payload registers)
+  "Decode a direct target/response Semantic-36 PAYLOAD.
+
+Unlike the flat comparison representation, both semantic components are real
+genotype fields. Decoy selection remains a controller responsibility."
+  (declare (ignore registers))
+  (let ((target (target-response-36-action-target payload))
+        (response-index (target-response-36-action-response payload)))
+    (if (and (find target *semantic-36-targets* :test #'=)
+             (<= 0 response-index)
+             (< response-index +num-semantic-responses+))
+        (make-semantic-action
+         :target target
+         :response (aref *semantic-response-types* response-index)
+         :option nil)
+        (make-semantic-action
+         :target +global-target+ :response :monitor :option nil))))
+
+(defun make-semantic-action-from-flat-36-terminal (payload registers)
+  "Decode the future flat Semantic-36 comparison category in PAYLOAD.
 
 The terminal gene supplies only target and response. Decoy availability and
 the fixed option order remain controller responsibilities. Malformed indices
 fall back defensively to GLOBAL/Monitor."
   (declare (ignore registers))
   (let ((pair (semantic-36-index-pair
-               (semantic-36-action-index payload))))
+               (flat-36-action-index payload))))
     (if pair
         (make-semantic-action
          :target (first pair)
@@ -175,8 +205,10 @@ the legacy register decoder so existing checkpoints remain reproducible."
   (typecase payload
     (factored-action
      (make-semantic-action-from-factored-terminal payload registers))
-    (semantic-36-action
-     (make-semantic-action-from-semantic-36-terminal payload registers))
+    (target-response-36-action
+     (make-semantic-action-from-target-response-36-terminal payload registers))
+    (flat-36-action
+     (make-semantic-action-from-flat-36-terminal payload registers))
     (number
      (make-semantic-action-from-legacy-terminal payload registers))
     (otherwise
@@ -201,9 +233,11 @@ while the bridge owns ordered option selection and availability state."
   "Return the compatibility integer represented by atomic PAYLOAD."
   (etypecase payload
     (factored-action (factored-action-primary payload))
-    (semantic-36-action
+    (target-response-36-action
+     (target-response-36-action-target payload))
+    (flat-36-action
      (let ((pair (semantic-36-index-pair
-                  (semantic-36-action-index payload))))
+                  (flat-36-action-index payload))))
        (if pair (first pair) +global-target+)))
     (number payload)))
 
@@ -214,31 +248,53 @@ while the bridge owns ordered option selection and availability state."
      `(:factored-action
        :primary ,(factored-action-primary payload)
        :secondary ,(factored-action-secondary payload)))
-    (semantic-36-action
-     `(:semantic-36-action
+    (target-response-36-action
+     `(:target-response-36-action
        :version ,+semantic-36-catalogue-version+
-       :index ,(semantic-36-action-index payload)))
+       :target ,(target-response-36-action-target payload)
+       :response ,(target-response-36-action-response payload)))
+    (flat-36-action
+     `(:flat-36-action
+       :version ,+semantic-36-catalogue-version+
+       :index ,(flat-36-action-index payload)))
     (number payload)))
 
 (defun serialized-factored-action-p (data)
   (and (consp data) (eq (first data) :factored-action)))
 
-(defun serialized-semantic-36-action-p (data)
-  (and (consp data) (eq (first data) :semantic-36-action)))
+(defun serialized-target-response-36-action-p (data)
+  (and (consp data) (eq (first data) :target-response-36-action)))
+
+(defun serialized-flat-36-action-p (data)
+  (and (consp data) (eq (first data) :flat-36-action)))
 
 (defun deserialize-factored-action (data)
   (make-factored-action
    :primary (getf (rest data) :primary)
    :secondary (getf (rest data) :secondary)))
 
-(defun deserialize-semantic-36-action (data)
-  (let ((version (getf (rest data) :version))
-        (index (getf (rest data) :index)))
+(defun ensure-semantic-36-serialization-version (data)
+  (let ((version (getf (rest data) :version)))
     (unless (eq version +semantic-36-catalogue-version+)
-      (error "Unsupported Semantic-36 catalogue version: ~S" version))
+      (error "Unsupported Semantic-36 catalogue version: ~S" version))))
+
+(defun deserialize-target-response-36-action (data)
+  (ensure-semantic-36-serialization-version data)
+  (let ((target (getf (rest data) :target))
+        (response (getf (rest data) :response)))
+    (unless (and (find target *semantic-36-targets* :test #'=)
+                 (integerp response)
+                 (<= 0 response)
+                 (< response +num-semantic-responses+))
+      (error "Invalid target-response-36 action: ~S" data))
+    (make-target-response-36-action :target target :response response)))
+
+(defun deserialize-flat-36-action (data)
+  (ensure-semantic-36-serialization-version data)
+  (let ((index (getf (rest data) :index)))
     (unless (semantic-36-index-pair index)
-      (error "Invalid Semantic-36 action index: ~S" index))
-    (make-semantic-36-action :index index)))
+      (error "Invalid flat-36 action index: ~S" index))
+    (make-flat-36-action :index index)))
 
 (defun serialize-action (action seen)
   `(:type ,(action-type action)
@@ -256,8 +312,10 @@ while the bridge owns ordered option selection and availability state."
          (cond
            ((serialized-factored-action-p payload)
             (deserialize-factored-action payload))
-           ((serialized-semantic-36-action-p payload)
-            (deserialize-semantic-36-action payload))
+           ((serialized-target-response-36-action-p payload)
+            (deserialize-target-response-36-action payload))
+           ((serialized-flat-36-action-p payload)
+            (deserialize-flat-36-action payload))
            (t payload))
          (deserialize-team payload registry nil)))))
 
@@ -273,9 +331,13 @@ while the bridge owns ordered option selection and availability state."
             (format stream "ACTION-(~A,~A)"
                     (factored-action-primary payload)
                     (factored-action-secondary payload)))
-           ((semantic-36-action-p payload)
-            (format stream "ACTION-36-~A"
-                    (semantic-36-action-index payload)))
+           ((target-response-36-action-p payload)
+            (format stream "ACTION-36-(~A,~A)"
+                    (target-response-36-action-target payload)
+                    (target-response-36-action-response payload)))
+           ((flat-36-action-p payload)
+            (format stream "ACTION-FLAT-36-~A"
+                    (flat-36-action-index payload)))
            (t
             (format stream "ACTION-~A" payload)))))
       (:reference
@@ -289,8 +351,12 @@ while the bridge owns ordered option selection and availability state."
           ((factored-action-p (action-action new-action))
            (setf (action-action new-action)
                  (copy-factored-action (action-action new-action))))
-          ((semantic-36-action-p (action-action new-action))
+          ((target-response-36-action-p (action-action new-action))
            (setf (action-action new-action)
-                 (copy-semantic-36-action (action-action new-action))))))
+                 (copy-target-response-36-action
+                  (action-action new-action))))
+          ((flat-36-action-p (action-action new-action))
+           (setf (action-action new-action)
+                 (copy-flat-36-action (action-action new-action))))))
     new-action))
     

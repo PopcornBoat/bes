@@ -232,18 +232,39 @@ allowing permanent positive bloat pressure."
           (note-mutation-event :terminal-response-mutation)))
     mutated))
 
-(defun mutate-semantic-36-atomic-value (payload)
-  "Copy PAYLOAD and mutate exactly one target/response component.
+(defun mutate-target-response-36-atomic-value (payload)
+  "Copy PAYLOAD and directly mutate exactly one stored semantic field."
+  (let ((mutated (copy-target-response-36-action payload)))
+    (if (zerop (random 2))
+        (let* ((target (target-response-36-action-target mutated))
+               (current-position
+                 (position target *semantic-36-targets* :test #'=))
+               (new-position
+                 (random-different-category
+                  current-position (length *semantic-36-targets*))))
+          (setf (target-response-36-action-target mutated)
+                (aref *semantic-36-targets* new-position))
+          (note-mutation-event :terminal-target-mutation))
+        (progn
+          (setf (target-response-36-action-response mutated)
+                (random-different-category
+                 (target-response-36-action-response mutated)
+                 +num-semantic-responses+))
+          (note-mutation-event :terminal-response-mutation)))
+    mutated))
+
+(defun mutate-flat-36-atomic-value (payload)
+  "Copy a flat PAYLOAD and remap one decoded semantic component.
 
 The catalogue order is external compatibility data, so mutation operates on
 the decoded semantic pair and then maps the result back to its stable index."
   (let* ((old-pair
-           (semantic-36-index-pair (semantic-36-action-index payload)))
+           (semantic-36-index-pair (flat-36-action-index payload)))
          (target (and old-pair (first old-pair)))
          (response-index (and old-pair (second old-pair))))
     (unless old-pair
-      (return-from mutate-semantic-36-atomic-value
-        (make-semantic-36-action)))
+      (return-from mutate-flat-36-atomic-value
+        (make-flat-36-action)))
     (if (zerop (random 2))
         (let* ((current-position
                  (position target *semantic-36-targets* :test #'=))
@@ -257,7 +278,7 @@ the decoded semantic pair and then maps the result back to its stable index."
                 (random-different-category
                  response-index +num-semantic-responses+))
           (note-mutation-event :terminal-response-mutation)))
-    (make-semantic-36-action
+    (make-flat-36-action
      :index (or (semantic-36-pair-index target response-index)
                 (error "Semantic-36 catalogue is missing (~D ~D)."
                        target response-index)))))
@@ -271,10 +292,14 @@ the decoded semantic pair and then maps the result back to its stable index."
      (if (factored-action-p old-payload)
          (mutate-factored-atomic-value old-payload)
          (make-factored-action)))
-    ((eq *terminal-action-format* :semantic-36)
-     (if (semantic-36-action-p old-payload)
-         (mutate-semantic-36-atomic-value old-payload)
-         (make-semantic-36-action)))
+    ((eq *terminal-action-format* :target-response-36)
+     (if (target-response-36-action-p old-payload)
+         (mutate-target-response-36-atomic-value old-payload)
+         (make-target-response-36-action)))
+    ((eq *terminal-action-format* :flat-36)
+     (if (flat-36-action-p old-payload)
+         (mutate-flat-36-atomic-value old-payload)
+         (make-flat-36-action)))
     (t
      (error "Unsupported terminal action format: ~S"
             *terminal-action-format*))))
@@ -331,7 +356,8 @@ the decoded semantic pair and then maps the result back to its stable index."
       ((or (eq old-type :reference) (eq new-type :reference))
        (note-mutation-event :team-edge-mutation))
       ((not (or (factored-action-p old-payload)
-                (semantic-36-action-p old-payload)))
+                (target-response-36-action-p old-payload)
+                (flat-36-action-p old-payload)))
        (note-mutation-event :terminal-action-mutation))))
   team)
 

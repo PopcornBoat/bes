@@ -32,30 +32,39 @@
 (assert (null (cl-tpg::semantic-36-pair-index 6 0)))
 
 (let ((cl-tpg::*factored-actions-enabled* t)
-      (cl-tpg::*terminal-action-format* :semantic-36)
+      (cl-tpg::*terminal-action-format* :target-response-36)
       (cl-tpg::*num-actions* cl-tpg::+num-semantic-36-actions+))
   (loop repeat 200 do
     (let ((payload (cl-tpg::make-random-atomic-action-value)))
-      (assert (cl-tpg::semantic-36-action-p payload))
-      (assert (<= 0 (cl-tpg::semantic-36-action-index payload) 35))))
+      (assert (cl-tpg::target-response-36-action-p payload))
+      (assert (find (cl-tpg::target-response-36-action-target payload)
+                    cl-tpg::*semantic-36-targets*
+                    :test #'=))
+      (assert (<= 0
+                  (cl-tpg::target-response-36-action-response payload)
+                  3))))
 
-  ;; Every category decodes to its explicit semantic target and response.
+  ;; Every one of the 9 x 4 categories is represented by two direct fields.
   (let ((registers
           (make-array cl-tpg::+num-registers+
                       :element-type 'double-float
                       :initial-element 99.0d0)))
-    (dotimes (index cl-tpg::+num-semantic-36-actions+)
-      (let* ((pair (cl-tpg::semantic-36-index-pair index))
-             (semantic
-               (cl-tpg::make-semantic-action-from-terminal
-                (cl-tpg::make-semantic-36-action :index index)
-                registers)))
-        (assert (= (cl-tpg:semantic-action-target semantic) (first pair)))
-        (assert (eq (cl-tpg:semantic-action-response semantic)
-                    (aref cl-tpg::*semantic-response-types* (second pair))))
-        (assert (null (cl-tpg:semantic-action-option semantic))))))
+    (loop for target across cl-tpg::*semantic-36-targets*
+          do (dotimes (response cl-tpg::+num-semantic-responses+)
+               (let ((semantic
+                       (cl-tpg::make-semantic-action-from-terminal
+                        (cl-tpg::make-target-response-36-action
+                         :target target :response response)
+                        registers)))
+                 (assert (= (cl-tpg:semantic-action-target semantic) target))
+                 (assert (eq (cl-tpg:semantic-action-response semantic)
+                             (aref cl-tpg::*semantic-response-types*
+                                   response)))
+                 (assert (null (cl-tpg:semantic-action-option semantic)))))))
 
-  (let* ((payload (cl-tpg::make-semantic-36-action :index 34))
+  (let* ((payload
+           (cl-tpg::make-target-response-36-action
+            :target 9 :response 3))
          (encoded (cl-tpg::serialize-atomic-action-value payload))
          (action (cl-tpg::make-action :type :atomic :action payload))
          (restored
@@ -64,36 +73,59 @@
             (make-hash-table)))
          (clone (cl-tpg::clone-action action)))
     (assert (equal encoded
-                   '(:semantic-36-action
+                   '(:target-response-36-action
                      :version :cage2-semantic-36-v1
-                     :index 34)))
-    (assert (= (cl-tpg::semantic-36-action-index
-                (cl-tpg::action-action restored))
-               34))
-    (setf (cl-tpg::semantic-36-action-index
+                     :target 9
+                     :response 3)))
+    (assert
+     (let ((restored-payload (cl-tpg::action-action restored)))
+       (and (cl-tpg::target-response-36-action-p restored-payload)
+            (= (cl-tpg::target-response-36-action-target restored-payload) 9)
+            (= (cl-tpg::target-response-36-action-response restored-payload)
+               3))))
+    (setf (cl-tpg::target-response-36-action-target
            (cl-tpg::action-action clone))
-          0)
-    (assert (= (cl-tpg::semantic-36-action-index payload) 34)))
+          1)
+    (assert (= (cl-tpg::target-response-36-action-target payload) 9)))
 
-  ;; Basic mutation remains categorical and changes exactly one component.
+  ;; This is a true field mutation: exactly one directly stored component moves.
   (loop repeat 200 do
-    (let* ((source (cl-tpg::make-semantic-36-action :index 0))
-           (mutated (cl-tpg::mutate-semantic-36-atomic-value source))
-           (before (cl-tpg::semantic-36-index-pair 0))
-           (after
-             (cl-tpg::semantic-36-index-pair
-              (cl-tpg::semantic-36-action-index mutated))))
-      (assert after)
-      (assert (not (equal before after)))
-      (assert (= (count t
-                        (mapcar (lambda (left right) (/= left right))
-                                before after))
-                 1))))
+    (let* ((source
+             (cl-tpg::make-target-response-36-action
+              :target 2 :response 2))
+           (mutated
+             (cl-tpg::mutate-target-response-36-atomic-value source))
+           (target-changed
+             (/= (cl-tpg::target-response-36-action-target source)
+                 (cl-tpg::target-response-36-action-target mutated)))
+           (response-changed
+             (/= (cl-tpg::target-response-36-action-response source)
+                 (cl-tpg::target-response-36-action-response mutated))))
+      (assert (not (eq source mutated)))
+      (assert (or target-changed response-changed))
+      (assert (not (and target-changed response-changed)))))
 
-  ;; Compatibility APIs return a target, not the flat catalogue index.
+  ;; Compatibility APIs return the direct target field.
   (assert (= (cl-tpg::atomic-action-primary
-              (cl-tpg::make-semantic-36-action :index 0))
+              (cl-tpg::make-target-response-36-action
+               :target 2 :response 2))
              2))
+
+  ;; Flat-36 remains available only as the future comparison representation.
+  (let ((cl-tpg::*terminal-action-format* :flat-36))
+    (let ((payload (cl-tpg::make-random-atomic-action-value)))
+      (assert (cl-tpg::flat-36-action-p payload))
+      (assert (<= 0 (cl-tpg::flat-36-action-index payload) 35))))
+  (let* ((flat (cl-tpg::make-flat-36-action :index 0))
+         (mutated (cl-tpg::mutate-flat-36-atomic-value flat))
+         (before (cl-tpg::semantic-36-index-pair 0))
+         (after
+           (cl-tpg::semantic-36-index-pair
+            (cl-tpg::flat-36-action-index mutated))))
+    (assert (= (count t
+                      (mapcar (lambda (left right) (/= left right))
+                              before after))
+               1)))
 
   ;; Switching formats does not alter historical factored or numeric payloads.
   (let ((cl-tpg::*terminal-action-format* :factored))
