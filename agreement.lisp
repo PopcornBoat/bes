@@ -189,11 +189,19 @@
        (&optional (backend *teacher-backend*)
                   (agreement (ensure-cage2-action-agreement)))
   "Return the fixed Decoy-order profile associated with BACKEND."
-  (or (cdr (assoc backend
-                  (action-agreement-decoy-order-profiles agreement)
-                  :test #'eq))
+  (or (action-agreement-decoy-orders-for-profile backend agreement)
       (error "No Decoy-order profile is defined for teacher backend ~S."
              backend)))
+
+(defun action-agreement-decoy-orders-for-profile
+       (profile &optional (agreement (ensure-cage2-action-agreement)))
+  "Return fixed Decoy orders for explicit PROFILE, or NIL when unknown.
+
+Unlike ACTION-AGREEMENT-DECOY-ORDERS-FOR-BACKEND this API has no dependency on
+the active teacher. It is the stable boundary used by the Lisp controller."
+  (cdr (assoc profile
+              (action-agreement-decoy-order-profiles agreement)
+              :test #'eq)))
 
 (defun first-available-decoy-option (target decoy-mask &optional option-orders)
   "Resolve TARGET's first available option using the shared agreement order."

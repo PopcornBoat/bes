@@ -35,6 +35,15 @@ index into the versioned 36-category target/response catalogue.")
   "Return true for a supported categorical terminal-action representation."
   (member format '(:factored :semantic-36) :test #'eq))
 
+(defconstant +cage2-controller-protocol+ :cage2-lisp-controller-v1
+  "Version tag for the canonical Lisp-side CAGE2 controller semantics.")
+
+(defparameter *cage2-controller-decoy-order-profile* :heuristic
+  "Fixed, versioned Decoy order used by the Lisp controller.
+
+This is intentionally independent of *TEACHER-BACKEND*: changing who supplies
+a ranked proposal must not silently change how that proposal is executed.")
+
 (defvar *factored-actions-enabled* nil
   "When true, newly created atomic actions contain categorical target and
 response fields. Legacy numeric atomic actions remain executable so historical

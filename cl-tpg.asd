@@ -12,6 +12,7 @@
 	       (:file "instruction")
 	       (:file "program")
 	       (:file "action")
+	       (:file "controller")
 	       (:file "learner")
 	       (:file "team")
 		   (:file "checkpoint")
