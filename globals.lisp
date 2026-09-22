@@ -22,6 +22,19 @@
 (defconstant +num-semantic-responses+ 4
   "Number of host response categories in a factored policy action.")
 
+(defconstant +num-semantic-36-actions+ 36
+  "Number of target/response categories in the versioned Semantic-36 head.")
+
+(defparameter *terminal-action-format* :factored
+  "Categorical atomic-action representation used when
+*FACTORED-ACTIONS-ENABLED* is true. :FACTORED preserves the historical
+11-target plus response-gene representation; :SEMANTIC-36 uses one explicit
+index into the versioned 36-category target/response catalogue.")
+
+(defun valid-terminal-action-format-p (format)
+  "Return true for a supported categorical terminal-action representation."
+  (member format '(:factored :semantic-36) :test #'eq))
+
 (defvar *factored-actions-enabled* nil
   "When true, newly created atomic actions contain categorical target and
 response fields. Legacy numeric atomic actions remain executable so historical

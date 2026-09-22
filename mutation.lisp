@@ -232,17 +232,52 @@ allowing permanent positive bloat pressure."
           (note-mutation-event :terminal-response-mutation)))
     mutated))
 
+(defun mutate-semantic-36-atomic-value (payload)
+  "Copy PAYLOAD and mutate exactly one target/response component.
+
+The catalogue order is external compatibility data, so mutation operates on
+the decoded semantic pair and then maps the result back to its stable index."
+  (let* ((old-pair
+           (semantic-36-index-pair (semantic-36-action-index payload)))
+         (target (and old-pair (first old-pair)))
+         (response-index (and old-pair (second old-pair))))
+    (unless old-pair
+      (return-from mutate-semantic-36-atomic-value
+        (make-semantic-36-action)))
+    (if (zerop (random 2))
+        (let* ((current-position
+                 (position target *semantic-36-targets* :test #'=))
+               (new-position
+                 (random-different-category
+                  current-position (length *semantic-36-targets*))))
+          (setf target (aref *semantic-36-targets* new-position))
+          (note-mutation-event :terminal-target-mutation))
+        (progn
+          (setf response-index
+                (random-different-category
+                 response-index +num-semantic-responses+))
+          (note-mutation-event :terminal-response-mutation)))
+    (make-semantic-36-action
+     :index (or (semantic-36-pair-index target response-index)
+                (error "Semantic-36 catalogue is missing (~D ~D)."
+                       target response-index)))))
+
 (defun mutated-atomic-action-value (old-payload)
   "Return an atomic payload appropriate for the active action contract."
   (cond
     ((not *factored-actions-enabled*)
      (random *num-actions*))
-    ((factored-action-p old-payload)
-     (mutate-factored-atomic-value old-payload))
+    ((eq *terminal-action-format* :factored)
+     (if (factored-action-p old-payload)
+         (mutate-factored-atomic-value old-payload)
+         (make-factored-action)))
+    ((eq *terminal-action-format* :semantic-36)
+     (if (semantic-36-action-p old-payload)
+         (mutate-semantic-36-atomic-value old-payload)
+         (make-semantic-36-action)))
     (t
-     ;; A legacy numeric checkpoint entering factored training is upgraded the
-     ;; first time this learner's action mutates.
-     (make-random-atomic-action-value))))
+     (error "Unsupported terminal action format: ~S"
+            *terminal-action-format*))))
 
 (defun mutate-action-option-orders (team)
   "Swap two entries in one host's policy-owned option permutation."
@@ -295,7 +330,8 @@ allowing permanent positive bloat pressure."
     (cond
       ((or (eq old-type :reference) (eq new-type :reference))
        (note-mutation-event :team-edge-mutation))
-      ((not (factored-action-p old-payload))
+      ((not (or (factored-action-p old-payload)
+                (semantic-36-action-p old-payload)))
        (note-mutation-event :terminal-action-mutation))))
   team)
 
