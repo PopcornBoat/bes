@@ -177,6 +177,9 @@ it is not a bit-for-bit continuation of the stopped population. Phase-4a's new
 selection stream starts deterministically from the search seed and is then
 checkpointed independently. The run-local filename contains
 `official-guided-grouped-lexicase`, so it cannot overwrite the Phase-3 source.
+When the output directory is new, resume automatically falls back to the
+matching `.official-guided-state.lisp` beside the source checkpoint and then
+writes subsequent state into the new output directory.
 
 Before starting, run the focused and regression checks:
 

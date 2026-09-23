@@ -193,27 +193,47 @@
         (when (probe-file temporary)
           (delete-file temporary))))))
 
-(defun read-official-guided-runtime-state ()
-  "Read the runtime journal when one exists."
-  (let ((path (official-guided-state-path)))
+(defun read-official-guided-runtime-state (&optional directory)
+  "Read the runtime journal from DIRECTORY or the active checkpoint directory."
+  (let ((path
+          (if directory
+              (checkpoint-path directory ".official-guided-state.lisp")
+              (official-guided-state-path))))
     (when (and path (probe-file path))
       (with-open-file (stream path :direction :input)
         (with-standard-io-syntax
           (read stream))))))
 
 (defun restore-official-guided-runtime-state (metadata best-team-path)
-  "Restore streams from checkpoint metadata, preferring its matching journal."
+  "Restore metadata, preferring a matching output or source-sibling journal."
   (let* ((metadata-state (getf metadata :official-guided-seed-streams))
          (metadata-version
            (or (getf metadata :official-guided-incumbent-version) 0))
-         (journal (read-official-guided-runtime-state))
+         (checkpoint-filename
+           (file-namestring (pathname best-team-path)))
+         (output-journal (read-official-guided-runtime-state))
+         (source-journal
+           (read-official-guided-runtime-state
+            (uiop:pathname-directory-pathname
+             (pathname best-team-path))))
+         (journal
+           (cond
+             ((and output-journal
+                   (eq (getf output-journal :fitness-protocol)
+                       +official-guided-fitness-protocol+)
+                   (string=
+                    (getf output-journal :checkpoint-filename "")
+                    checkpoint-filename))
+              output-journal)
+             ((and source-journal
+                   (eq (getf source-journal :fitness-protocol)
+                       +official-guided-fitness-protocol+)
+                   (string=
+                    (getf source-journal :checkpoint-filename "")
+                    checkpoint-filename))
+              source-journal)))
          (journal-matches-p
-           (and journal
-                (eq (getf journal :fitness-protocol)
-                    +official-guided-fitness-protocol+)
-                (string=
-                 (getf journal :checkpoint-filename "")
-                 (file-namestring (pathname best-team-path)))))
+           (not (null journal)))
          (journal-version
            (and journal-matches-p
                 (getf journal :incumbent-version 0)))

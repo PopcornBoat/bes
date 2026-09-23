@@ -301,4 +301,49 @@
            2))
    "historical-best serialization copy remains graph-independent"))
 
+;; A new treatment output directory must still recover the matching journal
+;; beside its source checkpoint before it writes its own journal.
+(let* ((token (format nil "phase4-source-journal-~D-~D"
+                      (get-universal-time) (get-internal-real-time)))
+       (base (merge-pathnames (format nil "~A/" token)
+                              (uiop:temporary-directory)))
+       (source-directory (merge-pathnames "source/" base))
+       (output-directory (merge-pathnames "output/" base))
+       (checkpoint (merge-pathnames "source-best.lisp" source-directory))
+       (journal (merge-pathnames ".official-guided-state.lisp"
+                                 source-directory))
+       (cl-tpg::*checkpoint-directory* output-directory)
+       (cl-tpg::*current-search-mode* :official-guided)
+       (cl-tpg::*phase4-selection-enabled* t))
+  (unwind-protect
+       (progn
+         (ensure-directories-exist checkpoint)
+         (cl-tpg::initialize-phase4-selection-state 153)
+         (cl-tpg::phase4-selection-random-below 17)
+         (let* ((saved (cl-tpg::phase4-selection-state-copy))
+                (expected-next
+                  (cl-tpg::phase4-selection-random-below 100000)))
+           (with-open-file (stream journal :direction :output
+                                           :if-exists :supersede
+                                           :if-does-not-exist :create)
+             (with-standard-io-syntax
+               (write (list :version 4
+                            :fitness-protocol
+                              cl-tpg::+official-guided-fitness-protocol+
+                            :checkpoint-filename "source-best.lisp"
+                            :incumbent-version 1
+                            :phase4-selection-state saved)
+                      :stream stream)))
+           (cl-tpg::initialize-phase4-selection-state 999)
+           (multiple-value-bind (ignored matched-p)
+               (cl-tpg::restore-official-guided-runtime-state nil checkpoint)
+             (declare (ignore ignored))
+             (check-phase4
+              (and matched-p
+                   (= (cl-tpg::phase4-selection-random-below 100000)
+                      expected-next))
+              "new output directory resumes the source checkpoint sibling journal"))))
+    (when (probe-file base)
+      (uiop:delete-directory-tree base :validate t))))
+
 (format t "~D Phase-4a checks passed.~%" *phase4-checks*)
