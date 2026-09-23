@@ -212,8 +212,13 @@ independent official paired challenger evaluation.")
   "Deterministic strata used to balance passive official mutation samples.")
 
 (defconstant +semantic-locality-control-protocol+
-  :semantic-locality-control-phase3-v1
-  "Version tag for Phase-3 behavioral mutation control.")
+  :semantic-locality-control-phase3-v2
+  "Version tag for adaptive Phase-3 behavioral mutation control.")
+
+(defparameter +semantic-locality-control-compatible-protocols+
+  '(:semantic-locality-control-phase3-v1
+    :semantic-locality-control-phase3-v2)
+  "Control-state protocols that can resume under the Phase-3 v2 code.")
 
 (defconstant +semantic-locality-control-max-attempts+ 8
   "Maximum native mutation attempts used to fill one controlled offspring slot.")

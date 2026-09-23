@@ -2025,6 +2025,10 @@ through serialization/deserialization and save it to disk."
       (send-migrants evaluation-scores))
 
     (select evaluation-scores)
+
+    ;; Observe survivor diversity before reproduction adds new offspring.  This
+    ;; is diagnostic only and consumes no random state.
+    (persist-population-behavioral-diversity :post-selection)
     
     (reproduce)
     (maybe-run-behavioral-locality-sampling)

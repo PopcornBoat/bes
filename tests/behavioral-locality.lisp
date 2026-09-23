@@ -76,6 +76,24 @@
         (null cl-tpg::*semantic-locality-control-generation-records*))
    "probe archive and passive sample cursor round-trip independently"))
 
+(let ((cl-tpg::*teacher-reference-dataset* nil)
+      (legacy-control
+        '(:version 3
+          :protocol :behavioral-locality-phase2-v1
+          :revision 5
+          :control-protocol :semantic-locality-control-phase3-v1
+          :control-age 595
+          :sample-cursor 12
+          :stratum-counts nil
+          :fixed-reference nil
+          :fixed-early nil
+          :archive nil)))
+  (cl-tpg::restore-behavioral-locality-state legacy-control)
+  (check-behavioral-locality
+   (and (= cl-tpg::*semantic-locality-control-age* 595)
+        (= cl-tpg::*behavioral-locality-sample-cursor* 12))
+   "Phase-3 v2 resumes the v1 control age and diagnostic cursor"))
+
 (let* ((neutral-team (cl-tpg::%make-team :id "neutral" :learners nil))
        (small-team (cl-tpg::%make-team :id "small" :learners nil))
        (record-base '(:mutation-events ((:INSTRUCTION-ADD 1))))
@@ -153,7 +171,17 @@
    (< (cl-tpg::semantic-locality-fallback-score neutral)
       (cl-tpg::semantic-locality-fallback-score medium)
       (cl-tpg::semantic-locality-fallback-score large))
-   "retry exhaustion chooses the least disruptive observed fallback"))
+   "fallback distance remains ordered by measured disruption")
+  (check-behavioral-locality
+   (and (cl-tpg::semantic-locality-fallback-better-p
+         :local medium neutral)
+        (cl-tpg::semantic-locality-fallback-better-p
+         :bounded neutral large)
+        (eq (cl-tpg::semantic-locality-effective-tier :local medium)
+            :bounded)
+        (eq (cl-tpg::semantic-locality-effective-tier :local neutral)
+            :neutral))
+   "v2 escalates local slots to bounded non-neutral behavior before neutral fallback"))
 
 ;; A local-only slot must discard all seven rejected temporary children and
 ;; retain exactly one bounded fallback after the eighth native mutation.
@@ -234,9 +262,11 @@
           (= (getf record :control-attempts)
              cl-tpg::+semantic-locality-control-max-attempts+)
           (getf record :control-fallback-p)
+          (getf record :control-escalated-p)
+          (eq (getf record :control-effective-tier) :explore)
           (every (lambda (stratum) (eq stratum :large-top1))
                  (getf record :control-attempted-strata)))
-     "bounded retries retain one fallback without leaking rejected teams")))
+     "all-large retries retain one explicit exploratory fallback without leaks")))
 
 ;; Event recording must not consume extra randomness or change action mutation.
 (let* ((seed 24680)
@@ -300,6 +330,72 @@
           (= (getf (first signature) :teacher-rank) 0)
           (not (getf (first signature) :off-support)))
      "actual TPG execution produces an executable semantic probe signature")))
+
+(let* ((instructions-a (make-array 0 :fill-pointer t :adjustable t))
+       (instructions-b (make-array 0 :fill-pointer t :adjustable t))
+       (team-a
+         (cl-tpg::%make-team
+          :id "diversity-a" :type :root
+          :learners
+            (list
+             (cl-tpg::make-learner
+              :program (cl-tpg::make-program :instructions instructions-a)
+              :action
+                (cl-tpg::make-action
+                 :type :atomic
+                 :action
+                   (cl-tpg::make-target-response-36-action
+                    :target 2 :response 0))))))
+       (team-b
+         (cl-tpg::%make-team
+          :id "diversity-b" :type :root
+          :learners
+            (list
+             (cl-tpg::make-learner
+              :program (cl-tpg::make-program :instructions instructions-b)
+              :action
+                (cl-tpg::make-action
+                 :type :atomic
+                 :action
+                   (cl-tpg::make-target-response-36-action
+                    :target 3 :response 3))))))
+       (probe
+         (list :source :reference :generation 1 :step 3
+               :observation
+                 (make-array 62 :element-type 'double-float
+                                :initial-element 0.0d0)
+               :teacher-pair '(2 0)
+               :teacher-ranking '((2 0) (3 3))))
+       (cl-tpg::*teams* (list team-a team-b))
+       (cl-tpg::*behavioral-probe-archive* (list probe))
+       (cl-tpg::*behavioral-signature-cache* (make-hash-table :test #'eq))
+       (cl-tpg::*behavioral-teacher-action-support*
+         (make-hash-table :test #'equal))
+       (cl-tpg::*num-observations* 62)
+       (cl-tpg::*num-actions* 36)
+       (cl-tpg::*factored-actions-enabled* t)
+       (cl-tpg::*terminal-action-format* :target-response-36)
+       (record (cl-tpg::population-behavioral-diversity-record)))
+  (check-behavioral-locality
+   (and (= (getf record :unique-top1-fingerprints) 2)
+        (= (getf record :unique-ranking-fingerprints) 2)
+        (= (getf record :mean-pairwise-top1-hamming) 1.0d0)
+        (= (getf record :mean-normalized-top1-entropy) 1.0d0)
+        (= (getf record :teacher-top8-mean-coverage) 0.5d0)
+        (= (getf record :teacher-top8-population-coverage) 1.0d0)
+        (= (getf record :expressed-ranking-pairs) 2))
+   "population diagnostics distinguish two complementary specialists"))
+
+(let ((totals (make-hash-table :test #'eq))
+      (disagreements (make-hash-table :test #'eq)))
+  (setf (gethash :early totals) 10
+        (gethash :early disagreements) 4)
+  (let ((summary (cl-tpg::dagger-phase-diagnostics totals disagreements)))
+    (check-behavioral-locality
+     (and (eq (cl-tpg::dagger-diagnostic-phase 3) :early)
+          (eq (cl-tpg::dagger-diagnostic-phase 55) :steps-50-99)
+          (= (getf (first summary) :disagreement-rate) 0.4d0))
+     "DAgger disagreement diagnostics retain stable episode phases")))
 
 (format t "Behavioral-locality checks passed: ~D.~%"
         *behavioral-locality-checks*)

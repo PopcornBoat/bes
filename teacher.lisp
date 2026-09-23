@@ -409,6 +409,43 @@ the historical learner-controlled DAgger behavior is preserved."
                      (coerce (max 1 (length episode-seeds)) 'double-float))))
     (nreverse rows)))
 
+(defun dagger-diagnostic-phase (timestep)
+  "Return the stable episode-phase bucket for TIMESTEP."
+  (cond ((< timestep 10) :early)
+        ((< timestep 30) :steps-10-29)
+        ((< timestep 50) :steps-30-49)
+        (t :steps-50-99)))
+
+(defun dagger-increment (key table)
+  "Increment KEY in diagnostic hash TABLE."
+  (incf (gethash key table 0)))
+
+(defun dagger-count-table-alist (table)
+  "Return a deterministic descending-count alist copied from TABLE."
+  (sort
+   (loop for key being the hash-keys of table
+         using (hash-value value)
+         collect (cons (copy-tree key) value))
+   (lambda (left right)
+     (if (= (cdr left) (cdr right))
+         (string< (prin1-to-string (car left))
+                  (prin1-to-string (car right)))
+         (> (cdr left) (cdr right))))))
+
+(defun dagger-phase-diagnostics (totals disagreements)
+  "Return stable phase totals and disagreement rates."
+  (loop for phase in '(:early :steps-10-29 :steps-30-49 :steps-50-99)
+        for total = (gethash phase totals 0)
+        for disagreement = (gethash phase disagreements 0)
+        collect
+          (list :phase phase
+                :steps total
+                :disagreements disagreement
+                :disagreement-rate
+                  (if (plusp total)
+                      (/ disagreement (coerce total 'double-float))
+                      0.0d0))))
+
 (defun generate-lisp-controller-dagger-trace-rows
        (behavior-team environment-name episode-seeds)
   "Run mixed DAgger with one canonical Lisp Controller per episode.
@@ -432,6 +469,12 @@ updated only from the observation and concrete action that actually occurred."
          (teacher-controlled 0)
          (learner-controlled 0)
          (first-disagreement-steps nil)
+         (target-agreements 0)
+         (response-agreements 0)
+         (phase-totals (make-hash-table :test #'eq))
+         (phase-disagreements (make-hash-table :test #'eq))
+         (confusion-counts (make-hash-table :test #'equal))
+         (prediction-counts (make-hash-table :test #'equal))
          (total-reward 0.0d0))
     (cl-gym::configure-cage2-controller-option-orders env controller)
     (unwind-protect
@@ -511,6 +554,22 @@ updated only from the observation and concrete action that actually occurred."
                                     timestep)
                               rows)
                              (incf policy-steps)
+                             (let ((phase (dagger-diagnostic-phase timestep)))
+                               (dagger-increment phase phase-totals)
+                               (when predicted-pair
+                                 (dagger-increment
+                                  predicted-pair prediction-counts)
+                                 (when (= (first selected)
+                                          (first predicted-pair))
+                                   (incf target-agreements))
+                                 (when (= (second selected)
+                                          (second predicted-pair))
+                                   (incf response-agreements)))
+                               (when disagreement-p
+                                 (dagger-increment phase phase-disagreements)
+                                 (dagger-increment
+                                  (list selected predicted-pair)
+                                  confusion-counts)))
                              (if teacher-controls-p
                                  (incf teacher-controlled)
                                  (incf learner-controlled))
@@ -553,6 +612,23 @@ updated only from the observation and concrete action that actually occurred."
                 :teacher-mixing-rate teacher-rate
                 :teacher-controlled-steps teacher-controlled
                 :learner-controlled-steps learner-controlled
+                :target-agreement-rate
+                  (if (plusp policy-steps)
+                      (/ target-agreements
+                         (coerce policy-steps 'double-float))
+                      0.0d0)
+                :response-agreement-rate
+                  (if (plusp policy-steps)
+                      (/ response-agreements
+                         (coerce policy-steps 'double-float))
+                      0.0d0)
+                :phase-diagnostics
+                  (dagger-phase-diagnostics
+                   phase-totals phase-disagreements)
+                :disagreement-confusion
+                  (dagger-count-table-alist confusion-counts)
+                :prediction-distribution
+                  (dagger-count-table-alist prediction-counts)
                 :mean-mixed-return
                   (/ total-reward
                      (coerce (max 1 (length episode-seeds)) 'double-float))))
@@ -876,11 +952,17 @@ official incumbent and is never repurposed as mutable DAgger state."
                     (when *last-dagger-diagnostics*
                       (emit-message
                        (format nil
-                               "Generation ~D DAgger diagnostics: disagreement=~,2F%% first=~A absent-top8=~D teacher-rate=~,2F source-teacher=~D source-learner=~D mixed-return=~,3F"
+                               "Generation ~D DAgger diagnostics: disagreement=~,2F%% target=~,2F%% response=~,2F%% first=~A absent-top8=~D teacher-rate=~,2F source-teacher=~D source-learner=~D mixed-return=~,3F"
                                *generation*
                                (* 100.0d0
                                   (getf *last-dagger-diagnostics*
                                         :disagreement-rate 0.0d0))
+                               (* 100.0d0
+                                  (getf *last-dagger-diagnostics*
+                                        :target-agreement-rate 0.0d0))
+                               (* 100.0d0
+                                  (getf *last-dagger-diagnostics*
+                                        :response-agreement-rate 0.0d0))
                                (or (getf *last-dagger-diagnostics*
                                          :first-disagreement-mean)
                                    :none)
@@ -893,7 +975,16 @@ official incumbent and is never repurposed as mutable DAgger state."
                                (getf *last-dagger-diagnostics*
                                      :learner-controlled-steps 0)
                                (getf *last-dagger-diagnostics*
-                                     :mean-mixed-return 0.0d0))))
+                                     :mean-mixed-return 0.0d0)))
+                      (when (behavioral-locality-active-p)
+                        (append-behavioral-locality-form
+                         (list :type :dagger-disagreement-generation
+                               :protocol
+                                 +semantic-locality-control-protocol+
+                               :generation *generation*
+                               :diagnostics
+                                 (copy-tree
+                                  *last-dagger-diagnostics*)))))
                     (teacher-trace-to-dataset
                      (append teacher-rows replay-sample)))))))
     (when *recurrent-policy-enabled*

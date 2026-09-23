@@ -1,5 +1,31 @@
 # Phase 3: semantic-locality control
 
+## V2 adaptive continuation
+
+The first v1 run stopped at generation 596.  It reduced accepted large Top-1
+changes, but its latest 100 generations reached an 83.8% retry-fallback rate
+and 87.9% probe-neutral accepted behavior.  No official challenger was
+promoted.  V2 therefore keeps the same native mutations, schedule, thresholds,
+official comparison protocol, and explicit explore quota, but changes retry
+exhaustion for a requested `local` slot:
+
+```text
+accepted local mutation
+  or
+least-disruptive bounded non-neutral attempt
+  or
+probe-neutral fallback
+  or, only if neither exists, least-disruptive exploratory attempt
+```
+
+This avoids preferring a no-op merely because its numerical distance is zero,
+without converting every saturated local slot into an unbounded mutation.
+V1 control state is accepted on resume and retains its control age.
+
+V2 also journals post-selection population behavior and detailed DAgger
+disagreement diagnostics.  These measurements do not change mutation,
+selection, fitness, or random-state consumption.
+
 Phase 3 changes only offspring generation. It retains the frozen Phase-1
 official-guided DAgger/evaluation protocol and all native TPG mutation
 operators, and it retains Phase-2 measurement. It does not add lexicase,
@@ -41,7 +67,7 @@ Phase 3 at control age zero.
 Each accepted record stores:
 
 - schedule stage and control age;
-- requested tier;
+- requested and effective tier, plus whether fallback escalated;
 - number of attempts and whether fallback was used;
 - all attempted distance strata;
 - the existing instruction/learner/terminal/edge mutation events;
@@ -51,9 +77,20 @@ Generation summaries are appended to `behavioral-locality-records.lisp` as
 `:locality-control-generation` forms. The dashboard log reports attempts,
 retries, fallbacks, tier counts, and accepted-stratum counts.
 
+The same journal also receives:
+
+- `:population-diversity-generation`, containing unique Top-1/ranking
+  fingerprints, mean pairwise Top-1 Hamming, normalized action entropy,
+  teacher Top-8 mean/union coverage, expressed pair count, and the dominant
+  Top-1 pair/rate;
+- `:dagger-disagreement-generation`, containing target/response agreement,
+  phase-specific disagreement, the teacher-to-TPG confusion table, and the
+  TPG prediction distribution.
+
 ## Experimental boundary
 
-This branch (`semantic-locality-control`) is the Phase-3 treatment. The pushed
+This branch (`semantic-locality-control-v2`) is the adaptive Phase-3 treatment.
+The pushed `semantic-locality-control` branch preserves the v1 treatment, and the
 `semantic-locality-analysis` branch remains the unchanged Phase-2 control.
 Phase-3 official-guided checkpoints use `official-guided-locality-control` in
 their filename and therefore cannot overwrite the Phase-1/2 incumbent.

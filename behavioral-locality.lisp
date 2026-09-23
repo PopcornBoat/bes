@@ -249,8 +249,9 @@ deterministic and consumes no random state."
                  (eq (getf state :protocol) +behavioral-locality-protocol+))
       (error "Invalid behavioral-locality state: ~S" state))
     (when (and (= (getf state :version) 3)
-               (not (eq (getf state :control-protocol)
-                        +semantic-locality-control-protocol+)))
+               (not (member (getf state :control-protocol)
+                            +semantic-locality-control-compatible-protocols+
+                            :test #'eq)))
       (error "Invalid semantic-locality control state: ~S" state))
     (setf *behavioral-probe-revision* (getf state :revision 0)
           *behavioral-probe-fixed-reference*
@@ -598,6 +599,50 @@ eligible as the least-disruptive fallback after bounded retries."
   (+ (getf record :top1-hamming 0.0d0)
      (getf record :ranking-distance-mean 0.0d0)))
 
+(defun semantic-locality-neutral-record-p (record)
+  "Return true when RECORD changes neither Top-1 nor ranked behavior."
+  (and (zerop (getf record :top1-hamming 0.0d0))
+       (zerop (getf record :ranking-distance-mean 0.0d0))))
+
+(defun semantic-locality-fallback-class (requested-tier record)
+  "Return the ordered v2 fallback class for RECORD.
+
+A LOCAL slot first escalates to a safe BOUNDED non-neutral mutation.  If none
+was observed, a probe-neutral mutation remains safer than an unbounded jump.
+Only a retry set containing neither bounded nor neutral behavior can fall back
+to an exploratory mutation.  BOUNDED slots use the same neutral-before-large
+rule; EXPLORE slots never reach fallback because their first attempt is valid."
+  (cond
+    ((and (eq requested-tier :local)
+          (semantic-locality-tier-accepts-p :bounded record))
+     0)
+    ((semantic-locality-neutral-record-p record) 1)
+    (t 2)))
+
+(defun semantic-locality-fallback-better-p
+       (requested-tier candidate incumbent)
+  "Return true when CANDIDATE is a safer adaptive fallback than INCUMBENT."
+  (or (null incumbent)
+      (let ((candidate-class
+              (semantic-locality-fallback-class requested-tier candidate))
+            (incumbent-class
+              (semantic-locality-fallback-class requested-tier incumbent)))
+        (or (< candidate-class incumbent-class)
+            (and (= candidate-class incumbent-class)
+                 (< (semantic-locality-fallback-score candidate)
+                    (semantic-locality-fallback-score incumbent)))))))
+
+(defun semantic-locality-effective-tier (requested-tier record)
+  "Describe the tier actually represented by accepted RECORD."
+  (cond
+    ((semantic-locality-tier-accepts-p requested-tier record)
+     requested-tier)
+    ((and (eq requested-tier :local)
+          (semantic-locality-tier-accepts-p :bounded record))
+     :bounded)
+    ((semantic-locality-neutral-record-p record) :neutral)
+    (t :explore)))
+
 (defun discard-semantic-locality-candidate (team)
   "Delete rejected TEAM and remove its archive-signature cache entry."
   (when *behavioral-signature-cache*
@@ -605,17 +650,19 @@ eligible as the least-disruptive fallback after bounded retries."
   (delete-team team))
 
 (defun mutate-team-with-semantic-locality-control (parent)
-  "Create one child using bounded behavioral-locality resampling.
+  "Create one child using adaptive bounded behavioral-locality resampling.
 
 Every attempt uses the unchanged native TPG mutation pipeline. Most slots seek
 local semantic consequences, while :EXPLORE slots accept the first mutation.
-After the retry bound, the least-disruptive attempted child is retained so the
-search cannot stall or silently replace mutation with cloning."
+After the retry bound, a LOCAL slot prefers the least-disruptive BOUNDED
+non-neutral attempt. Probe-neutral behavior is retained only when no such safe
+escalation exists, and an unbounded exploratory fallback is used only when the
+retry set contains neither. This preserves the scheduled explore quota without
+turning every saturated local slot into a catastrophic large jump."
   (let* ((stage (semantic-locality-control-stage))
          (tier (choose-semantic-locality-control-tier stage))
          (best-child nil)
          (best-record nil)
-         (best-score nil)
          (attempted-strata nil))
     (loop for attempt from 1 to +semantic-locality-control-max-attempts+
           for child = (clone-team parent)
@@ -626,8 +673,7 @@ search cannot stall or silently replace mutation with cloning."
                         (make-behavioral-mutation-record
                          parent child events))
                       (stratum
-                        (behavioral-locality-sampling-stratum record))
-                      (score (semantic-locality-fallback-score record)))
+                        (behavioral-locality-sampling-stratum record)))
                  (push stratum attempted-strata)
                  (when (semantic-locality-tier-accepts-p tier record)
                    (when best-child
@@ -637,7 +683,10 @@ search cannot stall or silently replace mutation with cloning."
                          (getf record :control-stage) (getf stage :name)
                          (getf record :control-age)
                            *semantic-locality-control-age*
+                         (getf record :control-requested-tier) tier
                          (getf record :control-tier) tier
+                         (getf record :control-effective-tier) tier
+                         (getf record :control-escalated-p) nil
                          (getf record :control-attempts) attempt
                          (getf record :control-fallback-p) nil
                          (getf record :control-attempted-strata)
@@ -647,13 +696,13 @@ search cannot stall or silently replace mutation with cloning."
                          *semantic-locality-control-generation-records*)
                    (return-from mutate-team-with-semantic-locality-control
                      child))
-                 (if (or (null best-score) (< score best-score))
+                 (if (semantic-locality-fallback-better-p
+                      tier record best-record)
                      (progn
                        (when best-child
                          (discard-semantic-locality-candidate best-child))
                        (setf best-child child
-                             best-record record
-                             best-score score))
+                             best-record record))
                      (discard-semantic-locality-candidate child)))))
     (unless best-child
       (error "Phase-3 locality control produced no fallback child."))
@@ -661,7 +710,13 @@ search cannot stall or silently replace mutation with cloning."
             +semantic-locality-control-protocol+
           (getf best-record :control-stage) (getf stage :name)
           (getf best-record :control-age) *semantic-locality-control-age*
+          (getf best-record :control-requested-tier) tier
           (getf best-record :control-tier) tier
+          (getf best-record :control-effective-tier)
+            (semantic-locality-effective-tier tier best-record)
+          (getf best-record :control-escalated-p)
+            (not (eq tier
+                     (semantic-locality-effective-tier tier best-record)))
           (getf best-record :control-attempts)
             +semantic-locality-control-max-attempts+
           (getf best-record :control-fallback-p) t
@@ -728,6 +783,159 @@ search cannot stall or silently replace mutation with cloning."
          (coerce (length records) 'double-float))
       0.0d0))
 
+(defun behavioral-unique-count (values)
+  "Return the number of EQUAL-distinct VALUES."
+  (let ((seen (make-hash-table :test #'equal)))
+    (dolist (value values)
+      (setf (gethash value seen) t))
+    (hash-table-count seen)))
+
+(defun behavioral-signature-top1-fingerprint (signature)
+  "Return the ordered Top-1 action vector represented by SIGNATURE."
+  (mapcar (lambda (entry) (copy-list (getf entry :top1))) signature))
+
+(defun behavioral-population-pairwise-hamming (signatures)
+  "Return mean pairwise Top-1 Hamming distance over probe positions."
+  (let* ((population-size (length signatures))
+         (probe-count (if signatures (length (first signatures)) 0))
+         (pair-count (/ (* population-size (1- population-size)) 2)))
+    (if (or (< population-size 2) (zerop probe-count))
+        0.0d0
+        (/
+         (loop for probe-index below probe-count
+               sum
+                 (let ((counts (make-hash-table :test #'equal)))
+                   (dolist (signature signatures)
+                     (incf (gethash
+                            (getf (nth probe-index signature) :top1)
+                            counts 0)))
+                   (/ (coerce
+                       (- pair-count
+                          (loop for count being the hash-values of counts
+                                sum (/ (* count (1- count)) 2)))
+                       'double-float)
+                      (coerce pair-count 'double-float))))
+         (coerce probe-count 'double-float)))))
+
+(defun behavioral-population-action-entropy (signatures)
+  "Return mean normalized Top-1 entropy across probe positions."
+  (let* ((population-size (length signatures))
+         (probe-count (if signatures (length (first signatures)) 0))
+         (maximum (and (> population-size 1)
+                       (log (coerce population-size 'double-float) 2.0d0))))
+    (if (or (zerop probe-count) (null maximum) (zerop maximum))
+        0.0d0
+        (/
+         (loop for probe-index below probe-count
+               sum
+                 (let ((counts (make-hash-table :test #'equal)))
+                   (dolist (signature signatures)
+                     (incf (gethash
+                            (getf (nth probe-index signature) :top1)
+                            counts 0)))
+                   (/
+                    (-
+                     (loop for count being the hash-values of counts
+                           for probability =
+                             (/ (coerce count 'double-float)
+                                (coerce population-size 'double-float))
+                           sum (* probability (log probability 2.0d0))))
+                    maximum)))
+         (coerce probe-count 'double-float)))))
+
+(defun population-behavioral-diversity-record (&optional (stage :post-selection))
+  "Measure population behavior without changing selection or mutation state."
+  (let* ((teams (root-teams))
+         (signatures (mapcar #'behavioral-policy-signature teams))
+         (probe-count (if signatures (length (first signatures)) 0))
+         (population-size (length signatures))
+         (top1-fingerprints
+           (mapcar #'behavioral-signature-top1-fingerprint signatures))
+         (expressed (make-hash-table :test #'equal))
+         (top1-counts (make-hash-table :test #'equal))
+         (teacher-present 0)
+         (teacher-covered-probes 0))
+    (dolist (signature signatures)
+      (dolist (entry signature)
+        (dolist (pair (getf entry :ranking))
+          (setf (gethash pair expressed) t))
+        (incf (gethash (getf entry :top1) top1-counts 0))
+        (when (< (getf entry :teacher-rank +semantic-ranking-limit+)
+                 +semantic-ranking-limit+)
+          (incf teacher-present))))
+    (dotimes (probe-index probe-count)
+      (when
+          (some
+           (lambda (signature)
+             (< (getf (nth probe-index signature)
+                      :teacher-rank +semantic-ranking-limit+)
+                +semantic-ranking-limit+))
+           signatures)
+        (incf teacher-covered-probes)))
+    (let ((dominant-pair nil)
+          (dominant-count 0)
+          (cell-count (* population-size probe-count)))
+      (maphash
+       (lambda (pair count)
+         (when (> count dominant-count)
+           (setf dominant-pair (copy-list pair)
+                 dominant-count count)))
+       top1-counts)
+      (list :type :population-diversity-generation
+            :protocol +semantic-locality-control-protocol+
+            :generation *generation*
+            :stage stage
+            :population-size population-size
+            :probe-count probe-count
+            :unique-top1-fingerprints
+              (behavioral-unique-count top1-fingerprints)
+            :unique-ranking-fingerprints
+              (behavioral-unique-count signatures)
+            :mean-pairwise-top1-hamming
+              (behavioral-population-pairwise-hamming signatures)
+            :mean-normalized-top1-entropy
+              (behavioral-population-action-entropy signatures)
+            :teacher-top8-mean-coverage
+              (if (plusp cell-count)
+                  (/ (coerce teacher-present 'double-float)
+                     (coerce cell-count 'double-float))
+                  0.0d0)
+            :teacher-top8-population-coverage
+              (if (plusp probe-count)
+                  (/ (coerce teacher-covered-probes 'double-float)
+                     (coerce probe-count 'double-float))
+                  0.0d0)
+            :expressed-ranking-pairs (hash-table-count expressed)
+            :dominant-top1-pair dominant-pair
+            :dominant-top1-rate
+              (if (plusp cell-count)
+                  (/ (coerce dominant-count 'double-float)
+                     (coerce cell-count 'double-float))
+                  0.0d0)))))
+
+(defun persist-population-behavioral-diversity
+       (&optional (stage :post-selection))
+  "Journal behavior-level population diversity for one generation."
+  (when (and (behavioral-locality-active-p)
+             *behavioral-probe-archive*
+             (root-teams))
+    (let ((record (population-behavioral-diversity-record stage)))
+      (append-behavioral-locality-form record)
+      (emit-message
+       (format nil
+               "Generation ~D population behavior: stage=~A unique-top1=~D unique-ranking=~D pairwise-hamming=~,4F entropy=~,4F teacher-top8(mean/union)=~,4F/~,4F expressed-pairs=~D dominant=~S rate=~,4F."
+               *generation* stage
+               (getf record :unique-top1-fingerprints)
+               (getf record :unique-ranking-fingerprints)
+               (getf record :mean-pairwise-top1-hamming)
+               (getf record :mean-normalized-top1-entropy)
+               (getf record :teacher-top8-mean-coverage)
+               (getf record :teacher-top8-population-coverage)
+               (getf record :expressed-ranking-pairs)
+               (getf record :dominant-top1-pair)
+               (getf record :dominant-top1-rate)))
+      record)))
+
 (defun persist-behavioral-generation-records ()
   "Persist and summarize this generation's parent/child measurements."
   (when (and (behavioral-locality-active-p)
@@ -769,6 +977,10 @@ search cannot stall or silently replace mutation with cloning."
              (count-if (lambda (record)
                          (getf record :control-fallback-p))
                        records))
+           (escalations
+             (count-if (lambda (record)
+                         (getf record :control-escalated-p))
+                       records))
            (stage (semantic-locality-control-stage)))
       (when records
         (append-behavioral-locality-form
@@ -780,12 +992,20 @@ search cannot stall or silently replace mutation with cloning."
                :records records))
         (emit-message
          (format nil
-                 "Generation ~D semantic locality control: stage=~A children=~D attempts=~D retries=~D fallbacks=~D tiers(local/bounded/explore)=~D/~D/~D accepted(neutral/ranking/small/medium/large)=~D/~D/~D/~D/~D."
+                 "Generation ~D semantic locality control: stage=~A children=~D attempts=~D retries=~D fallbacks=~D escalations=~D requested(local/bounded/explore)=~D/~D/~D effective(local/bounded/explore/neutral)=~D/~D/~D/~D accepted(neutral/ranking/small/medium/large)=~D/~D/~D/~D/~D."
                  *generation* (getf stage :name) (length records) attempts
-                 (- attempts (length records)) fallbacks
+                 (- attempts (length records)) fallbacks escalations
                  (semantic-locality-count-by records :control-tier :local)
                  (semantic-locality-count-by records :control-tier :bounded)
                  (semantic-locality-count-by records :control-tier :explore)
+                 (semantic-locality-count-by
+                  records :control-effective-tier :local)
+                 (semantic-locality-count-by
+                  records :control-effective-tier :bounded)
+                 (semantic-locality-count-by
+                  records :control-effective-tier :explore)
+                 (semantic-locality-count-by
+                  records :control-effective-tier :neutral)
                  (count-if (lambda (record)
                              (eq (behavioral-locality-sampling-stratum record)
                                  :probe-neutral))

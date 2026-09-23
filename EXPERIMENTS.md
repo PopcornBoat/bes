@@ -99,6 +99,42 @@ child, unrestricted exploration stays at zero over a meaningful window, or
 offspring generation dominates wall-clock time. Otherwise collect at least
 250 generations before comparing the Phase-3 transition schedule with Phase 2.
 
+The v1 treatment stopped cleanly at generation 596.  It confirmed that large
+behavioral changes are dangerous, but the transition stage saturated: over the
+last 100 generations 83.8% of children exhausted retries and 87.9% were
+probe-neutral.  Fifty-six official outcomes produced no Stage-3 promotion.
+
+Phase-3 v2 starts from the exported generation-595 DAgger behavior policy, not
+the older protected Phase-2 incumbent:
+
+```text
+/home/hardison/checkpoints/semantic36/phase3-locality-control-v2-source/
+bline-62-36-official-guided-locality-control-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp
+```
+
+Its journal continues the generation-595 seed cursors, probe archive, DAgger
+behavior state, and control age.  The imported policy becomes the explicit v2
+incumbent; the old incumbent's official score is not assigned to it.
+
+Use a separate output directory:
+
+```text
+/home/hardison/checkpoints/semantic36/phase3-locality-control-v2/
+```
+
+In addition to the existing official outcomes, monitor:
+
+```text
+fallback and escalation rates
+effective local/bounded/explore/neutral counts
+unique Top-1 and ranking fingerprints
+mean pairwise Top-1 Hamming and action entropy
+teacher Top-8 mean and population-union coverage
+dominant target/response pair and rate
+DAgger disagreement by episode phase
+teacher -> TPG confusion counts
+```
+
 ## Required configuration
 
 Use the Emacs menu and select:
