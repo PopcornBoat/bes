@@ -1004,9 +1004,14 @@ official incumbent and is never repurposed as mutable DAgger state."
   "Evaluate TEAM against the generation-shared teacher trace."
   (unless *teacher-training-dataset*
     (error "Teacher training trace is not prepared."))
-  (if *recurrent-policy-enabled*
-      (semantic-ranked-sequence-fitness team *teacher-training-dataset*)
-      (semantic-ranked-fitness team *teacher-training-dataset*)))
+  (cond
+    ((and (fboundp 'phase4-selection-active-p)
+          (phase4-selection-active-p))
+     (phase4-ranked-training-fitness team *teacher-training-dataset*))
+    (*recurrent-policy-enabled*
+     (semantic-ranked-sequence-fitness team *teacher-training-dataset*))
+    (t
+     (semantic-ranked-fitness team *teacher-training-dataset*))))
 
 (defun teacher-forcing-reference-fitness (team)
   "Evaluate TEAM against the fixed teacher reference trace bank."

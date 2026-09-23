@@ -420,6 +420,21 @@ without sharing graph references. Warm-start setup creates a run-local
 incumbent checkpoint only when none exists; an existing file is protected, and
 only final Stage-3 official promotion may overwrite it.
 
+## Grouped epsilon-lexicase survivor selection
+
+The `grouped-lexicase-selection` branch is the frozen Phase-4a treatment. In
+official-guided mode it retains the aggregate generation champion, then fills
+the unchanged survivor count without replacement using phase and sufficiently
+supported teacher target/response cases. Per-case epsilon is the raw MAD over
+the full evaluated root population and is frozen for that generation.
+
+Aggregate ranked-imitation fitness still drives the dashboard, DAgger behavior
+snapshot, official challenger submission, and historical comparison. Mutation,
+reproduction parent sampling, official evaluation, and ordinary TPG reference
+lifecycle are unchanged. A private checkpointed selection stream prevents case
+permutations and tie-breaking from shifting the mutation RNG. See `PHASE4.md`
+and `EXPERIMENTS.md` for the exact contract and run procedure.
+
 ## Direct Semantic-36 Lisp controller path
 
 For B-line experiments, selecting 62 observations and 36 actions activates the

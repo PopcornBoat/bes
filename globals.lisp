@@ -236,6 +236,19 @@ LOCAL slots seek ranking-only or at-most-five-percent Top-1 changes. BOUNDED
 slots additionally accept at-most-twenty-percent Top-1 changes. EXPLORE slots
 accept the first native mutation unchanged, preserving non-local escape moves.")
 
+(defconstant +phase4-selection-protocol+
+  :grouped-epsilon-lexicase-phase4a-v1
+  "Version tag for the causally isolated Phase-4a survivor selection.")
+
+(defconstant +phase4-minimum-pair-group-size+ 5
+  "Minimum rows required to activate one teacher target/response case.")
+
+(defconstant +phase4-selection-numerical-tolerance+ 1.0d-12
+  "Floating comparison tolerance; this is not a statistical epsilon floor.")
+
+(defconstant +phase4-selection-rng-salt+ 1900813
+  "Independent deterministic salt for the Phase-4a selection stream.")
+
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
@@ -535,6 +548,48 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 (defvar *official-guided-seed-streams* nil
   "Serializable plist holding independent training, racing, promotion, and
 reference stream roots and cursors.")
+
+(defvar *phase4-selection-enabled* nil
+  "When true, replace aggregate truncation with grouped survivor lexicase.")
+
+(defvar *phase4-selection-rng-root* nil
+  "Root of the independent counter-based Phase-4a selection stream.")
+
+(defvar *phase4-selection-rng-cursor* 0
+  "Number of deterministic Phase-4a selection draws already consumed.")
+
+(defvar *phase4-selection-age* 0
+  "Number of completed Phase-4a survivor-selection generations.")
+
+(defvar *phase4-case-groups* nil
+  "Active generation case groups as plists containing keys and row indices.")
+
+(defvar *phase4-row-group-keys* nil
+  "Vector mapping each generation row to its active Phase-4a case keys.")
+
+(defvar *phase4-team-group-scores* nil
+  "EQ table mapping evaluated roots to group-score EQUAL hash tables.")
+
+(defvar *phase4-team-group-exact-rates* nil
+  "EQ table mapping evaluated roots to per-case executable exact rates.")
+
+(defvar *phase4-team-row-behaviors* nil
+  "EQ table mapping evaluated roots to compact exact row behavior vectors.")
+
+(defvar *phase4-group-epsilons* nil
+  "EQUAL table of full-population raw-MAD epsilons for active cases.")
+
+(defvar *phase4-group-medians* nil
+  "EQUAL table of full-population median scores for active cases.")
+
+(defvar *phase4-active-specialists* nil
+  "EQ table of live specialist team objects and lifecycle records.")
+
+(defvar *phase4-specialist-history* nil
+  "Completed serializable Phase-4a specialist lifecycle records.")
+
+(defvar *phase4-selection-generation-record* nil
+  "Pending serializable Phase-4a record for the current generation.")
 
 (defvar *official-guided-last-evaluation* nil
   "Structured record from the latest completed official challenger evaluation.")

@@ -199,6 +199,8 @@ cached for this call so shared subgraphs do not execute their programs twice."
     (error "Semantic ranking limit must be positive, got ~S." limit))
   (let ((evaluation-cache (make-hash-table :test #'eq))
         (seen-actions (make-hash-table :test #'equal))
+        (preferred-path nil)
+        (preferred-terminal-team nil)
         (results nil))
     (labels
         ((evaluate-team (current)
@@ -257,20 +259,28 @@ cached for this call so shared subgraphs do not execute their programs twice."
                 (error "Cycle encountered while executing TPG at team ~A."
                        (team-id current))))
              (t
+              (when preferred-path-p
+                (push current preferred-path))
               (loop for entry in (evaluate-team current)
                     for local-rank fixnum from 0
                     until (>= (length results) limit)
                     do (let* ((learner (first entry))
                               (act (learner-action learner)))
                          (if (eq (action-type act) :atomic)
-                             (record-terminal entry)
+                             (progn
+                               (when (and preferred-path-p
+                                          (zerop local-rank))
+                                 (setf preferred-terminal-team current))
+                               (record-terminal entry))
                              (traverse (action-action act)
                                        (cons current visited)
                                        (1+ depth)
                                        (and preferred-path-p
                                             (zerop local-rank))))))))))
       (traverse team nil 0 t)
-      (nreverse results))))
+      (values (nreverse results)
+              (nreverse preferred-path)
+              preferred-terminal-team))))
 
 (defun execute-team-on-dataset (team dataset)
   "Batch executes a team across all the observations in DATASET."

@@ -9,7 +9,7 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 18
+(defconstant +best-team-checkpoint-version+ 19
   "Checkpoint version recording the terminal action representation.")
 
 (defun checkpoint-path (directory filename)
@@ -44,9 +44,12 @@
          "teacher-forcing-dagger"
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
-     (if *semantic-locality-control-enabled*
-         "official-guided-locality-control"
-         "official-guided-dagger"))
+      (cond
+        (*phase4-selection-enabled*
+         "official-guided-grouped-lexicase")
+        (*semantic-locality-control-enabled*
+         "official-guided-locality-control")
+        (t "official-guided-dagger")))
     (*current-dataset-name* "offline")
     ((and *current-gym-environment-name*
           (not (eq *current-gym-environment-name* :none)))
@@ -113,6 +116,10 @@ checkpoint directory."
     :official-guided-best-evaluation
       ,(and (eq *current-search-mode* :official-guided)
             (copy-tree *official-guided-best-evaluation*))
+    :phase4-selection-state
+      ,(and *phase4-selection-enabled*
+            (fboundp 'phase4-selection-state-copy)
+            (phase4-selection-state-copy))
     :behavioral-locality-state
       ,(and *behavioral-locality-enabled*
             (fboundp 'behavioral-locality-state-copy)

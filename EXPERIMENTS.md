@@ -153,6 +153,48 @@ hamming: disabled
 fitness episodes: 5
 ```
 
+## Phase 4a grouped epsilon-lexicase run
+
+Use branch `grouped-lexicase-selection` and warm-start from the stopped Phase-3
+v2 protected incumbent:
+
+```text
+/home/hardison/checkpoints/semantic36/phase3-locality-control-v2/
+bline-62-36-official-guided-locality-control-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp
+```
+
+Keep the required configuration above and choose a new output directory, for
+example:
+
+```text
+/home/hardison/checkpoints/semantic36/phase4a-grouped-lexicase/
+```
+
+The source checkpoint and its matching journal preserve incumbent version 14,
+official best, DAgger behavior state, Phase-3 control age, probe archive, and
+the four official seed streams. Warm start still creates a fresh population;
+it is not a bit-for-bit continuation of the stopped population. Phase-4a's new
+selection stream starts deterministically from the search seed and is then
+checkpointed independently. The run-local filename contains
+`official-guided-grouped-lexicase`, so it cannot overwrite the Phase-3 source.
+
+Before starting, run the focused and regression checks:
+
+```bash
+cd /home/hardison/bes
+CL_SOURCE_REGISTRY='(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+sbcl --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg :force t)' \
+  --load tests/phase4-selection.lisp \
+  --load tests/official-guided.lisp \
+  --load tests/behavioral-locality.lisp \
+  --load tests/semantic-offline.lisp
+```
+
+Do not automatically run to a fixed generation. Apply the decision points in
+`PHASE4.md`, beginning with the generation-50 collapse/specialist audit.
+
 The recommended first controlled run warm-starts from:
 
 ```text

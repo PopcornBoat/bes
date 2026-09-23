@@ -145,12 +145,16 @@
 
 (defun official-guided-runtime-state ()
   "Return the small recoverable state journaled beside the best checkpoint."
-  (list :version 3
+  (list :version 4
         :fitness-protocol +official-guided-fitness-protocol+
         :checkpoint-filename (best-team-checkpoint-filename)
         :generation *generation*
         :search-seed *current-search-seed*
         :seed-streams (official-guided-seed-state-copy)
+        :phase4-selection-state
+          (and *phase4-selection-enabled*
+               (fboundp 'phase4-selection-state-copy)
+               (phase4-selection-state-copy))
         :incumbent-version *official-guided-incumbent-version*
         :best-evaluation (copy-tree *official-guided-best-evaluation*)
         :teacher-dagger-behavior-state
@@ -226,8 +230,13 @@
          (dagger-behavior-state
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
-               (getf journal :teacher-dagger-behavior-state)
-               (getf metadata :teacher-dagger-behavior-state))))
+                (getf journal :teacher-dagger-behavior-state)
+                (getf metadata :teacher-dagger-behavior-state)))
+         (phase4-selection-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :phase4-selection-state)
+               (getf metadata :phase4-selection-state))))
     (when chosen-state
       (restore-official-guided-seed-streams chosen-state))
     (setf *official-guided-incumbent-version*
@@ -245,6 +254,8 @@
       (restore-behavioral-locality-state behavioral-state))
     (when dagger-behavior-state
       (restore-teacher-dagger-behavior-state dagger-behavior-state))
+    (when (and *phase4-selection-enabled* phase4-selection-state)
+      (restore-phase4-selection-state phase4-selection-state))
     (values chosen-state journal-matches-p)))
 
 (defun official-guided-teacher-mixing-rate ()
