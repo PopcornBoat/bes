@@ -190,6 +190,22 @@
     "bline-62-11-official-guided-dagger-order-fixed-teacher-model-opening-fixed-hamming-off-memory-stateless.lisp")
    "official-guided checkpoints have an unambiguous experiment name"))
 
+(let ((cl-tpg::*current-search-mode* :official-guided)
+      (cl-tpg::*current-gym-environment-name* "Cage2-b_line-100-v0")
+      (cl-tpg::*num-observations* 62)
+      (cl-tpg::*num-actions* 36)
+      (cl-tpg::*decoy-order-mode* :fixed)
+      (cl-tpg::*teacher-backend* :heuristic)
+      (cl-tpg::*cage2-opening-mode* :fixed)
+      (cl-tpg::*hamming-space-enabled* nil)
+      (cl-tpg::*recurrent-policy-enabled* nil)
+      (cl-tpg::*semantic-locality-control-enabled* t))
+  (check-official-guided
+   (string=
+    (cl-tpg::best-team-checkpoint-filename)
+    "bline-62-36-official-guided-locality-control-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp")
+   "Phase-3 checkpoints cannot overwrite Phase-1 or Phase-2 incumbents"))
+
 (let ((cl-tpg::*checkpoint-directory* "/tmp/official-guided-test/"))
   (check-official-guided
    (not (equal

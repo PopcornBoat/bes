@@ -1649,7 +1649,9 @@ reference batch."
 
 (defun configure-fitness-function (mode gym-environment-name dataset-name)
   "Configure *FITNESS-FN* according to MODE."
-  (setf *behavioral-locality-enabled* (eq mode :official-guided))
+  (setf *behavioral-locality-enabled* (eq mode :official-guided)
+        ;; This branch is the frozen Phase-3 treatment; Phase 2 remains the control.
+        *semantic-locality-control-enabled* (eq mode :official-guided))
   (ecase mode
     (:online
      (make-fitness-function :gym-environment-name gym-environment-name))
@@ -1995,15 +1997,18 @@ through serialization/deserialization and save it to disk."
 	do (push root-team *teams*)))
 
 (defun reproduce ()
-  "Refill the root population and passively observe parent/child disruption."
+  "Refill the root population, optionally controlling semantic disruption."
   (loop while (< (length (root-teams)) *population-size*)
         for parent = (random-choice (root-teams))
-        for child = (clone-team parent)
-        do (let ((*active-mutation-events* nil))
-             (mutate-team child)
-             (record-behavioral-mutation
-              parent child (nreverse *active-mutation-events*))))
-  (persist-behavioral-generation-records))
+        do (if (semantic-locality-control-active-p)
+               (mutate-team-with-semantic-locality-control parent)
+               (let ((child (clone-team parent)))
+                 (let ((*active-mutation-events* nil))
+                   (mutate-team child)
+                   (record-behavioral-mutation
+                    parent child (nreverse *active-mutation-events*))))))
+  (persist-behavioral-generation-records)
+  (finish-semantic-locality-control-generation))
 
 (defun evolve ()
   "Evolve the population for a single generation."

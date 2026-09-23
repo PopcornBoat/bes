@@ -65,8 +65,39 @@ top-8 overlap
 teacher-off-support rate
 ```
 
-The action-space mask remains a later controlled ablation (`full-41` versus
-teacher-supported-36), not part of this measurement run.
+The direct Semantic-36 action contract remains fixed across the Phase-2/3
+comparison; action-space ablations are outside these runs.
+
+The corrected passive-sampling run stopped at generation 1116 with 1112 paired
+official parent/child outcomes distributed almost evenly across all five
+distance strata. Its key result was monotonic catastrophic risk: the probability
+of a return drop greater than 100 rose from `0.087` for probe-neutral mutations,
+to `0.379` for small Top-1 changes, `0.556` for medium changes, and `0.935` for
+changes above 50%. Learner-action swaps were the clearest high-risk associated
+event (`0.819` probability of a drop greater than 100). This is the evidence
+used to enter Phase 3; overlapping event groups are not interpreted causally.
+
+## Phase 3 run
+
+Run the `semantic-locality-control` branch from the protected Phase-2 incumbent:
+
+```text
+/home/hardison/checkpoints/semantic36/phase2-locality-sampling/
+bline-62-36-official-guided-dagger-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp
+```
+
+Use a new directory, recommended:
+
+```text
+/home/hardison/checkpoints/semantic36/phase3-locality-control/
+```
+
+The treatment is defined in `PHASE3.md`. During the first 250 control
+generations the expected tier mix is 60% local, 25% bounded, and 15% unrestricted
+exploration. Stop early and diagnose if fallback is close to every controlled
+child, unrestricted exploration stays at zero over a meaningful window, or
+offspring generation dominates wall-clock time. Otherwise collect at least
+250 generations before comparing the Phase-3 transition schedule with Phase 2.
 
 ## Required configuration
 
@@ -76,12 +107,12 @@ Use the Emacs menu and select:
 mode: official-guided
 environment: Cage2-b_line-100-v0
 observations: 62
-actions: 11
+actions: 36
 memory: stateless
 opening: fixed
 decoy order: fixed
 teacher rollout: dagger
-teacher backend: model
+teacher backend: heuristic
 hamming: disabled
 fitness episodes: 5
 ```

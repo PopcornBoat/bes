@@ -211,6 +211,26 @@ independent official paired challenger evaluation.")
   '(:probe-neutral :ranking-only :small-top1 :medium-top1 :large-top1)
   "Deterministic strata used to balance passive official mutation samples.")
 
+(defconstant +semantic-locality-control-protocol+
+  :semantic-locality-control-phase3-v1
+  "Version tag for Phase-3 behavioral mutation control.")
+
+(defconstant +semantic-locality-control-max-attempts+ 8
+  "Maximum native mutation attempts used to fill one controlled offspring slot.")
+
+(defparameter +semantic-locality-control-stages+
+  '((:name :exploration :until 250
+     :local-weight 0.60d0 :bounded-weight 0.25d0 :explore-weight 0.15d0)
+    (:name :transition :until 1000
+     :local-weight 0.75d0 :bounded-weight 0.20d0 :explore-weight 0.05d0)
+    (:name :consolidation :until nil
+     :local-weight 0.85d0 :bounded-weight 0.12d0 :explore-weight 0.03d0))
+  "Frozen Phase-3 schedule.
+
+LOCAL slots seek ranking-only or at-most-five-percent Top-1 changes. BOUNDED
+slots additionally accept at-most-twenty-percent Top-1 changes. EXPLORE slots
+accept the first native mutation unchanged, preserving non-local escape moves.")
+
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
@@ -522,6 +542,15 @@ reference stream roots and cursors.")
 
 (defvar *behavioral-locality-enabled* nil
   "When true, observe parent/child semantic disruption without changing mutation.")
+
+(defvar *semantic-locality-control-enabled* nil
+  "When true, Phase 3 bounds most offspring by measured behavioral locality.")
+
+(defvar *semantic-locality-control-age* 0
+  "Number of completed Phase-3 reproduction generations in this run lineage.")
+
+(defvar *semantic-locality-control-generation-records* nil
+  "Accepted-child control decisions waiting to be journaled this generation.")
 
 (defvar *active-mutation-events* nil
   "Dynamically bound list of mutation-layer events for one reproduced child.")

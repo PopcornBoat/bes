@@ -25,9 +25,16 @@ parent/child measurement on a versioned probe archive. The measurements must
 not draw from the search random state, reject a child, choose a parent, or alter
 a mutation probability. Mutation-locality control remains Phase 3 work.
 
-The baseline contract is 62 policy inputs (52 raw plus 10 scan state), 11
-semantic targets, stateless TPG execution, fixed controller-owned opening, and
-fixed bridge-owned Decoy ordering. The bridge owns scan and used-Decoy state.
+Phase 3 preserves Phase-1 evaluation and Phase-2 measurement. It controls the
+behavioral consequence of the unchanged native mutation pipeline with bounded
+resampling, while retaining an explicit non-local exploration fraction. It does
+not adapt individual mutation operators and does not introduce Phase-4
+population selection.
+
+The current baseline contract is 62 policy inputs (52 raw plus 10 scan state),
+a direct Semantic-36 target/response terminal genotype, stateless TPG
+execution, heuristic-guided DAgger, fixed controller-owned opening, and fixed
+bridge-owned Decoy ordering. The bridge owns scan and used-Decoy state.
 
 Later phases may measure or change other mechanisms, but only on separate
 branches with explicit ablations.

@@ -56,6 +56,8 @@
        (cl-tpg::*behavioral-probe-fixed-reference* (list probe))
        (cl-tpg::*behavioral-probe-fixed-early* (list probe))
        (cl-tpg::*behavioral-probe-archive* (list probe))
+       (cl-tpg::*semantic-locality-control-age* 321)
+       (cl-tpg::*semantic-locality-control-generation-records* '(:stale))
        (cl-tpg::*behavioral-locality-sample-cursor* 7)
        (cl-tpg::*behavioral-locality-stratum-counts*
          '((:probe-neutral . 2) (:ranking-only . 1)
@@ -69,7 +71,9 @@
         (typep (getf (first cl-tpg::*behavioral-probe-archive*) :observation)
                '(simple-array double-float (*)))
         (= cl-tpg::*behavioral-locality-sample-cursor* 7)
-        (= (cl-tpg::behavioral-locality-stratum-count :large-top1) 5))
+        (= (cl-tpg::behavioral-locality-stratum-count :large-top1) 5)
+        (= cl-tpg::*semantic-locality-control-age* 321)
+        (null cl-tpg::*semantic-locality-control-generation-records*))
    "probe archive and passive sample cursor round-trip independently"))
 
 (let* ((neutral-team (cl-tpg::%make-team :id "neutral" :learners nil))
@@ -115,6 +119,124 @@
         (every #'zerop
                (mapcar #'cdr cl-tpg::*behavioral-locality-stratum-counts*)))
    "version-1 Phase-2 checkpoints restore with a fresh diagnostic cursor"))
+
+(check-behavioral-locality
+ (and (eq (getf (cl-tpg::semantic-locality-control-stage 0) :name)
+          :exploration)
+      (eq (getf (cl-tpg::semantic-locality-control-stage 249) :name)
+          :exploration)
+      (eq (getf (cl-tpg::semantic-locality-control-stage 250) :name)
+          :transition)
+      (eq (getf (cl-tpg::semantic-locality-control-stage 1000) :name)
+          :consolidation))
+ "Phase-3 schedule boundaries are stable")
+
+(let ((neutral '(:top1-hamming 0.0d0 :ranking-distance-mean 0.0d0))
+      (ranking '(:top1-hamming 0.0d0 :ranking-distance-mean 0.01d0))
+      (small '(:top1-hamming 0.05d0 :ranking-distance-mean 0.02d0))
+      (small-action-large-ranking
+        '(:top1-hamming 0.02d0 :ranking-distance-mean 0.30d0))
+      (medium '(:top1-hamming 0.20d0 :ranking-distance-mean 0.08d0))
+      (large '(:top1-hamming 0.50d0 :ranking-distance-mean 0.30d0)))
+  (check-behavioral-locality
+   (and (not (cl-tpg::semantic-locality-tier-accepts-p :local neutral))
+        (cl-tpg::semantic-locality-tier-accepts-p :local ranking)
+        (cl-tpg::semantic-locality-tier-accepts-p :local small)
+        (not (cl-tpg::semantic-locality-tier-accepts-p
+              :local small-action-large-ranking))
+        (not (cl-tpg::semantic-locality-tier-accepts-p :local medium))
+        (cl-tpg::semantic-locality-tier-accepts-p :bounded medium)
+        (not (cl-tpg::semantic-locality-tier-accepts-p :bounded large))
+        (cl-tpg::semantic-locality-tier-accepts-p :explore large))
+   "control tiers bound action and ranking locality while preserving exploration")
+  (check-behavioral-locality
+   (< (cl-tpg::semantic-locality-fallback-score neutral)
+      (cl-tpg::semantic-locality-fallback-score medium)
+      (cl-tpg::semantic-locality-fallback-score large))
+   "retry exhaustion chooses the least disruptive observed fallback"))
+
+;; A local-only slot must discard all seven rejected temporary children and
+;; retain exactly one bounded fallback after the eighth native mutation.
+(let* ((observation
+         (make-array 62 :element-type 'double-float :initial-element 0.0d0))
+       (empty-program
+         (lambda ()
+           (cl-tpg::make-program
+            :instructions
+              (make-array 0 :fill-pointer 0 :adjustable t))))
+       (learner-a
+         (cl-tpg::make-learner
+          :program (funcall empty-program)
+          :action
+            (cl-tpg::make-action
+             :type :atomic
+             :action
+               (cl-tpg::make-target-response-36-action
+                :target 2 :response 0))))
+       (learner-b
+         (cl-tpg::make-learner
+          :program (funcall empty-program)
+          :action
+            (cl-tpg::make-action
+             :type :atomic
+             :action
+               (cl-tpg::make-target-response-36-action
+                :target 3 :response 0))))
+       (parent
+         (cl-tpg::%make-team
+          :id "control-parent" :type :root
+          :learners (list learner-a learner-b)))
+       (probe
+         (list :source :reference :generation 1 :step 3
+               :observation observation
+               :teacher-pair '(2 0)
+               :teacher-ranking '((2 0) (3 0))))
+       (support (make-hash-table :test #'equal))
+       (cl-tpg::*cached-island-id* 0)
+       (cl-tpg::*current-search-mode* :official-guided)
+       (cl-tpg::*behavioral-locality-enabled* t)
+       (cl-tpg::*semantic-locality-control-enabled* t)
+       (cl-tpg::*semantic-locality-control-age* 0)
+       (cl-tpg::+semantic-locality-control-stages+
+         '((:name :test-local :until nil
+            :local-weight 1.0d0 :bounded-weight 0.0d0
+            :explore-weight 0.0d0)))
+       (cl-tpg::*behavioral-probe-archive* (list probe))
+       (cl-tpg::*behavioral-teacher-action-support* support)
+       (cl-tpg::*behavioral-signature-cache* (make-hash-table :test #'eq))
+       (cl-tpg::*behavioral-team-lineage* (make-hash-table :test #'eq))
+       (cl-tpg::*behavioral-team-parents* (make-hash-table :test #'eq))
+       (cl-tpg::*behavioral-generation-records* nil)
+       (cl-tpg::*behavioral-locality-sampling-candidates* nil)
+       (cl-tpg::*semantic-locality-control-generation-records* nil)
+       (cl-tpg::*teams* (list parent))
+       (cl-tpg::*num-observations* 62)
+       (cl-tpg::*num-actions* 36)
+       (cl-tpg::*factored-actions-enabled* t)
+       (cl-tpg::*terminal-action-format* :target-response-36)
+       (cl-tpg::*decoy-order-mode* :fixed)
+       (cl-tpg::*p-add* 0.0d0)
+       (cl-tpg::*p-del* 0.0d0)
+       (cl-tpg::*p-mut* 0.0d0)
+       (cl-tpg::*p-act* 0.0d0)
+       (cl-tpg::*p-swap* 1.0d0))
+  (setf (gethash '(2 0) support) t
+        (gethash '(3 0) support) t)
+  (let* ((child
+           (cl-tpg::mutate-team-with-semantic-locality-control parent))
+         (record
+           (first cl-tpg::*semantic-locality-control-generation-records*)))
+    (check-behavioral-locality
+     (and (member child cl-tpg::*teams* :test #'eq)
+          (= (length cl-tpg::*teams*) 2)
+          (= (length cl-tpg::*behavioral-generation-records*) 1)
+          (= (length cl-tpg::*semantic-locality-control-generation-records*) 1)
+          (= (getf record :control-attempts)
+             cl-tpg::+semantic-locality-control-max-attempts+)
+          (getf record :control-fallback-p)
+          (every (lambda (stratum) (eq stratum :large-top1))
+                 (getf record :control-attempted-strata)))
+     "bounded retries retain one fallback without leaking rejected teams")))
 
 ;; Event recording must not consume extra randomness or change action mutation.
 (let* ((seed 24680)

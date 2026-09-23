@@ -44,7 +44,9 @@
          "teacher-forcing-dagger"
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
-     "official-guided-dagger")
+     (if *semantic-locality-control-enabled*
+         "official-guided-locality-control"
+         "official-guided-dagger"))
     (*current-dataset-name* "offline")
     ((and *current-gym-environment-name*
           (not (eq *current-gym-environment-name* :none)))

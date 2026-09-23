@@ -40,6 +40,8 @@
         *behavioral-locality-stratum-counts*
           (make-behavioral-locality-stratum-counts)
         *behavioral-locality-sample-process* nil
+        *semantic-locality-control-age* 0
+        *semantic-locality-control-generation-records* nil
         *behavioral-locality-sample-job* nil
         *online-staged-best-lineage* nil))
 
@@ -223,9 +225,11 @@ deterministic and consumes no random state."
 (defun behavioral-locality-state-copy ()
   "Return the serialization-safe Phase-2 probe state."
   (when (behavioral-locality-active-p)
-    (list :version 2
+    (list :version 3
           :protocol +behavioral-locality-protocol+
           :revision *behavioral-probe-revision*
+          :control-protocol +semantic-locality-control-protocol+
+          :control-age *semantic-locality-control-age*
           :sample-cursor *behavioral-locality-sample-cursor*
           :stratum-counts (copy-tree *behavioral-locality-stratum-counts*)
           :fixed-reference
@@ -241,9 +245,13 @@ deterministic and consumes no random state."
 (defun restore-behavioral-locality-state (state)
   "Restore a validated Phase-2 probe STATE without restoring stale lineages."
   (when state
-    (unless (and (member (getf state :version 0) '(1 2))
+    (unless (and (member (getf state :version 0) '(1 2 3))
                  (eq (getf state :protocol) +behavioral-locality-protocol+))
       (error "Invalid behavioral-locality state: ~S" state))
+    (when (and (= (getf state :version) 3)
+               (not (eq (getf state :control-protocol)
+                        +semantic-locality-control-protocol+)))
+      (error "Invalid semantic-locality control state: ~S" state))
     (setf *behavioral-probe-revision* (getf state :revision 0)
           *behavioral-probe-fixed-reference*
             (mapcar #'deserialize-behavioral-probe
@@ -259,12 +267,17 @@ deterministic and consumes no random state."
           *behavioral-team-parents* (make-hash-table :test #'eq)
           *behavioral-generation-records* nil
           *behavioral-locality-sampling-candidates* nil
+          *semantic-locality-control-age*
+            (if (= (getf state :version) 3)
+                (getf state :control-age 0)
+                0)
+          *semantic-locality-control-generation-records* nil
           *behavioral-locality-sample-cursor*
-            (if (= (getf state :version) 2)
+            (if (member (getf state :version) '(2 3))
                 (getf state :sample-cursor 0)
                 0)
           *behavioral-locality-stratum-counts*
-            (if (= (getf state :version) 2)
+            (if (member (getf state :version) '(2 3))
                 (copy-tree (or (getf state :stratum-counts)
                                (make-behavioral-locality-stratum-counts)))
                 (make-behavioral-locality-stratum-counts))
@@ -503,28 +516,161 @@ deterministic and consumes no random state."
           collect
           (official-guided-seed-at :locality root (+ start offset)))))
 
-(defun record-behavioral-mutation (parent child mutation-events)
-  "Measure and retain one reproduced PARENT/CHILD relationship."
+(defun make-behavioral-mutation-record (parent child mutation-events)
+  "Measure one PARENT/CHILD relationship without registering the CHILD."
   (when (and (behavioral-locality-active-p)
              *behavioral-probe-archive*)
-    (let ((record
-            (compare-behavioral-signatures
-             (behavioral-policy-signature parent)
-             (behavioral-policy-signature child)
-             mutation-events parent child)))
-      (unless *behavioral-team-lineage*
-        (setf *behavioral-team-lineage* (make-hash-table :test #'eq)))
-      (unless *behavioral-team-parents*
-        (setf *behavioral-team-parents* (make-hash-table :test #'eq)))
-      (setf (gethash child *behavioral-team-lineage*) record
-            (gethash child *behavioral-team-parents*) parent)
-      (push record *behavioral-generation-records*)
-      (push (list :parent parent
-                  :child child
-                  :record record
-                  :stratum (behavioral-locality-sampling-stratum record))
-            *behavioral-locality-sampling-candidates*)
-      record)))
+    (compare-behavioral-signatures
+     (behavioral-policy-signature parent)
+     (behavioral-policy-signature child)
+     mutation-events parent child)))
+
+(defun register-behavioral-mutation-record (parent child record)
+  "Retain an already measured RECORD for one accepted CHILD only."
+  (when record
+    (unless *behavioral-team-lineage*
+      (setf *behavioral-team-lineage* (make-hash-table :test #'eq)))
+    (unless *behavioral-team-parents*
+      (setf *behavioral-team-parents* (make-hash-table :test #'eq)))
+    (setf (gethash child *behavioral-team-lineage*) record
+          (gethash child *behavioral-team-parents*) parent)
+    (push record *behavioral-generation-records*)
+    (push (list :parent parent
+                :child child
+                :record record
+                :stratum (behavioral-locality-sampling-stratum record))
+          *behavioral-locality-sampling-candidates*))
+  record)
+
+(defun record-behavioral-mutation (parent child mutation-events)
+  "Measure and retain one reproduced PARENT/CHILD relationship."
+  (register-behavioral-mutation-record
+   parent child
+   (make-behavioral-mutation-record parent child mutation-events)))
+
+(defun semantic-locality-control-active-p ()
+  "Return true when Phase-3 control can classify offspring safely."
+  (and *semantic-locality-control-enabled*
+       (behavioral-locality-active-p)
+       *behavioral-probe-archive*))
+
+(defun semantic-locality-control-stage (&optional
+                                           (age *semantic-locality-control-age*))
+  "Return the frozen Phase-3 schedule entry for control AGE."
+  (or (find-if
+       (lambda (stage)
+         (let ((until (getf stage :until)))
+           (or (null until) (< age until))))
+       +semantic-locality-control-stages+)
+      (error "No semantic-locality control stage covers age ~S." age)))
+
+(defun choose-semantic-locality-control-tier (&optional
+                                                 (stage
+                                                   (semantic-locality-control-stage)))
+  "Choose :LOCAL, :BOUNDED, or :EXPLORE from frozen STAGE weights."
+  (let* ((local (getf stage :local-weight))
+         (bounded (getf stage :bounded-weight))
+         (roll (random 1.0d0)))
+    (cond ((< roll local) :local)
+          ((< roll (+ local bounded)) :bounded)
+          (t :explore))))
+
+(defun semantic-locality-tier-accepts-p (tier record)
+  "Return true when TIER accepts an offspring behavior RECORD.
+
+Probe-neutral mutations are not counted as useful local changes. They remain
+eligible as the least-disruptive fallback after bounded retries."
+  (let ((top1 (getf record :top1-hamming 0.0d0))
+        (ranking (getf record :ranking-distance-mean 0.0d0)))
+    (ecase tier
+      (:local
+       (and (or (plusp top1) (plusp ranking))
+            (<= top1 0.05d0)
+            (<= ranking 0.05d0)))
+      (:bounded
+       (and (or (plusp top1) (plusp ranking))
+            (<= top1 0.20d0)
+            (<= ranking 0.20d0)))
+      (:explore t))))
+
+(defun semantic-locality-fallback-score (record)
+  "Return a scalar used only to choose the least-disruptive retry fallback."
+  (+ (getf record :top1-hamming 0.0d0)
+     (getf record :ranking-distance-mean 0.0d0)))
+
+(defun discard-semantic-locality-candidate (team)
+  "Delete rejected TEAM and remove its archive-signature cache entry."
+  (when *behavioral-signature-cache*
+    (remhash team *behavioral-signature-cache*))
+  (delete-team team))
+
+(defun mutate-team-with-semantic-locality-control (parent)
+  "Create one child using bounded behavioral-locality resampling.
+
+Every attempt uses the unchanged native TPG mutation pipeline. Most slots seek
+local semantic consequences, while :EXPLORE slots accept the first mutation.
+After the retry bound, the least-disruptive attempted child is retained so the
+search cannot stall or silently replace mutation with cloning."
+  (let* ((stage (semantic-locality-control-stage))
+         (tier (choose-semantic-locality-control-tier stage))
+         (best-child nil)
+         (best-record nil)
+         (best-score nil)
+         (attempted-strata nil))
+    (loop for attempt from 1 to +semantic-locality-control-max-attempts+
+          for child = (clone-team parent)
+          do (let ((*active-mutation-events* nil))
+               (mutate-team child)
+               (let* ((events (nreverse *active-mutation-events*))
+                      (record
+                        (make-behavioral-mutation-record
+                         parent child events))
+                      (stratum
+                        (behavioral-locality-sampling-stratum record))
+                      (score (semantic-locality-fallback-score record)))
+                 (push stratum attempted-strata)
+                 (when (semantic-locality-tier-accepts-p tier record)
+                   (when best-child
+                     (discard-semantic-locality-candidate best-child))
+                   (setf (getf record :control-protocol)
+                           +semantic-locality-control-protocol+
+                         (getf record :control-stage) (getf stage :name)
+                         (getf record :control-age)
+                           *semantic-locality-control-age*
+                         (getf record :control-tier) tier
+                         (getf record :control-attempts) attempt
+                         (getf record :control-fallback-p) nil
+                         (getf record :control-attempted-strata)
+                           (nreverse attempted-strata))
+                   (register-behavioral-mutation-record parent child record)
+                   (push (copy-tree record)
+                         *semantic-locality-control-generation-records*)
+                   (return-from mutate-team-with-semantic-locality-control
+                     child))
+                 (if (or (null best-score) (< score best-score))
+                     (progn
+                       (when best-child
+                         (discard-semantic-locality-candidate best-child))
+                       (setf best-child child
+                             best-record record
+                             best-score score))
+                     (discard-semantic-locality-candidate child)))))
+    (unless best-child
+      (error "Phase-3 locality control produced no fallback child."))
+    (setf (getf best-record :control-protocol)
+            +semantic-locality-control-protocol+
+          (getf best-record :control-stage) (getf stage :name)
+          (getf best-record :control-age) *semantic-locality-control-age*
+          (getf best-record :control-tier) tier
+          (getf best-record :control-attempts)
+            +semantic-locality-control-max-attempts+
+          (getf best-record :control-fallback-p) t
+          (getf best-record :control-attempted-strata)
+            (nreverse attempted-strata))
+    (register-behavioral-mutation-record parent best-child best-record)
+    (push (copy-tree best-record)
+          *semantic-locality-control-generation-records*)
+    best-child))
 
 (defun behavioral-lineage-for-team (team)
   "Return an independent copy of TEAM's direct parent/child record."
@@ -603,6 +749,65 @@ deterministic and consumes no random state."
                (behavioral-record-mean records :top-k-overlap-mean)
                (behavioral-record-mean records :child-off-support-rate)))
       (setf *behavioral-generation-records* nil))))
+
+(defun semantic-locality-count-by (records key value)
+  "Count RECORDS whose KEY is EQ to VALUE."
+  (count value records :key (lambda (record) (getf record key)) :test #'eq))
+
+(defun finish-semantic-locality-control-generation ()
+  "Journal Phase-3 decisions and advance the persisted control schedule."
+  (when (and *semantic-locality-control-enabled*
+             (official-guided-mode-p))
+    (let* ((records
+             (nreverse *semantic-locality-control-generation-records*))
+           (attempts
+             (reduce #'+ records
+                     :key (lambda (record)
+                            (getf record :control-attempts 0))
+                     :initial-value 0))
+           (fallbacks
+             (count-if (lambda (record)
+                         (getf record :control-fallback-p))
+                       records))
+           (stage (semantic-locality-control-stage)))
+      (when records
+        (append-behavioral-locality-form
+         (list :type :locality-control-generation
+               :protocol +semantic-locality-control-protocol+
+               :generation *generation*
+               :control-age *semantic-locality-control-age*
+               :stage (getf stage :name)
+               :records records))
+        (emit-message
+         (format nil
+                 "Generation ~D semantic locality control: stage=~A children=~D attempts=~D retries=~D fallbacks=~D tiers(local/bounded/explore)=~D/~D/~D accepted(neutral/ranking/small/medium/large)=~D/~D/~D/~D/~D."
+                 *generation* (getf stage :name) (length records) attempts
+                 (- attempts (length records)) fallbacks
+                 (semantic-locality-count-by records :control-tier :local)
+                 (semantic-locality-count-by records :control-tier :bounded)
+                 (semantic-locality-count-by records :control-tier :explore)
+                 (count-if (lambda (record)
+                             (eq (behavioral-locality-sampling-stratum record)
+                                 :probe-neutral))
+                           records)
+                 (count-if (lambda (record)
+                             (eq (behavioral-locality-sampling-stratum record)
+                                 :ranking-only))
+                           records)
+                 (count-if (lambda (record)
+                             (eq (behavioral-locality-sampling-stratum record)
+                                 :small-top1))
+                           records)
+                 (count-if (lambda (record)
+                             (eq (behavioral-locality-sampling-stratum record)
+                                 :medium-top1))
+                           records)
+                 (count-if (lambda (record)
+                             (eq (behavioral-locality-sampling-stratum record)
+                                 :large-top1))
+                           records))))
+      (setf *semantic-locality-control-generation-records* nil)
+      (incf *semantic-locality-control-age*))))
 
 (defun persist-behavioral-official-outcome (generation lineage evaluation)
   "Link one staged challenger LINEAGE to its official EVALUATION record."
