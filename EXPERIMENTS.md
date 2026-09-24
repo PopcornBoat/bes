@@ -319,3 +319,60 @@ or ranked-imitation fitness directly with official validation reward.
 Do not tune mutation rates in response to this experiment. Do not add recurrent
 registers, lexicase, behavioral-distance constraints, soft logits, or digital
 twin fitness on this branch.
+
+## Phase 4b audit result and routing-repair pilot
+
+The passive audit stopped cleanly after generation 326 (state advanced to
+327). Across all windows it reported 0 Case-B2 missing-support disagreements.
+Case A remained about 36--38% and Case B1 about 62--64%; rank 7/8 errors
+dominated Case A. The first treatment is therefore routing repair over both
+supported cases, not terminal or graph injection.
+
+Use branch `specialist-composition` and the same protected source used by the
+audit, not an audit-run checkpoint:
+
+```text
+/home/hardison/backup/official-guided/phase4a-grouped-lexicase-gen1003/
+bline-62-36-official-guided-grouped-lexicase-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp
+```
+
+Write to a new directory such as:
+
+```text
+/home/hardison/checkpoints/semantic36/phase4b-a-routing-repair/
+```
+
+Keep all Phase-4a parameters unchanged. Expected per-generation evidence is:
+
+```text
+Phase-4b-A routing repair: slots=N accepted=A fallback=N-A
+```
+
+The detailed locality journal must show accepted records with target-group
+Top-1/rank gains, no collateral exact losses, collateral rank-regression rate
+at most 0.05, and Top-1/ranking distances at most 0.20.
+
+Use these early stop rules:
+
+- stop immediately on a crash, checkpoint/state resume mismatch, population
+  deficit, or mutation of a shared/internal team;
+- after 50 generations, stop and fix the operator if targeted slots occur but
+  none are accepted;
+- after 100 generations, stop if acceptance is below roughly 1% and no
+  systematic issue's target rank improves;
+- otherwise run 300--500 generations for the first decision, while retaining
+  only Stage-3 official promotions as historical best;
+- a promising outcome is repeated accepted local repairs, stable collateral,
+  improved DAgger first-disagreement/ranking metrics, and at least one
+  fresh-seed official promotion over `-25.871`.
+
+Full validation remains a separate final report. Mixed return and imitation
+fitness are diagnostic and must not replace official promotion evidence.
+
+A nine-generation runtime smoke test from the protected source completed
+without a crash or population deficit. Targeted scheduling produced 4--14
+slots per generation. Three repairs were accepted: one Case-B1 repair moved
+the teacher pair from outside Top-8 to Top-1, while a Case-A repair improved
+teacher rank from 7 to 4. Every accepted repair had zero collateral exact
+losses, zero collateral rank regressions, and both locality distances below
+0.20. This establishes operability only; it is not a performance result.

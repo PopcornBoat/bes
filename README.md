@@ -437,6 +437,19 @@ and `EXPERIMENTS.md` for the exact contract and run procedure.
 
 ## Direct Semantic-36 Lisp controller path
 
+## Error-directed routing variation
+
+The `specialist-composition` branch adds Phase 4b-A after a 326-generation
+passive audit found no missing Semantic-36 terminal support. A private,
+checkpointed scheduler reserves 10% of offspring slots for an attempted local
+repair. It clones an eligible root and applies the native program mutation
+operator only to a cloned root learner whose action path already supports the
+teacher target/response pair. Target-group improvement, zero non-target exact
+loss, bounded rank collateral, and the existing behavioral-locality limits are
+all required. Rejected attempts fall back to normal reproduction. Accepted
+children receive no promotion privilege and still pass grouped
+epsilon-lexicase plus official paired racing. See `PHASE4B.md`.
+
 For B-line experiments, selecting 62 observations and 36 actions activates the
 direct target-response-36 terminal genotype. The first field is one of the
 nine learned hosts and the second is Analyse, Remove, Restore, or Decoy. TPG

@@ -145,7 +145,7 @@
 
 (defun official-guided-runtime-state ()
   "Return the small recoverable state journaled beside the best checkpoint."
-  (list :version 4
+  (list :version 5
         :fitness-protocol +official-guided-fitness-protocol+
         :checkpoint-filename (best-team-checkpoint-filename)
         :generation *generation*
@@ -155,6 +155,10 @@
           (and *phase4-selection-enabled*
                (fboundp 'phase4-selection-state-copy)
                (phase4-selection-state-copy))
+        :phase4b-routing-repair-state
+          (and *phase4b-routing-repair-enabled*
+               (fboundp 'phase4b-routing-repair-state-copy)
+               (phase4b-routing-repair-state-copy))
         :incumbent-version *official-guided-incumbent-version*
         :best-evaluation (copy-tree *official-guided-best-evaluation*)
         :teacher-dagger-behavior-state
@@ -256,7 +260,12 @@
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
                (getf journal :phase4-selection-state)
-               (getf metadata :phase4-selection-state))))
+               (getf metadata :phase4-selection-state)))
+         (phase4b-routing-repair-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :phase4b-routing-repair-state)
+               (getf metadata :phase4b-routing-repair-state))))
     (when chosen-state
       (restore-official-guided-seed-streams chosen-state))
     (setf *official-guided-incumbent-version*
@@ -276,6 +285,9 @@
       (restore-teacher-dagger-behavior-state dagger-behavior-state))
     (when (and *phase4-selection-enabled* phase4-selection-state)
       (restore-phase4-selection-state phase4-selection-state))
+    (when (and *phase4b-routing-repair-enabled*
+               phase4b-routing-repair-state)
+      (restore-phase4b-routing-repair-state phase4b-routing-repair-state))
     (values chosen-state journal-matches-p)))
 
 (defun official-guided-teacher-mixing-rate ()

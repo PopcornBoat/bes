@@ -28,4 +28,5 @@
 	       (:file "gym")
 	       (:file "teacher")
 	       (:file "official-guided")
+	       (:file "phase4b")
 	       (:file "main")))

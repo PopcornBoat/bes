@@ -259,6 +259,25 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
 (defconstant +phase4b-systematic-minimum-episodes+ 2
   "Minimum distinct episodes required for one Phase-4b systematic error issue.")
 
+(defconstant +phase4b-routing-repair-protocol+
+  :error-directed-routing-repair-v1
+  "Version tag for Phase-4b-A targeted routing variation.")
+
+(defconstant +phase4b-routing-repair-rng-salt+ 2404729
+  "Independent deterministic salt for Phase-4b-A scheduling draws.")
+
+(defconstant +phase4b-routing-repair-quota+ 0.10d0
+  "Fraction of reproduced roots reserved for attempted targeted repair.")
+
+(defconstant +phase4b-routing-repair-max-attempts+ 8
+  "Maximum learner-program variants tried for one targeted repair slot.")
+
+(defconstant +phase4b-routing-repair-minimum-rows+ 3
+  "Minimum matching current-generation rows required to attempt a repair.")
+
+(defconstant +phase4b-routing-repair-max-collateral-rank-rate+ 0.05d0
+  "Maximum fraction of non-target probes whose teacher rank may regress.")
+
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
@@ -600,6 +619,21 @@ reference stream roots and cursors.")
 
 (defvar *phase4b-disagreement-audit-enabled* nil
   "When true, classify DAgger errors for Phase-4b without changing evolution.")
+
+(defvar *phase4b-routing-repair-enabled* nil
+  "When true, reserve a small offspring quota for targeted routing repair.")
+
+(defvar *phase4b-routing-repair-rng-root* nil
+  "Root of the independent counter-based Phase-4b-A scheduling stream.")
+
+(defvar *phase4b-routing-repair-rng-cursor* 0
+  "Number of deterministic Phase-4b-A scheduling draws already consumed.")
+
+(defvar *phase4b-routing-repair-age* 0
+  "Number of completed Phase-4b-A reproduction generations.")
+
+(defvar *phase4b-routing-repair-generation-records* nil
+  "Targeted-repair decisions waiting to be journaled this generation.")
 
 (defvar *phase4-selection-generation-record* nil
   "Pending serializable Phase-4a record for the current generation.")

@@ -1893,7 +1893,8 @@ reference batch."
         ;; This branch is the frozen Phase-3 treatment; Phase 2 remains the control.
         *semantic-locality-control-enabled* (eq mode :official-guided)
         *phase4-selection-enabled* (eq mode :official-guided)
-        *phase4b-disagreement-audit-enabled* (eq mode :official-guided))
+        *phase4b-disagreement-audit-enabled* (eq mode :official-guided)
+        *phase4b-routing-repair-enabled* (eq mode :official-guided))
   (ecase mode
     (:online
      (make-fitness-function :gym-environment-name gym-environment-name))
@@ -2658,24 +2659,40 @@ through serialization/deserialization and save it to disk."
 	while root-team
 	do (push root-team *teams*)))
 
+(defun reproduce-native-child (parent)
+  "Create one child through the unchanged native/Phase-3 mutation path."
+  (if (semantic-locality-control-active-p)
+      (mutate-team-with-semantic-locality-control parent)
+      (let ((child (clone-team parent)))
+        (let ((*active-mutation-events* nil))
+          (mutate-team child)
+          (record-behavioral-mutation
+           parent child (nreverse *active-mutation-events*)))
+        child)))
+
 (defun reproduce ()
-  "Refill the root population, optionally controlling semantic disruption."
+  "Refill roots with mostly native mutation plus a small targeted quota."
+  (setf *phase4b-routing-repair-generation-records* nil)
   (loop while (< (length (root-teams)) *population-size*)
-        for parent = (random-choice (root-teams))
-        for child =
-          (if (semantic-locality-control-active-p)
-              (mutate-team-with-semantic-locality-control parent)
-              (let ((child (clone-team parent)))
-                (let ((*active-mutation-events* nil))
-                  (mutate-team child)
-                  (record-behavioral-mutation
-                   parent child (nreverse *active-mutation-events*)))
-                child))
-        do (when (phase4-selection-active-p)
-             (phase4-note-specialist-descendant parent child)))
+        do (let* ((parents (root-teams))
+                  (targeted-p
+                    (and (phase4b-routing-repair-active-p)
+                         (phase4b-routing-repair-slot-p))))
+             (multiple-value-bind (repair-child repair-parent)
+                 (if targeted-p
+                     (phase4b-attempt-routing-repair parents)
+                     (values nil nil))
+               (let* ((parent
+                        (or repair-parent (random-choice parents)))
+                      (child
+                        (or repair-child
+                            (reproduce-native-child parent))))
+                 (when (phase4-selection-active-p)
+                   (phase4-note-specialist-descendant parent child))))))
   (when (phase4-selection-active-p)
     (phase4-update-specialist-lifecycle :post-reproduction)
     (persist-phase4-selection-generation-record))
+  (finish-phase4b-routing-repair-generation)
   (persist-behavioral-generation-records)
   (finish-semantic-locality-control-generation))
 
@@ -2735,6 +2752,8 @@ through serialization/deserialization and save it to disk."
       (when (phase4-selection-active-p)
         (initialize-phase4-selection-state seed)
         (reset-phase4-selection-runtime))
+      (when (phase4b-routing-repair-active-p)
+        (initialize-phase4b-routing-repair-state seed))
       (make-initial-population)
 
       (when (and (official-guided-mode-p)
@@ -3076,6 +3095,8 @@ normal evolution."
       (when (phase4-selection-active-p)
         (initialize-phase4-selection-state seed)
         (reset-phase4-selection-runtime))
+      (when (phase4b-routing-repair-active-p)
+        (initialize-phase4b-routing-repair-state seed))
 
       ;; Build fresh random population for this island.
       (make-initial-population)
