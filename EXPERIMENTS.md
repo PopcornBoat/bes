@@ -198,6 +198,52 @@ sbcl --non-interactive \
 Do not automatically run to a fixed generation. Apply the decision points in
 `PHASE4.md`, beginning with the generation-50 collapse/specialist audit.
 
+### Completed Phase 4a and scalar-control comparison
+
+The first controlled Phase-4a run stopped cleanly at generation 1003. It
+started from the Phase-3 v2 protected incumbent (`-35.479`) and completed 64
+official challenger evaluations. Two challengers passed the full 100-episode
+Stage-3 promotion gate:
+
+```text
+generation 142: -29.892, paired delta +6.62 +/- 1.25
+generation 599: -25.871, paired delta +3.06 +/- 0.70
+```
+
+The scalar-selection control used commit `5814914`, the same Phase-3 source
+checkpoint and runtime journal, and the same search parameters. It stopped at
+generation 1027 after 102 official evaluations. Its only promotion occurred at
+generation 43 and reached `-31.379` (paired delta `+2.66 +/- 0.56`).
+
+Deterministic `SINGLE-RED-FULL` validation used the same seed-153 sequence for
+all checkpoints:
+
+| Checkpoint | 30-step | 50-step | 100-step | Total |
+|---|---:|---:|---:|---:|
+| Phase-3 source | -8.1276 | -15.6395 | -35.5271 | -59.2942 |
+| Scalar continuation | -7.5386 | -14.5565 | -32.9411 | -55.0362 |
+| Grouped epsilon-lexicase | **-7.0124** | **-12.3831** | **-26.8397** | **-46.2352** |
+
+The final 100 generations also show sharply different population behavior:
+
+| Diagnostic mean | Scalar | Grouped epsilon-lexicase |
+|---|---:|---:|
+| Unique Top-1 fingerprints | 2.19 | 33.96 |
+| Unique ranking fingerprints | 2.22 | 38.12 |
+| Pairwise Top-1 Hamming | 0.0036 | 0.5154 |
+| Normalized Top-1 entropy | 0.0020 | 0.2383 |
+| Teacher Top-8 mean coverage | 0.5574 | 0.7020 |
+| Teacher Top-8 population coverage | 0.5633 | 0.9997 |
+| Dominant Top-1 pair rate | 0.7228 | 0.3046 |
+
+The scalar population therefore converged to approximately two behavioral
+fingerprints, whereas grouped epsilon-lexicase retained broad complementary
+behavior and complete population-level teacher support. Together with the two
+fresh-seed promotions and full-validation improvement, this run supports the
+Phase-4a specialist-preservation hypothesis. It remains one controlled run;
+independent search-root replications are required before treating the effect
+size as a population-level estimate.
+
 The recommended first controlled run warm-starts from:
 
 ```text
