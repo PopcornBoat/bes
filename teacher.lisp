@@ -432,6 +432,96 @@ the historical learner-controlled DAgger behavior is preserved."
                   (prin1-to-string (car right)))
          (> (cdr left) (cdr right))))))
 
+(defun phase4b-disagreement-audit-active-p ()
+  "Return true when passive Phase-4b DAgger error classification is active."
+  (and *phase4b-disagreement-audit-enabled*
+       (phase4-selection-active-p)
+       (eq *terminal-action-format* :target-response-36)))
+
+(defun phase4b-behavior-terminal-support (team)
+  "Return an EQUAL set of direct Semantic-36 terminals reachable from TEAM.
+
+This is genotype support, not a claim that a reachable learner currently bids
+well on the disagreement state.  It lets the audit distinguish a supported
+action hidden below Top-k from a genuinely missing action in the behavior
+graph."
+  (let ((support (make-hash-table :test #'equal)))
+    (dolist (reachable (closure team) support)
+      (dolist (learner (team-learners reachable))
+        (let* ((action (learner-action learner))
+               (payload (and (eq (action-type action) :atomic)
+                             (action-action action))))
+          (when (target-response-36-action-p payload)
+            (setf (gethash
+                   (list (target-response-36-action-target payload)
+                         (target-response-36-action-response payload))
+                   support)
+                  t)))))))
+
+(defun phase4b-disagreement-case (teacher-rank teacher-pair support)
+  "Classify one Top-1 disagreement using current ranked/genotype support."
+  (cond
+    (teacher-rank :case-a-routing)
+    ((gethash teacher-pair support) :case-b1-reachable-support)
+    (t :case-b2-missing-support)))
+
+(defun phase4b-repair-issue-records (counts episodes)
+  "Return deterministic serializable issue records from audit hash tables."
+  (mapcar
+   (lambda (entry)
+     (destructuring-bind
+           (case phase teacher-pair predicted-pair teacher-rank)
+         (car entry)
+       (let* ((episode-list
+                (sort (copy-list (gethash (car entry) episodes)) #'<))
+              (count (cdr entry))
+              (systematic-p
+                (and (>= count +phase4b-systematic-minimum-occurrences+)
+                     (>= (length episode-list)
+                         +phase4b-systematic-minimum-episodes+))))
+         (list :case case
+               :phase phase
+               :teacher-pair teacher-pair
+               :predicted-pair predicted-pair
+               :teacher-rank teacher-rank
+               :occurrences count
+               :episode-count (length episode-list)
+               :episode-seeds episode-list
+               :systematic-p systematic-p))))
+   (dagger-count-table-alist counts)))
+
+(defun phase4b-make-disagreement-audit
+       (disagreements support case-counts phase-case-counts
+        pair-case-counts rank-counts issue-counts issue-episodes)
+  "Build the passive Phase-4b audit attached to DAgger diagnostics."
+  (let* ((issues (phase4b-repair-issue-records issue-counts issue-episodes))
+         (systematic
+           (remove-if-not (lambda (record) (getf record :systematic-p))
+                          issues)))
+    (list :protocol +phase4b-disagreement-audit-protocol+
+          :disagreements disagreements
+          :case-counts (dagger-count-table-alist case-counts)
+          :case-rates
+            (mapcar
+             (lambda (entry)
+               (cons (car entry)
+                     (if (plusp disagreements)
+                         (/ (cdr entry)
+                            (coerce disagreements 'double-float))
+                         0.0d0)))
+             (dagger-count-table-alist case-counts))
+          :phase-case-counts (dagger-count-table-alist phase-case-counts)
+          :teacher-pair-case-counts
+            (dagger-count-table-alist pair-case-counts)
+          :teacher-rank-counts (dagger-count-table-alist rank-counts)
+          :reachable-terminal-pairs
+            (sort (loop for pair being the hash-keys of support
+                        collect (copy-list pair))
+                  #'string< :key #'prin1-to-string)
+          :issues issues
+          :systematic-issues systematic
+          :systematic-issue-count (length systematic))))
+
 (defun dagger-phase-diagnostics (totals disagreements)
   "Return stable phase totals and disagreement rates."
   (loop for phase in '(:early :steps-10-29 :steps-30-49 :steps-50-99)
@@ -475,6 +565,17 @@ updated only from the observation and concrete action that actually occurred."
          (phase-disagreements (make-hash-table :test #'eq))
          (confusion-counts (make-hash-table :test #'equal))
          (prediction-counts (make-hash-table :test #'equal))
+         (repair-audit-active (phase4b-disagreement-audit-active-p))
+         (terminal-support
+           (if repair-audit-active
+               (phase4b-behavior-terminal-support behavior-team)
+               (make-hash-table :test #'equal)))
+         (repair-case-counts (make-hash-table :test #'eq))
+         (repair-phase-case-counts (make-hash-table :test #'equal))
+         (repair-pair-case-counts (make-hash-table :test #'equal))
+         (repair-rank-counts (make-hash-table :test #'eql))
+         (repair-issue-counts (make-hash-table :test #'equal))
+         (repair-issue-episodes (make-hash-table :test #'equal))
          (total-reward 0.0d0))
     (cl-gym::configure-cage2-controller-option-orders env controller)
     (unwind-protect
@@ -569,7 +670,35 @@ updated only from the observation and concrete action that actually occurred."
                                  (dagger-increment phase phase-disagreements)
                                  (dagger-increment
                                   (list selected predicted-pair)
-                                  confusion-counts)))
+                                  confusion-counts)
+                                 (when repair-audit-active
+                                   (let* ((case
+                                            (phase4b-disagreement-case
+                                             teacher-rank selected
+                                             terminal-support))
+                                          (one-based-rank
+                                            (and teacher-rank
+                                                 (1+ teacher-rank)))
+                                          (issue
+                                            (list case phase
+                                                  (copy-list selected)
+                                                  (copy-list predicted-pair)
+                                                  one-based-rank)))
+                                     (dagger-increment case repair-case-counts)
+                                     (dagger-increment
+                                      (list phase case)
+                                      repair-phase-case-counts)
+                                     (dagger-increment
+                                      (list selected case)
+                                      repair-pair-case-counts)
+                                     (when one-based-rank
+                                       (dagger-increment one-based-rank
+                                                         repair-rank-counts))
+                                     (dagger-increment issue repair-issue-counts)
+                                     (pushnew episode-seed
+                                              (gethash issue
+                                                       repair-issue-episodes)
+                                              :test #'=)))))
                              (if teacher-controls-p
                                  (incf teacher-controlled)
                                  (incf learner-controlled))
@@ -629,6 +758,13 @@ updated only from the observation and concrete action that actually occurred."
                   (dagger-count-table-alist confusion-counts)
                 :prediction-distribution
                   (dagger-count-table-alist prediction-counts)
+                :phase4b-repair-audit
+                  (and repair-audit-active
+                       (phase4b-make-disagreement-audit
+                        disagreements terminal-support repair-case-counts
+                        repair-phase-case-counts repair-pair-case-counts
+                        repair-rank-counts repair-issue-counts
+                        repair-issue-episodes))
                 :mean-mixed-return
                   (/ total-reward
                      (coerce (max 1 (length episode-seeds)) 'double-float))))
@@ -976,6 +1112,25 @@ official incumbent and is never repurposed as mutable DAgger state."
                                      :learner-controlled-steps 0)
                                (getf *last-dagger-diagnostics*
                                      :mean-mixed-return 0.0d0)))
+                      (let ((audit
+                              (getf *last-dagger-diagnostics*
+                                    :phase4b-repair-audit)))
+                        (when audit
+                          (flet ((case-count (case)
+                                   (or (cdr (assoc case
+                                                   (getf audit :case-counts)))
+                                       0)))
+                            (emit-message
+                             (format nil
+                                     "Generation ~D Phase-4b audit: case-A=~D case-B1=~D case-B2=~D systematic-issues=~D."
+                                     *generation*
+                                     (case-count :case-a-routing)
+                                     (case-count
+                                      :case-b1-reachable-support)
+                                     (case-count
+                                      :case-b2-missing-support)
+                                     (getf audit
+                                           :systematic-issue-count 0))))))
                       (when (behavioral-locality-active-p)
                         (append-behavioral-locality-form
                          (list :type :dagger-disagreement-generation

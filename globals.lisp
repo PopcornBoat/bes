@@ -249,6 +249,16 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
 (defconstant +phase4-selection-rng-salt+ 1900813
   "Independent deterministic salt for the Phase-4a selection stream.")
 
+(defconstant +phase4b-disagreement-audit-protocol+
+  :error-directed-variation-audit-v1
+  "Version tag for the passive Phase-4b disagreement classification.")
+
+(defconstant +phase4b-systematic-minimum-occurrences+ 3
+  "Minimum repeated rows required for one Phase-4b systematic error issue.")
+
+(defconstant +phase4b-systematic-minimum-episodes+ 2
+  "Minimum distinct episodes required for one Phase-4b systematic error issue.")
+
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
@@ -587,6 +597,9 @@ reference stream roots and cursors.")
 
 (defvar *phase4-specialist-history* nil
   "Completed serializable Phase-4a specialist lifecycle records.")
+
+(defvar *phase4b-disagreement-audit-enabled* nil
+  "When true, classify DAgger errors for Phase-4b without changing evolution.")
 
 (defvar *phase4-selection-generation-record* nil
   "Pending serializable Phase-4a record for the current generation.")

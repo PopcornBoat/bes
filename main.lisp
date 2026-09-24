@@ -1892,7 +1892,8 @@ reference batch."
   (setf *behavioral-locality-enabled* (eq mode :official-guided)
         ;; This branch is the frozen Phase-3 treatment; Phase 2 remains the control.
         *semantic-locality-control-enabled* (eq mode :official-guided)
-        *phase4-selection-enabled* (eq mode :official-guided))
+        *phase4-selection-enabled* (eq mode :official-guided)
+        *phase4b-disagreement-audit-enabled* (eq mode :official-guided))
   (ecase mode
     (:online
      (make-fitness-function :gym-environment-name gym-environment-name))

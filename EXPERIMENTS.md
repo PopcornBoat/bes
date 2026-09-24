@@ -244,6 +244,37 @@ Phase-4a specialist-preservation hypothesis. It remains one controlled run;
 independent search-root replications are required before treating the effect
 size as a population-level estimate.
 
+## Phase 4b-0 passive disagreement audit
+
+Use branch `specialist-composition` and warm-start from the protected Phase-4a
+incumbent and its matching runtime journal:
+
+```text
+/home/hardison/backup/official-guided/phase4a-grouped-lexicase-gen1003/
+bline-62-36-official-guided-grouped-lexicase-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp
+```
+
+Write the audit continuation to a new directory:
+
+```text
+/home/hardison/checkpoints/semantic36/phase4b0-disagreement-audit/
+```
+
+Keep every Phase-4a setting unchanged. Phase 4b-0 only attaches
+`:PHASE4B-REPAIR-AUDIT` to each existing DAgger disagreement journal record.
+The one-line log reports Case A (teacher pair in Top-8), Case B1 (below Top-8
+but backed by a reachable matching terminal), Case B2 (missing from the
+behavior graph), and repeated cross-episode systematic issues. It does not
+change mutation, selection, fitness, execution, or promotion.
+
+Run at least 50 generations before interpreting the case distribution. Around
+generation 50, inspect totals by case, episode phase, teacher pair, and teacher
+rank. Stop the passive audit by generation 100 unless the distribution is too
+sparse to identify whether 4b-A routing repair or 4b-B composition should be
+implemented first. Do not use any checkpoint produced by this diagnostic run
+as the source for the controlled 4b-A or 4b-B treatment; both treatments start
+from the same protected Phase-4a source above.
+
 The recommended first controlled run warm-starts from:
 
 ```text
