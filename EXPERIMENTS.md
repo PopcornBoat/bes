@@ -437,3 +437,33 @@ Apply these decision points:
 Full validation is run only after the controlled decision point. Mixed return
 and imitation fitness remain diagnostics and cannot promote the historical
 incumbent.
+
+## Phase 5A paired official return credit
+
+Use branch `official-return-credit` and the checked-in request:
+
+```bash
+./scripts/bes-search submit experiments/phase5a-official-return-credit.sexp
+```
+
+The treatment starts from the protected Phase-4a checkpoint, not a Phase-4b
+descendant, and writes to:
+
+```text
+/home/hardison/checkpoints/semantic36/phase5a-official-return-credit/
+```
+
+Keep the request unchanged for the first controlled run. The expected log adds
+one of the following for completed asynchronous candidates:
+
+```text
+Official return-credit rejected: ... child-parent-delta=... margin=...
+Official return-credit approved: ... child-parent-delta=... anchor=...
+```
+
+Approval means only that the independently frozen child re-enters the live
+population for one deletion boundary. It does not mean a new historical best.
+Continue to interpret `NEW GLOBAL BEST` only as a fresh Stage-3 promotion.
+Inspect at generation 50 for integration safety, generation 100 for approval
+frequency and anchor behavior, and generation 300--500 for positive global
+paired deltas or promotion. See `PHASE5.md` for invariants and stop rules.

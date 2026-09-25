@@ -15,19 +15,21 @@
        (training (cl-tpg::official-guided-take-seeds :training 5))
        (racing (cl-tpg::official-guided-take-seeds :racing 5))
        (promotion (cl-tpg::official-guided-take-seeds :promotion 5))
+       (credit (cl-tpg::official-guided-take-seeds :credit 5))
        (reference (cl-tpg::official-guided-take-reference-seeds 2))
        (after (cl-tpg::official-guided-seed-state-copy)))
   (check-official-guided
    (and (= (length training) 5)
         (= (length racing) 5)
         (= (length promotion) 5)
+        (= (length credit) 5)
         (= (length reference) 6))
-   "all four seed streams return the requested deterministic block")
+   "all seed streams return the requested deterministic block")
   (check-official-guided
    (= (length (remove-duplicates
-               (append training racing promotion reference)))
+               (append training racing promotion credit reference)))
       (+ (length training) (length racing)
-         (length promotion) (length reference)))
+         (length promotion) (length credit) (length reference)))
    "stream namespace bits prevent cross-stream seed reuse")
   (cl-tpg::restore-official-guided-seed-streams before)
   (check-official-guided

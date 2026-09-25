@@ -264,9 +264,10 @@
          (data (cl-tpg::make-best-team-checkpoint-data team 0.5d0))
          (expected-next (cl-tpg::phase4-selection-random-below 100000)))
     (check-phase4
-     (and (= (getf data :checkpoint-version) 21)
+     (and (= (getf data :checkpoint-version)
+             cl-tpg::+best-team-checkpoint-version+)
           (equal (getf data :phase4-selection-state) expected))
-     "checkpoint version 20 persists the isolated selection RNG")
+     "the current checkpoint persists the isolated selection RNG")
     (cl-tpg::initialize-phase4-selection-state 999)
     (cl-tpg::restore-official-guided-runtime-state
      (list :official-guided-incumbent-version 0

@@ -28,5 +28,6 @@
 	       (:file "gym")
 	       (:file "teacher")
 	       (:file "official-guided")
+	       (:file "official-return-credit")
 	       (:file "phase4b")
 	       (:file "main")))

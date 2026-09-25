@@ -491,6 +491,16 @@ operators retain their existing target, collateral, locality, lexicase, and
 official-promotion gates. Case B2 remains deferred. See `PHASE4B.md` and
 `experiments/phase4b-c-combined-repair.sexp`.
 
+The `official-return-credit` branch is the isolated Phase 5A treatment. It
+disables Phase-4b targeted repair while retaining Phase-3 locality and Phase-4a
+grouped epsilon-lexicase. Every evaluator submission chooses the strongest
+current direct child, compares it with its direct parent on an independent
+5-then-20 paired official seed block, and gives a statistically positive child
+one additional population opportunity. This local credit never overwrites the
+historical checkpoint; only the existing fresh 12/40/100 global promotion can
+do that. Run `experiments/phase5a-official-return-credit.sexp` and see
+`PHASE5.md`.
+
 ## CAGE2 episode opening
 
 The start, resume, and validation menus expose `Episode Opening` with two

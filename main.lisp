@@ -1202,6 +1202,12 @@ promotion still requires the stricter positive one-standard-error improvement."
          (racing-seeds
            (official-guided-take-seeds
             :racing +official-guided-racing-episodes+))
+         (credit-seeds
+           (and (official-return-credit-active-p)
+                parent-path
+                (official-guided-take-seeds
+                 :credit
+                 (car (last +official-return-credit-stages+)))))
          (promotion-seeds
            (official-guided-take-seeds
             :promotion (car (last +official-guided-promotion-stages+))))
@@ -1233,6 +1239,10 @@ promotion still requires the stricter positive one-standard-error improvement."
            :teacher-backend *teacher-backend*
            :behavioral-locality
              (copy-tree *online-staged-best-lineage*)
+           :return-credit-seeds credit-seeds
+           :return-credit-stages
+             (and credit-seeds
+                  (copy-list +official-return-credit-stages+))
            :racing-seeds racing-seeds
            :promotion-seeds promotion-seeds
            :promotion-stages
@@ -1270,8 +1280,10 @@ promotion still requires the stricter positive one-standard-error improvement."
           *online-staged-best-parent-team* nil)
     (emit-message
      (format nil
-             "Generation ~D submitted to official-guided evaluator: imitation=~,4F racing=~D promotion-stages=~S reference-monitor=~D."
-             generation imitation-score (length racing-seeds)
+             "Generation ~D submitted to official-guided evaluator: imitation=~,4F return-credit=~S racing=~D promotion-stages=~S reference-monitor=~D."
+             generation imitation-score
+             (and credit-seeds +official-return-credit-stages+)
+             (length racing-seeds)
              +official-guided-promotion-stages+ (length reference-seeds)))))
 
 (defun official-guided-incumbent-current-p (result)
@@ -1283,10 +1295,42 @@ promotion still requires the stricter positive one-standard-error improvement."
   "Apply one completed Phase-1 worker result on the main search thread."
   (let* ((generation (getf result :candidate-generation))
          (candidate-path (getf *online-candidate-job* :candidate-path))
-         (record (getf result :evaluation-record)))
+         (record (getf result :evaluation-record))
+         (credit (getf result :return-credit-evaluation))
+         (anchor nil))
     (setf *official-guided-last-evaluation* (copy-tree record))
     (persist-behavioral-official-outcome
      generation (getf record :behavioral-locality) record)
+    ;; Direct-parent credit is independent of the global incumbent version.
+    ;; A positive result only restores the frozen child to the live population;
+    ;; it cannot overwrite *BEST-TEAM* or bypass fresh Stage-3 promotion.
+    (when credit
+      (if (and (eq (getf result :status) :complete)
+               (getf credit :accepted))
+          (progn
+            (setf anchor
+                  (install-official-return-credit-anchor candidate-path))
+            (emit-message
+             (format nil
+                     "Official return-credit approved: generation=~D stage=~A episodes=~D child-parent-delta=~,4F margin=~,4F anchor=~A."
+                     generation
+                     (getf credit :stage)
+                     (getf credit :episode-count 0)
+                     (getf credit :paired-mean 0.0d0)
+                     (getf credit :margin 0.0d0)
+                     (team-id anchor))))
+          (progn
+            (incf *official-return-credit-rejected-count*)
+            (emit-message
+             (format nil
+                     "Official return-credit rejected: generation=~D stage=~A episodes=~D child-parent-delta=~,4F margin=~,4F."
+                     generation
+                     (getf credit :stage)
+                     (getf credit :episode-count 0)
+                     (getf credit :paired-mean 0.0d0)
+                     (getf credit :margin 0.0d0)))))
+      (persist-official-return-credit-outcome
+       generation credit (and anchor (team-id anchor))))
     (cond
       ((eq (getf result :status) :error)
        (emit-message
@@ -1380,6 +1424,53 @@ promotion still requires the stricter positive one-standard-error improvement."
       (push (cl-gym:rollout candidate environment-name seed) candidate-scores)
       (push (cl-gym:rollout incumbent environment-name seed) incumbent-scores))
     (values (nreverse candidate-scores) (nreverse incumbent-scores))))
+
+(defun run-official-return-credit-evaluation
+       (child parent environment-name seeds stages behavioral-locality)
+  "Sequentially compare CHILD with its direct PARENT on paired official seeds."
+  (let ((child-returns nil)
+        (parent-returns nil)
+        (evaluated-seeds nil)
+        (previous-count 0)
+        (final-count (car (last stages))))
+    (dolist (stage-count stages)
+      (let ((stage-seeds (subseq seeds previous-count stage-count)))
+        (multiple-value-bind (new-child new-parent)
+            (official-guided-paired-rollouts
+             child parent environment-name stage-seeds)
+          (setf child-returns (nconc child-returns new-child)
+                parent-returns (nconc parent-returns new-parent)
+                evaluated-seeds
+                  (nconc evaluated-seeds (copy-list stage-seeds))
+                previous-count stage-count)))
+      (if (= stage-count final-count)
+          (multiple-value-bind (approved delta margin)
+              (official-return-credit-approve-p
+               child-returns parent-returns)
+            (declare (ignore delta))
+            (return
+              (make-official-return-credit-record
+               :stage :return-credit-stage-2
+               :seeds evaluated-seeds
+               :child-returns child-returns
+               :parent-returns parent-returns
+               :accepted approved
+               :margin margin
+               :behavioral-locality behavioral-locality)))
+          (multiple-value-bind (continue-p delta margin)
+              (official-return-credit-continue-p
+               child-returns parent-returns)
+            (declare (ignore delta))
+            (unless continue-p
+              (return
+                (make-official-return-credit-record
+                 :stage :return-credit-stage-1
+                 :seeds evaluated-seeds
+                 :child-returns child-returns
+                 :parent-returns parent-returns
+                 :accepted nil
+                 :margin margin
+                 :behavioral-locality behavioral-locality))))))))
 
 (defun behavioral-locality-sample-directory ()
   "Return the private directory for passive Phase-2 worker artifacts."
@@ -1612,11 +1703,14 @@ promotion still requires the stricter positive one-standard-error improvement."
   (let* ((request (read-readable-object request-path))
          (result-path (pathname (getf request :result-path)))
          (started (get-universal-time))
-         (parent-child-record nil))
+         (parent-child-record nil)
+         (return-credit-record nil))
     (labels
         ((publish (result)
            (write-readable-object-atomically
             (append result
+                    (list :return-credit-evaluation
+                          (copy-tree return-credit-record))
                     (list :elapsed-seconds
                           (- (get-universal-time) started)))
             result-path))
@@ -1653,6 +1747,10 @@ promotion still requires the stricter positive one-standard-error improvement."
                  (direct-parent
                    (and direct-parent-path
                         (load-best-team direct-parent-path)))
+                 (return-credit-seeds
+                   (getf request :return-credit-seeds))
+                 (return-credit-stages
+                   (getf request :return-credit-stages))
                  (racing-seeds (getf request :racing-seeds))
                  (promotion-seeds (getf request :promotion-seeds))
                  (promotion-stages (getf request :promotion-stages))
@@ -1662,6 +1760,13 @@ promotion still requires the stricter positive one-standard-error improvement."
             (when direct-parent
               (ensure-team-observation-compatible
                direct-parent *num-observations*))
+            (when (and direct-parent return-credit-seeds)
+              (setf return-credit-record
+                    (run-official-return-credit-evaluation
+                     candidate direct-parent
+                     *current-gym-environment-name*
+                     return-credit-seeds return-credit-stages
+                     (getf request :behavioral-locality))))
             (multiple-value-bind (race-candidate race-incumbent)
                 (official-guided-paired-rollouts
                  candidate incumbent *current-gym-environment-name* racing-seeds)
@@ -1894,13 +1999,13 @@ reference batch."
         *semantic-locality-control-enabled* (eq mode :official-guided)
         *phase4-selection-enabled* (eq mode :official-guided)
         *phase4b-disagreement-audit-enabled* (eq mode :official-guided)
-        ;; Phase-4b-C shares one quota between the two previously isolated
-        ;; operators: Case A routes an existing specialist; Case B1 composes
-        ;; a qualified live specialist.  Their individual gates are unchanged.
-        *phase4b-combined-repair-enabled* (eq mode :official-guided)
-        *phase4b-routing-repair-enabled* (eq mode :official-guided)
-        *phase4b-specialist-composition-enabled*
-          (eq mode :official-guided))
+        ;; Phase 5A isolates official parent/child return credit.  Phase-4b
+        ;; teacher-directed proposal operators remain available on their
+        ;; archived branches but are deliberately disabled in this treatment.
+        *official-return-credit-enabled* (eq mode :official-guided)
+        *phase4b-combined-repair-enabled* nil
+        *phase4b-routing-repair-enabled* nil
+        *phase4b-specialist-composition-enabled* nil)
   (ecase mode
     (:online
      (make-fitness-function :gym-environment-name gym-environment-name))
@@ -2470,6 +2575,16 @@ through serialization/deserialization and save it to disk."
          (generation-best-team
            (car best-entry))
 
+         (official-guided-submission-entry
+           (if (official-return-credit-active-p)
+               ;; Phase 5A must compare a real mutation with its direct parent.
+               ;; Choose the strongest current imitation child, while DAgger
+               ;; and telemetry continue to use the aggregate champion above.
+               (find-if (lambda (entry)
+                          (behavioral-parent-for-team (car entry)))
+                        sorted)
+               best-entry))
+
          (historical-candidate-fitness nil)
 
          (historical-candidate-detail nil)
@@ -2506,8 +2621,10 @@ through serialization/deserialization and save it to disk."
     (cond
       (staged-guided-p
        (poll-official-guided-candidate-evaluation)
-       (note-online-generation-candidate
-        generation-best-team generation-best)
+       (when official-guided-submission-entry
+         (note-online-generation-candidate
+          (car official-guided-submission-entry)
+          (cdr official-guided-submission-entry)))
        (maybe-launch-official-guided-candidate-evaluation))
       (staged-online-p
        (poll-online-candidate-evaluation)
@@ -2766,6 +2883,7 @@ through serialization/deserialization and save it to disk."
       (setf *generation* 1)
       (reset-online-candidate-evaluation-state)
       (reset-behavioral-locality-state)
+      (reset-official-return-credit-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
@@ -3110,6 +3228,7 @@ normal evolution."
       (setf *generation* 1)
       (reset-online-candidate-evaluation-state)
       (reset-behavioral-locality-state)
+      (reset-official-return-credit-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 

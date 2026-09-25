@@ -4,7 +4,7 @@ The research question is:
 
 > How can TPG obtain stable, local, cumulative policy improvement without gradients?
 
-The work is deliberately split into four phases so improvements remain
+The work is deliberately split into phases so improvements remain
 attributable.
 
 1. **Trustworthy trajectories and comparison.** Clean mixed DAgger and
@@ -15,6 +15,8 @@ attributable.
    establishes its relationship with official regression.
 4. **Preserve complementary specialists.** Study grouped case-wise selection,
    lexicase, and behavioral diversity.
+5. **Accumulate official local improvements.** Use paired child/direct-parent
+   return evidence as evolutionary credit without weakening global promotion.
 
 Phase 1 must not implement mutation-locality control, lexicase, recurrent TPG,
 soft teacher distillation, or counterfactual advantage. Existing ranked
@@ -38,3 +40,9 @@ bridge-owned Decoy ordering. The bridge owns scan and used-Decoy state.
 
 Later phases may measure or change other mechanisms, but only on separate
 branches with explicit ablations.
+
+Phase 5A retains Phases 1--4a and disables Phase-4b targeted proposals. It
+tests only whether a child with statistically positive paired official return
+against its direct parent should receive one additional opportunity in the
+live population. The historical incumbent still changes only through the
+frozen fresh-seed Stage-3 promotion rule. See `PHASE5.md`.

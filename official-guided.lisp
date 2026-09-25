@@ -32,20 +32,21 @@
     (:reference 3)
     ;; Phase-2 diagnostics derive this stream from their own persisted cursor;
     ;; it is not part of the four Phase-1 stream plists.
-    (:locality 4)))
+    (:locality 4)
+    (:credit 5)))
 
 (defun official-guided-derived-root (search-seed salt)
   "Derive one reproducible stream root from SEARCH-SEED and SALT."
   (official-guided-mix64 (+ search-seed salt)))
 
 (defun initialize-official-guided-seed-streams (search-seed)
-  "Initialize four independent deterministic seed streams."
+  "Initialize independent deterministic training and evaluation streams."
   (unless (integerp search-seed)
     (error "Official-guided seed initialization requires an integer, got ~S."
            search-seed))
   (setf *official-guided-seed-streams*
         (list
-         :version 1
+         :version 2
          :training
            (list :roots
                  (list (official-guided-derived-root search-seed 104729))
@@ -60,12 +61,17 @@
                  :cursor 0)
          :reference
            (list :roots (copy-list +official-guided-reference-roots+)
+                 :cursor 0)
+         :credit
+           (list :roots
+                 (list (official-guided-derived-root search-seed 211081))
                  :cursor 0)))
   *official-guided-seed-streams*)
 
 (defun official-guided-seed-stream-valid-p (name stream)
   "Return true when STREAM is a valid serialized stream for NAME."
-  (and (member name '(:training :racing :promotion :reference) :test #'eq)
+  (and (member name '(:training :racing :promotion :reference :credit)
+               :test #'eq)
        (listp stream)
        (let ((roots (getf stream :roots))
              (cursor (getf stream :cursor)))
@@ -75,19 +81,36 @@
               (not (minusp cursor))))))
 
 (defun official-guided-seed-streams-valid-p (state)
-  "Return true when STATE contains all four recoverable stream cursors."
+  "Return true when STATE contains every stream required by its version."
   (and (listp state)
-       (= (getf state :version 0) 1)
+       (member (getf state :version 0) '(1 2))
        (every
         (lambda (name)
           (official-guided-seed-stream-valid-p name (getf state name)))
-        '(:training :racing :promotion :reference))))
+        (if (= (getf state :version) 1)
+            '(:training :racing :promotion :reference)
+            '(:training :racing :promotion :reference :credit)))))
+
+(defun upgrade-official-guided-seed-streams (state)
+  "Upgrade a valid Phase-1 four-stream STATE with a fresh credit namespace."
+  (let ((copy (copy-tree state)))
+    (when (= (getf copy :version) 1)
+      (unless (integerp *current-search-seed*)
+        (error "Cannot derive the Phase-5A credit stream without a search seed."))
+      (setf (getf copy :version) 2
+            (getf copy :credit)
+              (list :roots
+                    (list (official-guided-derived-root
+                           *current-search-seed* 211081))
+                    :cursor 0)))
+    copy))
 
 (defun restore-official-guided-seed-streams (state)
   "Restore a validated, independently owned seed-stream STATE."
   (unless (official-guided-seed-streams-valid-p state)
     (error "Invalid official-guided seed-stream state: ~S" state))
-  (setf *official-guided-seed-streams* (copy-tree state)))
+  (setf *official-guided-seed-streams*
+        (upgrade-official-guided-seed-streams state)))
 
 (defun official-guided-seed-at (name root cursor)
   "Return one deterministic environment seed in NAME's disjoint namespace."
@@ -100,7 +123,7 @@
 
 (defun official-guided-take-seeds (name count)
   "Take COUNT seeds from one single-root stream and advance its cursor."
-  (unless (member name '(:training :racing :promotion) :test #'eq)
+  (unless (member name '(:training :racing :promotion :credit) :test #'eq)
     (error "~S is not a single-root official-guided seed stream." name))
   (unless (and (integerp count) (plusp count))
     (error "Official-guided seed count must be positive, got ~S." count))
@@ -145,7 +168,7 @@
 
 (defun official-guided-runtime-state ()
   "Return the small recoverable state journaled beside the best checkpoint."
-  (list :version 6
+  (list :version 7
         :fitness-protocol +official-guided-fitness-protocol+
         :checkpoint-filename (best-team-checkpoint-filename)
         :generation *generation*
@@ -163,6 +186,10 @@
           (and *phase4b-specialist-composition-enabled*
                (fboundp 'phase4b-specialist-composition-state-copy)
                (phase4b-specialist-composition-state-copy))
+        :official-return-credit-state
+          (and *official-return-credit-enabled*
+               (fboundp 'official-return-credit-state-copy)
+               (official-return-credit-state-copy))
         :incumbent-version *official-guided-incumbent-version*
         :best-evaluation (copy-tree *official-guided-best-evaluation*)
         :teacher-dagger-behavior-state
@@ -274,7 +301,12 @@
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
                (getf journal :phase4b-specialist-composition-state)
-               (getf metadata :phase4b-specialist-composition-state))))
+               (getf metadata :phase4b-specialist-composition-state)))
+         (official-return-credit-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :official-return-credit-state)
+               (getf metadata :official-return-credit-state))))
     (when chosen-state
       (restore-official-guided-seed-streams chosen-state))
     (setf *official-guided-incumbent-version*
@@ -301,6 +333,10 @@
                phase4b-specialist-composition-state)
       (restore-phase4b-specialist-composition-state
        phase4b-specialist-composition-state))
+    (when (and *official-return-credit-enabled*
+               official-return-credit-state)
+      (restore-official-return-credit-state
+       official-return-credit-state))
     (values chosen-state journal-matches-p)))
 
 (defun official-guided-teacher-mixing-rate ()

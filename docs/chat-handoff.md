@@ -5,14 +5,14 @@ Updated: 2026-09-25
 ## Canonical state
 
 - Repository: `/home/hardison/bes`
-- Branch: `specialist-composition`
-- Active experiment code commit: `df63c6f`
+- Branch: `official-return-credit`
+- Active experiment: Phase 5A paired official return credit
 - Python bridge: `/home/hardison/venv-base`
 - Bridge branch: `official-guided-dagger`
 - Policy contract: 62 observations, direct Semantic-36 target/response
   terminals, fixed opening, fixed controller-owned Decoy order, stateless TPG.
 
-Read `AGENTS.md`, `DESIGN.md`, `PHASE4B.md`, and the Phase-4 sections of
+Read `AGENTS.md`, `DESIGN.md`, `PHASE4B.md`, `PHASE5.md`, and the Phase sections of
 `EXPERIMENTS.md` before modifying the active research path.
 
 ## Established result
@@ -128,5 +128,25 @@ the existing fresh 12/40/100 promotion protocol.
 6. Phase 5A tests official paired parent-to-child return credit without
    Phase-4b proposal operators.
 
-Do not mix recurrent TPG, new action spaces, digital-twin fitness, or new
-selection mechanisms into the Phase 4b-C comparison.
+Do not mix recurrent TPG, new action spaces, digital-twin fitness, Phase-4b
+targeted proposal operators, or another selection mechanism into Phase 5A.
+
+## Active experiment: Phase 5A
+
+Phase 5A starts from the protected Phase-4a checkpoint. It disables Phase-4b
+targeted repair and adds a separate 5-then-20 paired official child/direct-
+parent credit path. A statistically positive child receives one population
+anchor opportunity; only the unchanged fresh 12/40/100 promotion may replace
+the historical incumbent.
+
+```text
+tmux session: phase5a
+TCP port:     8080
+output:       /home/hardison/checkpoints/semantic36/phase5a-official-return-credit/
+request:      experiments/phase5a-official-return-credit.sexp
+```
+
+Monitor the first completed credit decisions, stable root accounting, absence
+of Phase-4b repair records, and positive child-parent deltas. The first safety
+review is generation 50, the first mechanism review is generation 100, and the
+first performance decision is generation 300--500.

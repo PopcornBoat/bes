@@ -170,10 +170,11 @@
   (cl-tpg::initialize-phase4b-specialist-composition-state 2026)
   (let ((data (cl-tpg::make-best-team-checkpoint-data team 0.5d0)))
     (check-phase4b-composition
-     (and (= (getf data :checkpoint-version) 21)
+     (and (= (getf data :checkpoint-version)
+             cl-tpg::+best-team-checkpoint-version+)
           (equal (getf data :phase4b-specialist-composition-state)
                  (cl-tpg::phase4b-specialist-composition-state-copy)))
-     "checkpoint version 21 persists the independent composition stream")
+     "the current checkpoint persists the independent composition stream")
     (check-phase4b-composition
      (search "official-guided-specialist-composition"
              (cl-tpg::best-team-checkpoint-filename))

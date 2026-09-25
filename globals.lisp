@@ -193,6 +193,17 @@ independent official paired challenger evaluation.")
 (defconstant +official-guided-comparison-standard-errors+ 1.0d0
   "Standard-error boundary used by racing futility and final promotion.")
 
+(defconstant +official-return-credit-protocol+
+  :paired-parent-child-return-credit-phase5a-v1
+  "Version tag for Phase-5A official child-versus-direct-parent credit.")
+
+(defparameter +official-return-credit-stages+ '(5 20)
+  "Cumulative paired official episodes used to reject and then approve one
+direct child.  The first stage can only reject; the final stage can approve.")
+
+(defconstant +official-return-credit-standard-errors+ 1.0d0
+  "Paired standard-error margin required for a return-credit anchor.")
+
 (defconstant +behavioral-locality-protocol+
   :behavioral-locality-phase2-v1
   "Version tag for observation-only Phase-2 parent/child diagnostics.")
@@ -598,8 +609,19 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
   "Generation that produced the current DAgger behavior snapshot.")
 
 (defvar *official-guided-seed-streams* nil
-  "Serializable plist holding independent training, racing, promotion, and
-reference stream roots and cursors.")
+  "Serializable plist holding independent training, racing, promotion,
+reference, and Phase-5A return-credit stream roots and cursors.")
+
+(defvar *official-return-credit-enabled* nil
+  "When true, positive paired child/direct-parent evidence may reinsert the
+child as a one-generation population anchor.  It never promotes the global
+incumbent directly.")
+
+(defvar *official-return-credit-approved-count* 0
+  "Number of return-approved anchors installed during the current run.")
+
+(defvar *official-return-credit-rejected-count* 0
+  "Number of completed direct-parent credit comparisons not approved.")
 
 (defvar *phase4-selection-enabled* nil
   "When true, replace aggregate truncation with grouped survivor lexicase.")
