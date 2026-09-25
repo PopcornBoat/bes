@@ -376,3 +376,64 @@ the teacher pair from outside Top-8 to Top-1, while a Case-A repair improved
 teacher rank from 7 to 4. Every accepted repair had zero collateral exact
 losses, zero collateral rank regressions, and both locality distances below
 0.20. This establishes operability only; it is not a performance result.
+
+### Completed Phase 4b-A pilot
+
+The controlled Phase-4b-A run stopped after generation 508. Repair acceptance
+fell from about 2.0% in the first 100 generations to about 0.7% in generations
+401--500. Accepted repairs remained within the locality and collateral gates,
+but none of 50 official challenger outcomes promoted over the protected
+Phase-4a incumbent; four reached Stage 3 and were rejected. DAgger disagreement
+and first-disagreement time remained near 45% and step 3.5 respectively.
+
+The absent-from-Top-8 rate improved from about 64.6% to 58.9%, while the live
+population retained roughly 30--33 unique Top-1 fingerprints, pairwise Top-1
+Hamming of 0.54--0.61, and approximately 95% population-level teacher Top-8
+coverage. This supports testing composition of complementary live specialists,
+not continuing single-bidder repair indefinitely.
+
+## Phase 4b-B specialist-composition pilot
+
+Use branch `specialist-composition`. Start from the same protected Phase-4a
+checkpoint used by Phase 4b-A:
+
+```text
+/home/hardison/backup/official-guided/phase4a-grouped-lexicase-gen1003/
+bline-62-36-official-guided-grouped-lexicase-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp
+```
+
+Do not start from a Phase-4b-A checkpoint. Write to a separate directory:
+
+```text
+/home/hardison/checkpoints/semantic36/phase4b-b-specialist-composition/
+```
+
+Keep all Phase-4a parameters unchanged. The log should report:
+
+```text
+Phase-4b-B specialist composition: slots=N accepted=A fallback=N-A
+```
+
+The detailed journal record is
+`:PHASE4B-SPECIALIST-COMPOSITION-GENERATION`. Inspect the selected issue group,
+donor and gateway learner, source type, target improvement, collateral losses,
+and locality distances. `:TEAM-REFERENCE` is the intended composition path;
+`:DIRECT-TERMINAL-FALLBACK` means no current live donor qualified.
+
+Apply these decision points:
+
+- stop immediately on a crash, checkpoint/runtime-state mismatch, population
+  deficit, cycle, or donor reference-count/root-status leak;
+- at generation 50, require scheduled attempts and at least one safe accepted
+  composition or clearly logged direct-terminal fallback;
+- at generation 100, stop and revise if acceptance is below about 1%, no
+  team-reference composition is accepted, and absent-from-Top-8 or
+  first-disagreement diagnostics do not improve;
+- otherwise continue 300--500 generations for the first controlled decision;
+- promising evidence is repeated safe team-reference composition, declining
+  Case-B1/absent-Top8 errors, later first disagreement, stable diversity, and
+  at least one Stage-3 official promotion over `-25.871`.
+
+Full validation is run only after the controlled decision point. Mixed return
+and imitation fitness remain diagnostics and cannot promote the historical
+incumbent.

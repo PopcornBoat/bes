@@ -278,6 +278,25 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
 (defconstant +phase4b-routing-repair-max-collateral-rank-rate+ 0.05d0
   "Maximum fraction of non-target probes whose teacher rank may regress.")
 
+(defconstant +phase4b-specialist-composition-protocol+
+  :error-directed-specialist-composition-v1
+  "Version tag for the isolated Phase-4b-B composition treatment.")
+
+(defconstant +phase4b-specialist-composition-rng-salt+ 3404729
+  "Independent deterministic salt for Phase-4b-B scheduling and donor draws.")
+
+(defconstant +phase4b-specialist-composition-quota+ 0.10d0
+  "Fraction of reproduced roots reserved for specialist-composition attempts.")
+
+(defconstant +phase4b-specialist-composition-max-parents+ 8
+  "Maximum candidate parents inspected for one composition slot.")
+
+(defconstant +phase4b-specialist-composition-max-donors+ 8
+  "Maximum group-qualified live donor teams inspected per parent.")
+
+(defconstant +phase4b-specialist-composition-max-attempts+ 8
+  "Maximum bidder variants tried for one selected specialist source.")
+
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
@@ -634,6 +653,21 @@ reference stream roots and cursors.")
 
 (defvar *phase4b-routing-repair-generation-records* nil
   "Targeted-repair decisions waiting to be journaled this generation.")
+
+(defvar *phase4b-specialist-composition-enabled* nil
+  "When true, reserve a small offspring quota for Phase-4b-B composition.")
+
+(defvar *phase4b-specialist-composition-rng-root* nil
+  "Root of the independent counter-based Phase-4b-B scheduling stream.")
+
+(defvar *phase4b-specialist-composition-rng-cursor* 0
+  "Number of deterministic Phase-4b-B scheduling/donor draws consumed.")
+
+(defvar *phase4b-specialist-composition-age* 0
+  "Number of completed Phase-4b-B reproduction generations.")
+
+(defvar *phase4b-specialist-composition-generation-records* nil
+  "Specialist-composition decisions waiting to be journaled this generation.")
 
 (defvar *phase4-selection-generation-record* nil
   "Pending serializable Phase-4a record for the current generation.")

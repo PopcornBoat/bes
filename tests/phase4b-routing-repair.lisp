@@ -132,7 +132,7 @@
   (cl-tpg::initialize-phase4b-routing-repair-state 2026)
   (let ((data (cl-tpg::make-best-team-checkpoint-data team 0.5d0)))
     (check-phase4b-routing
-     (and (= (getf data :checkpoint-version) 20)
+     (and (= (getf data :checkpoint-version) 21)
           (equal (getf data :phase4b-routing-repair-state)
                  (cl-tpg::phase4b-routing-repair-state-copy)))
      "checkpoint version 20 persists the independent repair stream")

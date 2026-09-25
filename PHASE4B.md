@@ -78,16 +78,63 @@ target-group change, collateral damage, and locality distances. The scheduling
 root/cursor/age are stored in checkpoint version 20 and runtime-journal version
 5. Phase-4b-A uses a distinct `official-guided-routing-repair` filename.
 
-## Deferred Phase 4b-B
+## Phase 4b-A result
 
-Case B would first attempt to reuse a group-qualified live specialist through
-a cycle-safe team reference. Only when no qualified specialist exists may it
-create a learner with the missing target-response terminal. This is deferred
-because the audit observed no Case-B2 missing-support event.
+The controlled Phase-4b-A run stopped after generation 508. Targeted repair
+acceptance declined from about 2.0% in generations 1--100 to about 0.7% in
+generations 401--500. Accepted repairs remained local and caused no measured
+collateral Top-1 loss, but no challenger passed Stage-3 promotion over the
+protected Phase-4a incumbent. DAgger disagreement stayed near 45% and the mean
+first-disagreement step stayed near 3.5. Teacher-pair absence from Top-8 fell
+modestly, from about 64.6% to 58.9%.
+
+The population itself remained diverse: roughly 30--33 unique Top-1
+fingerprints, pairwise Top-1 Hamming around 0.54--0.61, population teacher
+Top-8 coverage around 95%, and individual mean coverage around 65%. This is
+the Phase-4b-B motivation: useful support is distributed across roots, but
+mutating one existing bidder at a time did not reliably integrate it into a
+better policy.
+
+## Phase 4b-B: specialist composition
+
+Phase 4b-B is an isolated treatment. Phase 4b-A routing repair is disabled,
+and the run starts from the same protected Phase-4a checkpoint rather than a
+Phase-4b-A descendant. Ten percent of offspring slots are scheduled by a
+separate counter-based RNG stream whose root, cursor, and age are checkpointed.
+
+Only systematic Case-B1 disagreements are eligible. The operator identifies
+the most specific available error group (teacher target/response, otherwise
+episode phase), scores current live roots on that group, and searches up to
+eight group-elite donors. A donor qualifies only if it ranks the teacher pair
+Top-1 on at least one exact issue context. Its most frequently winning root
+learner becomes the gateway specialist.
+
+The preferred candidate adds one new learner to a clone of the selected
+parent. That learner keeps the donor gateway bid program and points through a
+cycle-safe team reference to the donor root. Reference counts are updated with
+the ordinary TPG lifecycle functions. If no live group-qualified donor exists,
+the logged fallback adds a direct target-response terminal using a cloned
+parent gateway program. The first attempt preserves the gateway program;
+later attempts use the existing native `mutate-program` operator. No donor or
+incumbent object is edited in place.
+
+Up to eight variants are admitted through the same target-group improvement,
+collateral-damage, and behavioral-locality gates as Phase 4b-A. Rejected
+candidate graphs are deleted through the normal team lifecycle so donor
+reference counts and root status are restored. Accepted candidates are only
+ordinary offspring and receive no survival or promotion privilege.
+
+Every slot is journaled as
+`:PHASE4B-SPECIALIST-COMPOSITION-GENERATION`, including issue group, donor,
+gateway learner, source (`:TEAM-REFERENCE` or `:DIRECT-TERMINAL-FALLBACK`),
+target-group change, collateral damage, and locality distances. Checkpoint
+version 21 and runtime-journal version 6 preserve the new RNG stream and
+records. Phase 4b-B uses a distinct
+`official-guided-specialist-composition` filename.
 
 ## Attribution rule
 
-4b-A and 4b-B must first be piloted separately from the same protected Phase-4a
+4b-A and 4b-B must be piloted separately from the same protected Phase-4a
 checkpoint. Only after their effects are measured may a combined run choose
 the repair operator from the observed disagreement case. Ordinary mutation
 remains the majority path throughout Phase 4b.

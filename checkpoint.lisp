@@ -9,7 +9,7 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 20
+(defconstant +best-team-checkpoint-version+ 21
   "Checkpoint version recording the terminal action representation.")
 
 (defun checkpoint-path (directory filename)
@@ -45,6 +45,8 @@
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
       (cond
+        (*phase4b-specialist-composition-enabled*
+         "official-guided-specialist-composition")
         (*phase4b-routing-repair-enabled*
          "official-guided-routing-repair")
         (*phase4-selection-enabled*
@@ -126,6 +128,10 @@ checkpoint directory."
       ,(and *phase4b-routing-repair-enabled*
             (fboundp 'phase4b-routing-repair-state-copy)
             (phase4b-routing-repair-state-copy))
+    :phase4b-specialist-composition-state
+      ,(and *phase4b-specialist-composition-enabled*
+            (fboundp 'phase4b-specialist-composition-state-copy)
+            (phase4b-specialist-composition-state-copy))
     :behavioral-locality-state
       ,(and *behavioral-locality-enabled*
             (fboundp 'behavioral-locality-state-copy)

@@ -437,18 +437,24 @@ and `EXPERIMENTS.md` for the exact contract and run procedure.
 
 ## Direct Semantic-36 Lisp controller path
 
-## Error-directed routing variation
+## Error-directed specialist composition
 
-The `specialist-composition` branch adds Phase 4b-A after a 326-generation
-passive audit found no missing Semantic-36 terminal support. A private,
-checkpointed scheduler reserves 10% of offspring slots for an attempted local
-repair. It clones an eligible root and applies the native program mutation
-operator only to a cloned root learner whose action path already supports the
-teacher target/response pair. Target-group improvement, zero non-target exact
-loss, bounded rank collateral, and the existing behavioral-locality limits are
-all required. Rejected attempts fall back to normal reproduction. Accepted
-children receive no promotion privilege and still pass grouped
-epsilon-lexicase plus official paired racing. See `PHASE4B.md`.
+The `specialist-composition` branch now runs the isolated Phase 4b-B
+treatment. A prior 508-generation Phase-4b-A pilot showed safe local routing
+repairs but no official promotion, while complementary teacher support
+remained distributed across a diverse population. Phase 4b-B therefore
+reserves 10% of offspring slots for cycle-safe composition on systematic
+Case-B1 disagreements. It first tries to attach a current live,
+group-qualified donor team through one new gateway learner. A direct
+target-response terminal is used only as an explicitly logged fallback when
+no qualified donor exists.
+
+Composition still uses the existing target-group, collateral-damage, and
+behavioral-locality gates. Rejected candidate graphs are fully discarded;
+accepted children receive no privilege and must survive grouped
+epsilon-lexicase plus official paired racing and fresh-seed promotion. The
+operator has its own checkpointed RNG stream and does not run simultaneously
+with Phase 4b-A. See `PHASE4B.md`.
 
 For B-line experiments, selecting 62 observations and 36 actions activates the
 direct target-response-36 terminal genotype. The first field is one of the
