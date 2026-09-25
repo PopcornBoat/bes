@@ -101,6 +101,13 @@ phase4bc`, or `tmux attach -t phase4bc`. The first controlled decision remains
 generation 300--500. Strong evidence requires sustainable trajectory gains and
 at least one positive official paired challenger, ideally a Stage-3 promotion.
 
+The generation-50 controlled window passed the integration criterion: 425
+combined slots yielded nine safe accepted repairs (two routing, seven
+live-reference composition), 91 target-group Top-1 gains, and no measured
+target or collateral exact loss. Diversity remained healthy. Trajectory and
+official-return improvement were not yet established, so the next decision is
+at generation 100.
+
 ## Frozen research sequence
 
 1. Phase 1 made teacher/student trajectories and candidate comparison

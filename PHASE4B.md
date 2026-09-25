@@ -173,3 +173,21 @@ its independent checkpointed donor/parent stream. Both detailed operator
 records and a combined dispatch record are journaled. Grouped epsilon-lexicase,
 official racing, fresh-seed 12/40/100 promotion, and historical deep-copy
 semantics remain authoritative.
+
+### Phase 4b-C generation-50 interim
+
+The frozen generations 1--50 window contained 425 combined slots: 124 routed
+to Case-A repair and 301 to Case-B1 composition. Nine repairs were accepted
+(2.12%): two routing children and seven live-reference composition children.
+They produced 91 target-group Top-1 gains, zero target-group Top-1 losses, and
+zero collateral exact losses. Mean accepted-child Top-1 Hamming was 10.65%
+and ranking distance was 6.75%, both within the unchanged 20% gate.
+
+Population diversity remained healthy (28.3 unique Top-1 fingerprints,
+pairwise Hamming 0.607, and 97.6% population Top-8 coverage). The first 50
+generations did not yet improve trajectory diagnostics over the isolated
+treatments: disagreement was 46.94%, first disagreement was step 3.50, and the
+teacher action was absent from Top-8 on 30.84% of policy steps. Five official
+outcomes produced no promotion; the best non-identical paired delta was still
+negative. The operator/integration criterion passed, so the experiment
+continues to the generation-100 trajectory checkpoint.
