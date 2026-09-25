@@ -297,6 +297,10 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
 (defconstant +phase4b-specialist-composition-max-attempts+ 8
   "Maximum bidder variants tried for one selected specialist source.")
 
+(defconstant +phase4b-combined-repair-protocol+
+  :error-directed-combined-repair-v1
+  "Version tag for Phase-4b-C case-directed routing/composition variation.")
+
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
@@ -668,6 +672,12 @@ reference stream roots and cursors.")
 
 (defvar *phase4b-specialist-composition-generation-records* nil
   "Specialist-composition decisions waiting to be journaled this generation.")
+
+(defvar *phase4b-combined-repair-enabled* nil
+  "When true, share one repair quota between Case-A routing and Case-B1 composition.")
+
+(defvar *phase4b-combined-repair-generation-records* nil
+  "Case-directed Phase-4b-C dispatch decisions waiting to be journaled.")
 
 (defvar *phase4-selection-generation-record* nil
   "Pending serializable Phase-4a record for the current generation.")

@@ -16,11 +16,12 @@ if [[ "${1:-}" == --core ]]; then
     tests/phase4b-disagreement-audit.lisp
     tests/phase4b-routing-repair.lisp
     tests/phase4b-specialist-composition.lisp
+    tests/phase4b-combined-repair.lisp
   )
 elif [[ $# -gt 0 ]]; then
   tests=("$@")
 else
-  tests=(tests/phase4b-specialist-composition.lisp)
+  tests=(tests/phase4b-combined-repair.lisp)
 fi
 
 args=(
@@ -38,4 +39,3 @@ env \
   "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
   'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
   sbcl "${args[@]}"
-

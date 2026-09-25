@@ -1894,10 +1894,11 @@ reference batch."
         *semantic-locality-control-enabled* (eq mode :official-guided)
         *phase4-selection-enabled* (eq mode :official-guided)
         *phase4b-disagreement-audit-enabled* (eq mode :official-guided)
-        ;; Phase-4b treatments are causally isolated.  This branch runs the
-        ;; composition treatment only; Phase-4b-A remains available in code
-        ;; and in its protected result branch/checkpoint.
-        *phase4b-routing-repair-enabled* nil
+        ;; Phase-4b-C shares one quota between the two previously isolated
+        ;; operators: Case A routes an existing specialist; Case B1 composes
+        ;; a qualified live specialist.  Their individual gates are unchanged.
+        *phase4b-combined-repair-enabled* (eq mode :official-guided)
+        *phase4b-routing-repair-enabled* (eq mode :official-guided)
         *phase4b-specialist-composition-enabled*
           (eq mode :official-guided))
   (ecase mode
@@ -2676,20 +2677,28 @@ through serialization/deserialization and save it to disk."
         child)))
 
 (defun reproduce ()
-  "Refill roots with native mutation plus the active isolated Phase-4b quota."
+  "Refill roots with native mutation plus the active Phase-4b repair quota."
   (setf *phase4b-routing-repair-generation-records* nil)
   (setf *phase4b-specialist-composition-generation-records* nil)
+  (setf *phase4b-combined-repair-generation-records* nil)
   (loop while (< (length (root-teams)) *population-size*)
         do (let* ((parents (root-teams))
+                  (combined-p (phase4b-combined-repair-active-p))
+                  (combined-slot-p
+                    (and combined-p (phase4b-combined-repair-slot-p)))
                   (composition-p
-                    (and (phase4b-specialist-composition-active-p)
+                    (and (not combined-p)
+                         (phase4b-specialist-composition-active-p)
                          (phase4b-specialist-composition-slot-p)))
                   (routing-p
-                    (and (not composition-p)
+                    (and (not combined-p)
+                         (not composition-p)
                          (phase4b-routing-repair-active-p)
                          (phase4b-routing-repair-slot-p))))
              (multiple-value-bind (repair-child repair-parent)
                  (cond
+                   (combined-slot-p
+                    (phase4b-attempt-combined-repair parents))
                    (composition-p
                     (phase4b-attempt-specialist-composition parents))
                    (routing-p
@@ -2705,6 +2714,7 @@ through serialization/deserialization and save it to disk."
   (when (phase4-selection-active-p)
     (phase4-update-specialist-lifecycle :post-reproduction)
     (persist-phase4-selection-generation-record))
+  (finish-phase4b-combined-repair-generation)
   (finish-phase4b-routing-repair-generation)
   (finish-phase4b-specialist-composition-generation)
   (persist-behavioral-generation-records)

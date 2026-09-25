@@ -138,3 +138,38 @@ records. Phase 4b-B uses a distinct
 checkpoint. Only after their effects are measured may a combined run choose
 the repair operator from the observed disagreement case. Ordinary mutation
 remains the majority path throughout Phase 4b.
+
+## Phase 4b-B result
+
+The isolated composition run stopped cleanly at generation 640. The controlled
+analysis through generation 626 contained 5,022 scheduled attempts and 210
+safe accepted children: 204 live team references and six direct-terminal
+fallbacks. Accepted children produced 1,603 target-group Top-1 gains, zero
+target-group Top-1 losses, and zero collateral exact losses. Population
+diversity remained healthy, but the repair rate fell from 7.97% in generations
+1--200 to roughly 2% late in the run.
+
+Trajectory diagnostics improved transiently in generations 401--500, then
+regressed. Across 62 official outcomes, five challengers reached Stage 3 and
+none promoted over the protected `-25.871` Phase-4a incumbent. The closest
+100-episode result was a paired delta of `-3.153 +/- 1.479`. Phase 4b-B
+therefore demonstrated safe specialist integration, but not reliable official
+return improvement.
+
+## Phase 4b-C: case-directed combined repair
+
+Phase 4b-C starts again from the protected Phase-4a checkpoint. It does not
+inherit a Phase-4b-A or Phase-4b-B descendant. It changes no operator gate:
+
+- one shared ten-percent quota selects a systematic issue by occurrence count;
+- Case A dispatches to the tested Phase-4b-A routing repair;
+- Case B1 dispatches to the tested Phase-4b-B specialist composition;
+- Case B2 remains deferred;
+- a failed repair slot falls back to unchanged native/Phase-3 reproduction.
+
+The quota is ten percent total, not ten percent per operator. Its schedule and
+issue choice use the checkpointed routing-repair stream. Composition retains
+its independent checkpointed donor/parent stream. Both detailed operator
+records and a combined dispatch record are journaled. Grouped epsilon-lexicase,
+official racing, fresh-seed 12/40/100 promotion, and historical deep-copy
+semantics remain authoritative.

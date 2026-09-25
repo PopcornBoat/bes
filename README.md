@@ -480,6 +480,17 @@ never appended to the 62 policy inputs. Checkpoints record the terminal action
 format so validation and resume cannot silently interpret a direct Semantic-36
 policy as the older 11-target representation.
 
+## Case-directed combined repair
+
+The `combined-error-directed-repair` branch runs Phase 4b-C from the protected
+Phase-4a checkpoint after the isolated routing and composition treatments were
+measured. One shared ten-percent offspring quota samples a systematic DAgger
+issue: Case A invokes targeted bidder routing repair, while Case B1 invokes
+specialist composition. This is not a twenty-percent combined quota, and the
+operators retain their existing target, collateral, locality, lexicase, and
+official-promotion gates. Case B2 remains deferred. See `PHASE4B.md` and
+`experiments/phase4b-c-combined-repair.sexp`.
+
 ## CAGE2 episode opening
 
 The start, resume, and validation menus expose `Episode Opening` with two

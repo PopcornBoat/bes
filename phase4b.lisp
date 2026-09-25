@@ -6,6 +6,12 @@
 ;;; native program operator, and the child must pass target-group, collateral,
 ;;; and behavioral-locality gates before entering normal survivor selection.
 
+(defun phase4b-combined-repair-configured-p ()
+  "Return true when the Phase-4b-C combined treatment is configured."
+  (and *phase4b-combined-repair-enabled*
+       *phase4b-routing-repair-enabled*
+       *phase4b-specialist-composition-enabled*))
+
 (defun phase4b-routing-repair-active-p ()
   "Return true when targeted routing variation is safe to run."
   (and *phase4b-routing-repair-enabled*
@@ -317,16 +323,18 @@
                              (discard-semantic-locality-candidate child))))))))
     (values nil nil +phase4b-routing-repair-max-attempts+ nil)))
 
-(defun phase4b-attempt-routing-repair (parents)
-  "Attempt one targeted child and return CHILD and PARENT as values."
-  (let ((issues (phase4b-systematic-routing-issues)))
+(defun phase4b-attempt-routing-repair (parents &optional selected-issue)
+  "Attempt one routing child, optionally for SELECTED-ISSUE, and return CHILD/PARENT."
+  (let ((issues (if selected-issue
+                    (list selected-issue)
+                    (phase4b-systematic-routing-issues))))
     (unless (and issues *teacher-training-dataset*)
       (phase4b-record-routing-attempt
        (list :protocol +phase4b-routing-repair-protocol+
              :generation *generation* :accepted nil
              :reason :no-systematic-issues))
       (return-from phase4b-attempt-routing-repair (values nil nil)))
-    (let* ((issue (phase4b-weighted-issue issues))
+    (let* ((issue (or selected-issue (phase4b-weighted-issue issues)))
            (teacher-pair (getf issue :teacher-pair))
            (eligible
              (remove-if-not
@@ -426,9 +434,10 @@
 ;;; Phase 4b-A before normal lexicase and official evaluation can see it.
 
 (defun phase4b-specialist-composition-active-p ()
-  "Return true when the isolated Phase-4b-B treatment is safe to run."
+  "Return true when Phase-4b-B composition is safe to run alone or in 4b-C."
   (and *phase4b-specialist-composition-enabled*
-       (not *phase4b-routing-repair-enabled*)
+       (or (not *phase4b-routing-repair-enabled*)
+           (phase4b-combined-repair-configured-p))
        *phase4b-disagreement-audit-enabled*
        *phase4-selection-enabled*
        *semantic-locality-control-enabled*
@@ -763,9 +772,11 @@
         *phase4b-specialist-composition-generation-records*)
   record)
 
-(defun phase4b-attempt-specialist-composition (parents)
-  "Attempt one Case-B1 specialist child and return CHILD and PARENT."
-  (let ((issues (phase4b-systematic-composition-issues)))
+(defun phase4b-attempt-specialist-composition (parents &optional selected-issue)
+  "Attempt one Case-B1 child, optionally for SELECTED-ISSUE, and return CHILD/PARENT."
+  (let ((issues (if selected-issue
+                    (list selected-issue)
+                    (phase4b-systematic-composition-issues))))
     (unless (and issues *teacher-training-dataset*)
       (phase4b-record-specialist-composition-attempt
        (list :protocol +phase4b-specialist-composition-protocol+
@@ -773,7 +784,8 @@
              :reason :no-systematic-case-b1))
       (return-from phase4b-attempt-specialist-composition
         (values nil nil)))
-    (let* ((issue (phase4b-weighted-composition-issue issues))
+    (let* ((issue (or selected-issue
+                      (phase4b-weighted-composition-issue issues)))
            (start
              (phase4b-specialist-composition-random-below (length parents)))
            (checked 0))
@@ -873,3 +885,92 @@
                  :records records))))
       (incf *phase4b-specialist-composition-age*)
       (setf *phase4b-specialist-composition-generation-records* nil))))
+
+;;; Phase 4b-C combines the two already measured operators without changing
+;;; either one.  One shared ten-percent scheduler chooses a systematic issue;
+;;; Case A receives bidder routing repair and Case B1 receives specialist
+;;; composition.  The routing stream supplies the schedule and issue draw,
+;;; while each operator retains its checkpointed internal draw stream.
+
+(defun phase4b-combined-repair-active-p ()
+  "Return true when the complete frozen Phase-4b-C contract is active."
+  (and (phase4b-combined-repair-configured-p)
+       (phase4b-routing-repair-active-p)
+       (phase4b-specialist-composition-active-p)))
+
+(defun phase4b-combined-repair-slot-p ()
+  "Choose one shared Phase-4b-C slot using the checkpointed routing stream."
+  (phase4b-routing-repair-slot-p))
+
+(defun phase4b-combined-repair-kind (issue)
+  "Map ISSUE to its frozen Phase-4b-C operator, or NIL when unsupported."
+  (case (getf issue :case)
+    (:case-a-routing :routing)
+    (:case-b1-reachable-support :composition)
+    (otherwise nil)))
+
+(defun phase4b-record-combined-repair-attempt (record)
+  "Retain one serializable Phase-4b-C dispatch decision."
+  (push (copy-tree record) *phase4b-combined-repair-generation-records*)
+  record)
+
+(defun phase4b-attempt-combined-repair (parents)
+  "Dispatch one systematic issue to the matching tested repair operator."
+  (let ((issues (phase4b-systematic-routing-issues)))
+    (unless (and issues *teacher-training-dataset*)
+      (phase4b-record-combined-repair-attempt
+       (list :protocol +phase4b-combined-repair-protocol+
+             :generation *generation* :accepted nil
+             :reason :no-systematic-issues))
+      (return-from phase4b-attempt-combined-repair (values nil nil)))
+    (let* ((issue (phase4b-weighted-issue issues))
+           (kind (phase4b-combined-repair-kind issue)))
+      (multiple-value-bind (child parent)
+          (case kind
+            (:routing (phase4b-attempt-routing-repair parents issue))
+            (:composition
+             (phase4b-attempt-specialist-composition parents issue))
+            (otherwise (values nil nil)))
+        (phase4b-record-combined-repair-attempt
+         (list :protocol +phase4b-combined-repair-protocol+
+               :generation *generation*
+               :case (getf issue :case)
+               :operator kind
+               :accepted (not (null child))
+               :issue (copy-tree issue)
+               :child-team-id (and child (team-id child))
+               :parent-team-id (and parent (team-id parent))))
+        (values child parent)))))
+
+(defun finish-phase4b-combined-repair-generation ()
+  "Journal Phase-4b-C dispatch counts without changing operator decisions."
+  (when (phase4b-combined-repair-active-p)
+    (let* ((records (nreverse *phase4b-combined-repair-generation-records*))
+           (attempted (length records))
+           (accepted
+             (count-if (lambda (record) (getf record :accepted)) records))
+           (routing
+             (count :routing records :key (lambda (record)
+                                            (getf record :operator))))
+           (composition
+             (count :composition records :key (lambda (record)
+                                                (getf record :operator)))))
+      (when attempted
+        (emit-message
+         (format nil
+                 "Generation ~D Phase-4b-C combined repair: slots=~D routing=~D composition=~D accepted=~D fallback=~D."
+                 *generation* attempted routing composition accepted
+                 (- attempted accepted)))
+        (when (behavioral-locality-active-p)
+          (append-behavioral-locality-form
+           (list :type :phase4b-combined-repair-generation
+                 :protocol +phase4b-combined-repair-protocol+
+                 :generation *generation*
+                 :age *phase4b-routing-repair-age*
+                 :attempted attempted
+                 :routing-attempted routing
+                 :composition-attempted composition
+                 :accepted accepted
+                 :fallback (- attempted accepted)
+                 :records records))))
+      (setf *phase4b-combined-repair-generation-records* nil))))

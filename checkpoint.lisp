@@ -45,6 +45,10 @@
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
       (cond
+        ((and *phase4b-combined-repair-enabled*
+              *phase4b-routing-repair-enabled*
+              *phase4b-specialist-composition-enabled*)
+         "official-guided-combined-repair")
         (*phase4b-specialist-composition-enabled*
          "official-guided-specialist-composition")
         (*phase4b-routing-repair-enabled*

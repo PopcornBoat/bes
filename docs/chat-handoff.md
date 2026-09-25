@@ -33,7 +33,7 @@ local, and absent-from-Top8 improved modestly, but no challenger passed Stage-3
 promotion. The population retained broad distributed support, motivating
 specialist composition rather than more single-bidder repair.
 
-## Active experiment: Phase 4b-B
+## Completed experiment: Phase 4b-B
 
 The run is an isolated specialist-composition treatment from the protected
 Phase-4a source above, not from a Phase-4b-A descendant.
@@ -77,6 +77,30 @@ Decision points:
 Mixed rollout return and imitation/ranking scores remain diagnostics. They do
 not replace official paired promotion evidence.
 
+The run stopped cleanly at generation 640. Analysis through generation 626
+found 210 accepted repairs from 5,022 attempts, with zero target-group Top-1
+losses and zero collateral exact losses. Diversity remained healthy, but none
+of 62 official outcomes promoted; five Stage-3 challengers were all worse than
+the protected `-25.871` incumbent.
+
+## Active experiment: Phase 4b-C
+
+Phase 4b-C combines the already measured operators from the same protected
+Phase-4a source. A single ten-percent quota dispatches Case A to routing repair
+and Case B1 to specialist composition. It does not use a Phase-4b descendant.
+
+```text
+tmux session: phase4bc
+TCP port:     8080
+output:       /home/hardison/checkpoints/semantic36/phase4b-c-combined-repair/
+request:      experiments/phase4b-c-combined-repair.sexp
+```
+
+Monitor with `./scripts/bes-runtime status`, `./scripts/bes-runtime capture
+phase4bc`, or `tmux attach -t phase4bc`. The first controlled decision remains
+generation 300--500. Strong evidence requires sustainable trajectory gains and
+at least one positive official paired challenger, ideally a Stage-3 promotion.
+
 ## Frozen research sequence
 
 1. Phase 1 made teacher/student trajectories and candidate comparison
@@ -89,5 +113,4 @@ not replace official paired promotion evidence.
    specialist composition.
 
 Do not mix recurrent TPG, new action spaces, digital-twin fitness, or new
-selection mechanisms into the Phase 4b-B comparison.
-
+selection mechanisms into the Phase 4b-C comparison.

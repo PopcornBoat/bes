@@ -50,6 +50,12 @@ Submit a version-controlled experiment request:
 ./scripts/bes-search submit experiments/phase4b-b-specialist-composition.sexp
 ```
 
+For the current Phase-4b-C combined treatment, submit:
+
+```bash
+./scripts/bes-search submit experiments/phase4b-c-combined-repair.sexp
+```
+
 Request a graceful stop:
 
 ```bash
@@ -64,6 +70,12 @@ Run focused regression checks:
 ```bash
 ./scripts/bes-test tests/phase4b-specialist-composition.lisp
 ./scripts/bes-test --core
+```
+
+The combined dispatcher has a focused check as well:
+
+```bash
+./scripts/bes-test tests/phase4b-combined-repair.lisp
 ```
 
 ## Runtime and source separation
@@ -92,4 +104,3 @@ git ls-remote --exit-code origin HEAD
 
 Do not store a GitHub PAT, WSL password, or private key in the repository or in
 experiment files.
-
