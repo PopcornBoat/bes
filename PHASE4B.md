@@ -191,3 +191,26 @@ teacher action was absent from Top-8 on 30.84% of policy steps. Five official
 outcomes produced no promotion; the best non-identical paired delta was still
 negative. The operator/integration criterion passed, so the experiment
 continues to the generation-100 trajectory checkpoint.
+
+## Phase 4b-C result
+
+The combined treatment stopped cleanly after generation 574. Across 4,654
+scheduled repair slots it accepted 115 local repairs (2.47%): 21 routing
+repairs and 94 specialist-composition repairs. Accepted repairs produced 951
+target-group Top-1 gains, zero measured target-group losses, and zero collateral
+exact losses. The final partial window improved imitation diagnostics to 41.52%
+proposal disagreement, mean first disagreement 3.90, and 23.54% teacher-action
+absence from Top-8, but this did not produce official improvement.
+
+All 57 official challenger outcomes were rejected. The only Stage-3 challenger
+was worse than the protected Phase-4a incumbent by `-4.300 +/- 1.627` over 100
+paired episodes, and no evaluated challenger had a positive paired return
+delta. Phase 4b-C therefore confirms that combining safe teacher-directed
+routing and composition is not sufficient: official return is currently a
+late promotion gate, not feedback that helps the evolving population retain
+small environment-level improvements.
+
+The next isolated treatment is Phase 5A: disable Phase-4b repair, retain
+Phase-3 locality and Phase-4a grouped epsilon-lexicase, and feed paired official
+child-versus-direct-parent evidence back into population survival through a
+return-approved anchor. The protected Phase-4a checkpoint remains the source.

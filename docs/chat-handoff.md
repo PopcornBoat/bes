@@ -83,7 +83,7 @@ losses and zero collateral exact losses. Diversity remained healthy, but none
 of 62 official outcomes promoted; five Stage-3 challengers were all worse than
 the protected `-25.871` incumbent.
 
-## Active experiment: Phase 4b-C
+## Completed experiment: Phase 4b-C
 
 Phase 4b-C combines the already measured operators from the same protected
 Phase-4a source. A single ten-percent quota dispatches Case A to routing repair
@@ -101,12 +101,19 @@ phase4bc`, or `tmux attach -t phase4bc`. The first controlled decision remains
 generation 300--500. Strong evidence requires sustainable trajectory gains and
 at least one positive official paired challenger, ideally a Stage-3 promotion.
 
-The generation-50 controlled window passed the integration criterion: 425
-combined slots yielded nine safe accepted repairs (two routing, seven
-live-reference composition), 91 target-group Top-1 gains, and no measured
-target or collateral exact loss. Diversity remained healthy. Trajectory and
-official-return improvement were not yet established, so the next decision is
-at generation 100.
+The run stopped cleanly after generation 574. It accepted 115 of 4,654 repair
+slots (2.47%) and recorded 951 target-group Top-1 gains with no measured
+target or collateral exact loss. Late imitation diagnostics improved, but all
+57 official challengers were rejected and none had a positive paired return
+delta. Safe teacher-directed proposal generation alone did not create
+environment-level improvement.
+
+The next isolated treatment is Phase 5A official return credit. It starts from
+the protected Phase-4a checkpoint, disables all Phase-4b targeted repair, and
+retains Phase-3 locality plus Phase-4a grouped epsilon-lexicase. Paired official
+child-versus-direct-parent evidence will be allowed to preserve a return-
+approved child in the live population; global incumbent replacement remains
+the existing fresh 12/40/100 promotion protocol.
 
 ## Frozen research sequence
 
@@ -116,8 +123,10 @@ at generation 100.
 3. Phase 3 controlled semantic locality using the measured evidence.
 4. Phase 4a introduced grouped epsilon-lexicase to preserve complementary
    specialists.
-5. Phase 4b tests error-directed variation, first routing repair and now
-   specialist composition.
+5. Phase 4b tested error-directed routing, composition, and their combination;
+   all were safe but failed to improve official return.
+6. Phase 5A tests official paired parent-to-child return credit without
+   Phase-4b proposal operators.
 
 Do not mix recurrent TPG, new action spaces, digital-twin fitness, or new
 selection mechanisms into the Phase 4b-C comparison.
