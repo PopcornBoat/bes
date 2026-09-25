@@ -30,6 +30,15 @@ This repository intentionally does **not** duplicate the original documentation.
 
 Readers interested in the BES/TPG algorithm itself are encouraged to consult the original repository, while this README focuses exclusively on the engineering extensions introduced in this fork.
 
+## WSL development workflow
+
+The canonical research checkout is `/home/hardison/bes` in WSL Ubuntu. Run
+`scripts/bes-doctor` before long operations, use `scripts/bes-runtime` for the
+SBCL server, `scripts/bes-search` for versioned experiment requests, and
+`scripts/bes-test` for focused regression checks. See
+[`docs/wsl-workflow.md`](docs/wsl-workflow.md) for commands and
+[`docs/chat-handoff.md`](docs/chat-handoff.md) for the current research state.
+
 ---
 
 # Design Philosophy

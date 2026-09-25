@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo=/home/hardison/bes
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+default_artifacts=/home/hardison/bes-artifacts/runtime
+
+usage() {
+  echo "Usage: $0 start [SESSION] [LOG_DIR] | status | attach [SESSION] | capture [SESSION]" >&2
+  exit 2
+}
+
+server_listening() {
+  ss -ltn 2>/dev/null | grep -qE 'LISTEN.+:8080([[:space:]]|$)'
+}
+
+case "${1:-}" in
+  start)
+    session=${2:-bes}
+    log_dir=${3:-"$default_artifacts/$session"}
+    if server_listening; then
+      echo "Port 8080 is already in use; refusing to start a second BES server." >&2
+      "$0" status
+      exit 1
+    fi
+    tmux has-session -t "$session" 2>/dev/null && {
+      echo "tmux session already exists: $session" >&2
+      exit 1
+    }
+    command -v sbcl >/dev/null || { echo "sbcl is not installed" >&2; exit 1; }
+    command -v tmux >/dev/null || { echo "tmux is not installed" >&2; exit 1; }
+    [[ -x "$bridge_bin/python" ]] || {
+      echo "Bridge virtualenv is missing: $bridge_bin/python" >&2
+      exit 1
+    }
+    mkdir -p "$log_dir"
+    log_file="$log_dir/server.log"
+    tmux new-session -d -s "$session" -c "$repo" \
+      env \
+      "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+      'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+      /usr/bin/sbcl \
+      --eval '(require :asdf)' \
+      --eval '(asdf:load-system :cl-tpg)' \
+      --eval '(cl-tpg:start-server)' \
+      --eval '(loop (sleep 3600))'
+    printf -v pipe_command 'tee -a %q >/dev/null' "$log_file"
+    tmux pipe-pane -o -t "$session" "$pipe_command"
+    for _ in {1..20}; do
+      if server_listening; then
+        echo "BES server started: session=$session port=8080 log=$log_file"
+        exit 0
+      fi
+      sleep 0.5
+    done
+    echo "BES server did not bind port 8080; recent output:" >&2
+    tmux capture-pane -p -t "$session" -S -80 >&2 || true
+    exit 1
+    ;;
+  status)
+    echo "Repository: $repo"
+    git -C "$repo" status --short --branch
+    echo
+    echo "tmux sessions:"
+    tmux ls 2>/dev/null || echo "  none"
+    echo
+    echo "Port 8080:"
+    ss -ltnp 2>/dev/null | grep -E 'LISTEN.+:8080([[:space:]]|$)' || echo "  not listening"
+    echo
+    echo "BES processes:"
+    ps -eo pid,etime,pcpu,pmem,cmd | grep -E '[s]bcl|[e]macs' || true
+    ;;
+  attach)
+    session=${2:-bes}
+    exec tmux attach -t "$session"
+    ;;
+  capture)
+    session=${2:-bes}
+    tmux capture-pane -p -t "$session" -S -200
+    ;;
+  *) usage ;;
+esac
+

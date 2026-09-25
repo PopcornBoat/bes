@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+repo=/home/hardison/bes
+bridge=/home/hardison/venv-base
+python="$bridge/cage2_bridge/.venv/bin/python"
+failed=0
+
+check() {
+  local label=$1
+  shift
+  if "$@" >/dev/null 2>&1; then
+    printf '[ok]   %s\n' "$label"
+  else
+    printf '[fail] %s\n' "$label"
+    failed=1
+  fi
+}
+
+printf 'WSL distro: %s\n' "${WSL_DISTRO_NAME:-not-running-inside-WSL}"
+check 'running inside WSL' test -n "${WSL_DISTRO_NAME:-}"
+check 'canonical BES checkout' test -d "$repo/.git"
+check 'canonical bridge checkout' test -d "$bridge/.git"
+check 'SBCL available' command -v sbcl
+check 'tmux available' command -v tmux
+check 'bridge Python available' test -x "$python"
+check 'BES SSH remote reachable' git -C "$repo" ls-remote --exit-code origin HEAD
+check 'bridge SSH remote reachable' git -C "$bridge" ls-remote --exit-code origin HEAD
+
+echo
+git -C "$repo" status --short --branch
+git -C "$bridge" status --short --branch
+echo
+"$repo/scripts/bes-runtime" status
+
+exit "$failed"
+

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo=/home/hardison/bes
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+
+cd "$repo"
+
+if [[ "${1:-}" == --core ]]; then
+  shift
+  tests=(
+    tests/mutation.lisp
+    tests/behavioral-locality.lisp
+    tests/official-guided.lisp
+    tests/phase4-selection.lisp
+    tests/phase4b-disagreement-audit.lisp
+    tests/phase4b-routing-repair.lisp
+    tests/phase4b-specialist-composition.lisp
+  )
+elif [[ $# -gt 0 ]]; then
+  tests=("$@")
+else
+  tests=(tests/phase4b-specialist-composition.lisp)
+fi
+
+args=(
+  --non-interactive
+  --eval '(require :asdf)'
+  --eval '(asdf:load-system :cl-tpg :force t)'
+)
+
+for test_file in "${tests[@]}"; do
+  [[ -f "$test_file" ]] || { echo "Missing test file: $test_file" >&2; exit 1; }
+  args+=(--load "$test_file")
+done
+
+env \
+  "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+  sbcl "${args[@]}"
+
