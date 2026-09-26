@@ -1326,6 +1326,8 @@ promotion still requires the stricter positive one-standard-error improvement."
          (credit (getf result :return-credit-evaluation))
          (candidate-lineage-id
            (getf *online-candidate-job* :credit-lineage-id))
+         (candidate-priority
+           (getf *online-candidate-job* :credit-priority))
          (anchor nil)
          (installed-lineage-id nil)
          (evicted-lineage-ids nil))
@@ -1369,6 +1371,7 @@ promotion still requires the stricter positive one-standard-error improvement."
                      (getf credit :margin 0.0d0)))))
       (persist-official-return-credit-outcome
        generation credit (and anchor (team-id anchor))
+       :candidate-priority candidate-priority
        :candidate-lineage-id candidate-lineage-id
        :installed-lineage-id installed-lineage-id
        :evicted-lineage-ids evicted-lineage-ids))

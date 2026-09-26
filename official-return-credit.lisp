@@ -312,7 +312,8 @@ not *BEST-TEAM* and cannot bypass fresh global Stage-3 promotion."
 
 (defun persist-official-return-credit-outcome
        (generation evaluation anchor-id
-        &key candidate-lineage-id installed-lineage-id evicted-lineage-ids)
+        &key candidate-priority candidate-lineage-id installed-lineage-id
+             evicted-lineage-ids)
   "Append one compact causal Phase-5B decision to the research journal."
   (when (behavioral-locality-active-p)
     (append-behavioral-locality-form
@@ -320,6 +321,7 @@ not *BEST-TEAM* and cannot bypass fresh global Stage-3 promotion."
            :protocol +official-return-credit-protocol+
            :generation generation
            :accepted (getf evaluation :accepted)
+           :candidate-priority candidate-priority
            :candidate-lineage-id candidate-lineage-id
            :installed-lineage-id installed-lineage-id
            :anchor-id anchor-id
