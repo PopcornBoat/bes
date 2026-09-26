@@ -94,6 +94,16 @@
                     "survivor lexicase samples without replacement")
       (check-phase4 (member "a" second :test #'equal)
                     "aggregate champion is force-retained")))
+  (cl-tpg::initialize-phase4-selection-state 153)
+  (let ((forced
+          (mapcar (lambda (entry) (cl-tpg::team-id (car entry)))
+                  (cl-tpg::phase4-lexicase-survivors
+                   scores (first teams) 3 (list (fourth teams))))))
+    (check-phase4
+     (and (= (length forced) 3)
+          (member "a" forced :test #'equal)
+          (member "d" forced :test #'equal))
+     "a bounded return-credit anchor consumes one ordinary survivor slot"))
   (let ((baseline
           (let ((*random-state* (make-random-state evolution-state)))
             (random 1000000)))

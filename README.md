@@ -501,6 +501,16 @@ historical checkpoint; only the existing fresh 12/40/100 global promotion can
 do that. Run `experiments/phase5a-official-return-credit.sexp` and see
 `PHASE5.md`.
 
+The `official-return-credit-lineage` branch is the isolated Phase 5B
+treatment, again starting from the protected Phase-4a checkpoint. It gives
+behavior-changing children priority over probe-neutral fallbacks and lets a
+paired-return-approved child establish a bounded lineage: at most three
+anchors, each protected for 12 evaluated grouped-lexicase selections.
+Descendants inherit lineage identity but not automatic survival; only another
+positive paired direct-parent comparison can advance the protected anchor.
+Historical replacement remains the unchanged fresh 12/40/100 promotion. Run
+`experiments/phase5b-official-return-credit-lineage.sexp` and see `PHASE5.md`.
+
 ## CAGE2 episode opening
 
 The start, resume, and validation menus expose `Episode Opening` with two

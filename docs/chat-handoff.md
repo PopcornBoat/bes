@@ -1,12 +1,12 @@
 # BES Research Handoff
 
-Updated: 2026-09-25
+Updated: 2026-09-26
 
 ## Canonical state
 
 - Repository: `/home/hardison/bes`
-- Branch: `official-return-credit`
-- Active experiment: Phase 5A paired official return credit
+- Branch: `official-return-credit-lineage`
+- Active experiment: Phase 5B bounded official-credit lineages
 - Python bridge: `/home/hardison/venv-base`
 - Bridge branch: `official-guided-dagger`
 - Policy contract: 62 observations, direct Semantic-36 target/response
@@ -125,13 +125,15 @@ the existing fresh 12/40/100 promotion protocol.
    specialists.
 5. Phase 4b tested error-directed routing, composition, and their combination;
    all were safe but failed to improve official return.
-6. Phase 5A tests official paired parent-to-child return credit without
+6. Phase 5A measured official paired parent-to-child return credit without
    Phase-4b proposal operators.
+7. Phase 5B prioritizes behavior-changing children and lets approved lineages
+   accumulate improvements under a bounded survivor budget.
 
 Do not mix recurrent TPG, new action spaces, digital-twin fitness, Phase-4b
 targeted proposal operators, or another selection mechanism into Phase 5A.
 
-## Active experiment: Phase 5A
+## Completed experiment: Phase 5A
 
 Phase 5A starts from the protected Phase-4a checkpoint. It disables Phase-4b
 targeted repair and adds a separate 5-then-20 paired official child/direct-
@@ -146,7 +148,30 @@ output:       /home/hardison/checkpoints/semantic36/phase5a-official-return-cred
 request:      experiments/phase5a-official-return-credit.sexp
 ```
 
-Monitor the first completed credit decisions, stable root accounting, absence
-of Phase-4b repair records, and positive child-parent deltas. The first safety
-review is generation 50, the first mechanism review is generation 100, and the
-first performance decision is generation 300--500.
+The run stopped cleanly at generation 302. Three of 29 credit comparisons were
+approved, 18 had exactly zero official paired delta, and 16 were behaviorally
+neutral on the probe archive. All 29 global challengers were rejected and the
+protected `-25.871` incumbent remained unchanged. Diversity recovered late;
+inactive candidate admission and one-boundary retention were the isolated
+failure mechanisms.
+
+## Active experiment: Phase 5B
+
+Phase 5B starts from the same protected Phase-4a checkpoint, not from a
+Phase-5A descendant. It preserves every Phase-5A control while preferring
+behavior-changing direct children and giving an approved lineage one protected
+anchor for 12 evaluated selection cycles. At most three lineages may be active;
+descendants inherit identity but must earn protection through their own fresh
+paired direct-parent result.
+
+```text
+tmux session: phase5b
+TCP port:     8080
+output:       /home/hardison/checkpoints/semantic36/phase5b-official-return-credit-lineage/
+request:      experiments/phase5b-official-return-credit-lineage.sexp
+```
+
+Inspect generation 50 for candidate priorities, protected-root accounting,
+expiry, and population size. At generation 150 require a lower neutral
+submission rate than Phase 5A. The first performance decision is generation
+300, based on lineage depth plus global paired evidence, never mixed return.

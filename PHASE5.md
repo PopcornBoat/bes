@@ -1,4 +1,4 @@
-# Phase 5A: Paired Official Return Credit
+# Phase 5: Paired Official Return Credit
 
 Phase 5A asks whether TPG can accumulate small environment-level improvements
 when official return is used before the global historical-promotion boundary.
@@ -78,3 +78,71 @@ challengers, and ideally a fresh Stage-3 promotion. If local approvals occur but
 all global deltas remain negative, the credit rule is accumulating local drift
 rather than useful progress and must be revised before adding Phase-4b proposals.
 
+## Completed Phase 5A result
+
+Phase 5A stopped cleanly at generation 302. Of 29 direct parent/child credit
+comparisons, three were approved and 26 rejected. Eighteen comparisons (62.1%)
+had exactly zero official paired delta, and 16 (55.2%) had no Top-1 or ranking
+change on the probe archive. All 29 global challengers were rejected; the
+protected `-25.871` incumbent was never overwritten. Population diversity
+recovered late in the run, so collapse was not the primary failure. The result
+isolates two problems: imitation-only submission spends most official budget on
+behaviorally inactive children, and a one-boundary anchor cannot accumulate a
+sequence of local official improvements.
+
+## Phase 5B: behavior admission and bounded lineage credit
+
+Phase 5B is an isolated treatment from the same protected Phase-4a checkpoint.
+It retains every Phase-5A control and changes only candidate admission and the
+retention of an approved child.
+
+Each generation classifies direct mutation children in this order:
+
+1. behavior-changing child descended from an active credit lineage;
+2. another behavior-changing direct child;
+3. probe-neutral child descended from an active credit lineage;
+4. another probe-neutral direct child.
+
+The strongest ranked-imitation child within the highest available class enters
+the ten-generation staging window. Classes 3 and 4 preserve a fallback for
+changes outside the finite probe archive; they cannot displace an observed
+behavior-changing child merely through higher imitation fitness.
+
+The paired 5-then-20 credit test is unchanged. An approved child establishes or
+advances a lineage with these frozen limits:
+
+- at most three active lineages;
+- one protected anchor per lineage;
+- 12 evaluated survivor-selection cycles per approval;
+- descendants inherit the lineage ID but receive no automatic protection;
+- a later approved descendant replaces the protected anchor and refreshes the
+  12-cycle budget;
+- expired or evicted anchors remain ordinary roots and compete normally.
+
+Forced survival consumes an ordinary grouped-lexicase survivor slot. It does
+not enlarge the survivor population, change group scores, alter mutation, or
+grant historical-best status. Candidate, direct parent, incumbent, credit seed
+stream, and fresh global promotion remain independently serialized exactly as
+before.
+
+The runtime journal persists lineage IDs, anchor checkpoint paths, remaining
+selection budgets, approval depth, and all seed cursors. Resume reloads active
+anchors through the same deep serializer rather than reconstructing or sharing
+their graphs.
+
+### Phase 5B decision points
+
+At generation 50 verify candidate priorities, forced survivor accounting,
+lineage expiry, and stable population size. At generation 150 require fewer
+neutral credit submissions than Phase 5A and at least one completed changed
+comparison. At generation 300 compare:
+
+- neutral submission and zero-delta rates;
+- approvals among behavior-changing children;
+- approved descendant depth within a lineage;
+- positive global paired challengers and Stage-3 promotion;
+- diversity against the Phase-5A trajectory.
+
+If admission improves credit efficiency but approved lineages still produce no
+descendant approvals or positive global challenger, bounded survival alone is
+insufficient; do not silently extend its lifetime or weaken global promotion.

@@ -799,7 +799,9 @@ promotion still requires the stricter positive one-standard-error improvement."
         *online-staged-best-fitness* nil
         *online-staged-best-generation* nil
         *online-staged-best-lineage* nil
-        *online-staged-best-parent-team* nil))
+        *online-staged-best-parent-team* nil
+        *online-staged-best-credit-priority* nil
+        *online-staged-best-credit-lineage-id* nil))
 
 (defun online-candidate-directory ()
   "Return the private staged-evaluation directory for this checkpoint run."
@@ -839,9 +841,15 @@ promotion still requires the stricter positive one-standard-error improvement."
 
 (defun note-online-generation-candidate (team fitness)
   "Retain the strongest training winner seen in the current submission window."
-  (when (or (null *online-staged-best-fitness*)
-            (> fitness *online-staged-best-fitness*))
-    (let ((parent (behavioral-parent-for-team team)))
+  (let ((priority
+          (if (official-return-credit-active-p)
+              (official-return-credit-candidate-priority team)
+              0)))
+    (when (or (null *online-staged-best-fitness*)
+              (> priority (or *online-staged-best-credit-priority* 0))
+              (and (= priority (or *online-staged-best-credit-priority* 0))
+                   (> fitness *online-staged-best-fitness*)))
+      (let ((parent (behavioral-parent-for-team team)))
       (setf *online-staged-best-team*
               (deep-copy-team-via-serialization team)
             *online-staged-best-fitness* fitness
@@ -850,7 +858,11 @@ promotion still requires the stricter positive one-standard-error improvement."
               (behavioral-lineage-for-team team)
             *online-staged-best-parent-team*
               (and parent
-                   (deep-copy-team-via-serialization parent))))))
+                   (deep-copy-team-via-serialization parent))
+            *online-staged-best-credit-priority* priority
+            *online-staged-best-credit-lineage-id*
+              (and (official-return-credit-active-p)
+                   (official-return-credit-lineage-for-team team)))))))
 
 (defun launch-online-candidate-evaluation ()
   "Publish the accumulated candidate and start its independent SBCL worker."
@@ -919,7 +931,9 @@ promotion still requires the stricter positive one-standard-error improvement."
           *online-staged-best-fitness* nil
           *online-staged-best-generation* nil
           *online-staged-best-lineage* nil
-          *online-staged-best-parent-team* nil)
+          *online-staged-best-parent-team* nil
+          *online-staged-best-credit-priority* nil
+          *online-staged-best-credit-lineage-id* nil)
     (emit-message
      (format nil
              "Generation ~D submitted to independent online evaluator: training-fitness=~A screen=~D reference=~D."
@@ -1174,6 +1188,8 @@ promotion still requires the stricter positive one-standard-error improvement."
   "Freeze candidate/incumbent graphs and launch official paired evaluation."
   (let* ((generation *online-staged-best-generation*)
          (imitation-score *online-staged-best-fitness*)
+         (credit-priority *online-staged-best-credit-priority*)
+         (credit-lineage-id *online-staged-best-credit-lineage-id*)
          ;; Warm-start resume resets the displayed generation counter.  Include
          ;; the incumbent version and wall-clock second so a resumed search can
          ;; never consume a stale result left by an earlier generation number.
@@ -1239,6 +1255,8 @@ promotion still requires the stricter positive one-standard-error improvement."
            :teacher-backend *teacher-backend*
            :behavioral-locality
              (copy-tree *online-staged-best-lineage*)
+           :return-credit-priority credit-priority
+           :return-credit-lineage-id credit-lineage-id
            :return-credit-seeds credit-seeds
            :return-credit-stages
              (and credit-seeds
@@ -1270,19 +1288,28 @@ promotion still requires the stricter positive one-standard-error improvement."
                   :request-path request-path
                   :result-path result-path
                   :log-path log-path
-                  :incumbent-version *official-guided-incumbent-version*)
+                  :incumbent-version *official-guided-incumbent-version*
+                  :credit-priority credit-priority
+                  :credit-lineage-id credit-lineage-id)
           *online-candidate-next-submit-generation*
             (+ *generation* +online-candidate-evaluation-interval+)
           *online-staged-best-team* nil
           *online-staged-best-fitness* nil
           *online-staged-best-generation* nil
           *online-staged-best-lineage* nil
-          *online-staged-best-parent-team* nil)
+          *online-staged-best-parent-team* nil
+          *online-staged-best-credit-priority* nil
+          *online-staged-best-credit-lineage-id* nil)
+    (when (and (official-return-credit-active-p)
+               (<= 1 (or credit-priority 0) 2))
+      (incf *official-return-credit-neutral-submissions*))
     (emit-message
      (format nil
-             "Generation ~D submitted to official-guided evaluator: imitation=~,4F return-credit=~S racing=~D promotion-stages=~S reference-monitor=~D."
+             "Generation ~D submitted to official-guided evaluator: imitation=~,4F return-credit=~S priority=~A lineage=~A racing=~D promotion-stages=~S reference-monitor=~D."
              generation imitation-score
              (and credit-seeds +official-return-credit-stages+)
+             (or credit-priority :none)
+             (or credit-lineage-id :new)
              (length racing-seeds)
              +official-guided-promotion-stages+ (length reference-seeds)))))
 
@@ -1297,7 +1324,11 @@ promotion still requires the stricter positive one-standard-error improvement."
          (candidate-path (getf *online-candidate-job* :candidate-path))
          (record (getf result :evaluation-record))
          (credit (getf result :return-credit-evaluation))
-         (anchor nil))
+         (candidate-lineage-id
+           (getf *online-candidate-job* :credit-lineage-id))
+         (anchor nil)
+         (installed-lineage-id nil)
+         (evicted-lineage-ids nil))
     (setf *official-guided-last-evaluation* (copy-tree record))
     (persist-behavioral-official-outcome
      generation (getf record :behavioral-locality) record)
@@ -1308,17 +1339,24 @@ promotion still requires the stricter positive one-standard-error improvement."
       (if (and (eq (getf result :status) :complete)
                (getf credit :accepted))
           (progn
-            (setf anchor
-                  (install-official-return-credit-anchor candidate-path))
+            (multiple-value-setq
+                (anchor installed-lineage-id evicted-lineage-ids)
+              (install-official-return-credit-anchor
+               candidate-path
+               :generation generation
+               :evaluation credit
+               :lineage-id candidate-lineage-id))
             (emit-message
              (format nil
-                     "Official return-credit approved: generation=~D stage=~A episodes=~D child-parent-delta=~,4F margin=~,4F anchor=~A."
+                     "Official return-credit approved: generation=~D stage=~A episodes=~D child-parent-delta=~,4F margin=~,4F anchor=~A lineage=~A protection=~D."
                      generation
                      (getf credit :stage)
                      (getf credit :episode-count 0)
                      (getf credit :paired-mean 0.0d0)
                      (getf credit :margin 0.0d0)
-                     (team-id anchor))))
+                     (team-id anchor)
+                     installed-lineage-id
+                     +official-return-credit-protection-generations+)))
           (progn
             (incf *official-return-credit-rejected-count*)
             (emit-message
@@ -1330,7 +1368,10 @@ promotion still requires the stricter positive one-standard-error improvement."
                      (getf credit :paired-mean 0.0d0)
                      (getf credit :margin 0.0d0)))))
       (persist-official-return-credit-outcome
-       generation credit (and anchor (team-id anchor))))
+       generation credit (and anchor (team-id anchor))
+       :candidate-lineage-id candidate-lineage-id
+       :installed-lineage-id installed-lineage-id
+       :evicted-lineage-ids evicted-lineage-ids))
     (cond
       ((eq (getf result :status) :error)
        (emit-message
@@ -2169,16 +2210,36 @@ reference batch."
               (phase4-raw-mad values))))
   *phase4-group-epsilons*)
 
-(defun phase4-lexicase-survivors (scores aggregate-champion survivor-count)
-  "Choose SURVIVOR-COUNT evaluated roots without replacement by grouped epsilon-lexicase."
+(defun phase4-lexicase-survivors
+       (scores aggregate-champion survivor-count &optional forced-teams)
+  "Choose SURVIVOR-COUNT evaluated roots by grouped epsilon-lexicase.
+
+FORCED-TEAMS consume survivor slots but do not alter case ordering or scores.
+Phase 5B uses this bounded exception only for fresh official-credit anchors."
   (unless (<= 1 survivor-count (length scores))
     (error "Invalid Phase-4a survivor count ~D for ~D roots."
            survivor-count (length scores)))
-  (let ((available (remove aggregate-champion scores :key #'car :test #'eq))
+  (let* ((champion-entry (assoc aggregate-champion scores :test #'eq))
+         (forced-entries
+           (remove-duplicates
+            (loop for team in forced-teams
+                  for entry = (assoc team scores :test #'eq)
+                  when (and entry (not (eq team aggregate-champion)))
+                    collect entry)
+            :key #'car :test #'eq))
+         (available
+           (remove-if
+            (lambda (entry)
+              (or (eq (car entry) aggregate-champion)
+                  (member (car entry) forced-entries :key #'car :test #'eq)))
+            scores))
         (selected-others nil)
         (case-keys (mapcar (lambda (group) (getf group :key))
                            *phase4-case-groups*)))
-    (loop repeat (1- survivor-count)
+    (when (> (1+ (length forced-entries)) survivor-count)
+      (error "Too many forced Phase-5B anchors (~D) for ~D survivor slots."
+             (length forced-entries) survivor-count))
+    (loop repeat (- survivor-count 1 (length forced-entries))
           do (let ((candidates (copy-list available)))
                (loop for key across (phase4-shuffled-copy case-keys)
                      while (> (length candidates) 1)
@@ -2206,8 +2267,9 @@ reference batch."
                  (push winner selected-others)
                  (setf available
                        (remove (car winner) available :key #'car :test #'eq)))))
-    (cons (assoc aggregate-champion scores :test #'eq)
-          (nreverse selected-others))))
+    (append (list champion-entry)
+            forced-entries
+            (nreverse selected-others))))
 
 (defun phase4-group-behavior-differs-p (team champion group)
   "Return true when TEAM and CHAMPION differ on at least one row in GROUP."
@@ -2465,9 +2527,13 @@ reference batch."
   (phase4-compute-group-statistics scores)
   (let* ((survivor-count (- (length sorted) n-remove))
          (old-survivors (subseq sorted 0 survivor-count))
+         (return-credit-protected
+           (and (official-return-credit-active-p)
+                (official-return-credit-protected-teams)))
          (selected
            (phase4-lexicase-survivors
-            scores generation-best-team survivor-count))
+            scores generation-best-team survivor-count
+            return-credit-protected))
          (selected-teams (mapcar #'car selected))
          (unselected
            (remove-if (lambda (entry)
@@ -2521,10 +2587,16 @@ reference batch."
                  :lexicase-selected-evaluated-roots (length selected)
                  :aggregate-champion-id (team-id generation-best-team)
                  :selected-evaluated-root-ids (mapcar #'team-id selected-teams)
+                 :return-credit-protected-root-ids
+                   (mapcar #'team-id return-credit-protected)
                  :old-scalar-survivor-ids
                    (mapcar (lambda (entry) (team-id (car entry)))
                            old-survivors))
            specialist-summary))
+    (when (official-return-credit-active-p)
+      (setf (getf *phase4-selection-generation-record*
+                  :return-credit-expired-lineage-ids)
+              (official-return-credit-note-selection selected-teams)))
     (incf *phase4-selection-age*)
     unselected))
 
@@ -2577,12 +2649,10 @@ through serialization/deserialization and save it to disk."
 
          (official-guided-submission-entry
            (if (official-return-credit-active-p)
-               ;; Phase 5A must compare a real mutation with its direct parent.
-               ;; Choose the strongest current imitation child, while DAgger
-               ;; and telemetry continue to use the aggregate champion above.
-               (find-if (lambda (entry)
-                          (behavioral-parent-for-team (car entry)))
-                        sorted)
+               ;; Phase 5B first admits behavior-changing children from an
+               ;; active credit lineage, then other changed children. Neutral
+               ;; direct mutations remain a final exploration fallback.
+               (official-return-credit-candidate-entry sorted)
                best-entry))
 
          (historical-candidate-fitness nil)
@@ -2751,7 +2821,9 @@ through serialization/deserialization and save it to disk."
                (getf *phase4-selection-generation-record*
                      :final-root-count-before-reproduction))))
     (when (behavioral-locality-active-p)
-      (prune-behavioral-team-lineage))))
+      (prune-behavioral-team-lineage))
+    (when (official-return-credit-active-p)
+      (official-return-credit-prune-team-lineages))))
 
 (defun should-send-migrants-p ()
   "Returns T periodically when the generation matches the migration interval."
@@ -2826,6 +2898,8 @@ through serialization/deserialization and save it to disk."
                       (child
                         (or repair-child
                             (reproduce-native-child parent))))
+                 (when (official-return-credit-active-p)
+                   (official-return-credit-note-descendant parent child))
                  (when (phase4-selection-active-p)
                    (phase4-note-specialist-descendant parent child))))))
   (when (phase4-selection-active-p)

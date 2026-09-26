@@ -467,3 +467,29 @@ Continue to interpret `NEW GLOBAL BEST` only as a fresh Stage-3 promotion.
 Inspect at generation 50 for integration safety, generation 100 for approval
 frequency and anchor behavior, and generation 300--500 for positive global
 paired deltas or promotion. See `PHASE5.md` for invariants and stop rules.
+
+## Phase 5B bounded official-credit lineages
+
+Use branch `official-return-credit-lineage` and submit:
+
+```bash
+./scripts/bes-search submit experiments/phase5b-official-return-credit-lineage.sexp
+```
+
+The run starts from the same protected Phase-4a source as Phase 5A and writes
+to:
+
+```text
+/home/hardison/checkpoints/semantic36/phase5b-official-return-credit-lineage/
+```
+
+Candidate priority is logged with every evaluator submission. Priority 4 is a
+behavior-changing active-lineage descendant, 3 another behavior-changing
+child, 2 an active-lineage neutral fallback, and 1 another neutral fallback.
+An approval log includes the lineage ID and its 12-cycle protection budget.
+Phase-4a generation records list protected root IDs and expired lineage IDs.
+
+At generation 50 check root accounting and priority; at generation 150 compare
+neutral submissions with Phase 5A; at generation 300 inspect descendant
+approval depth and global paired evidence. Do not interpret lineage approval as
+historical promotion.

@@ -1,4 +1,4 @@
-;;; Focused non-simulator checks for Phase-5A paired official return credit.
+;;; Focused non-simulator checks for Phase-5B paired official lineage credit.
 
 (in-package :cl-user)
 
@@ -18,11 +18,11 @@
       (cl-tpg::*phase4b-combined-repair-enabled* nil))
   (check-official-return-credit
    (cl-tpg::official-return-credit-active-p)
-   "the isolated Phase-5A feature gate is active")
+   "the isolated Phase-5B feature gate is active")
   (let ((cl-tpg::*phase4b-routing-repair-enabled* t))
     (check-official-return-credit
      (not (cl-tpg::official-return-credit-active-p))
-     "Phase-4b proposal operators cannot be mixed into Phase 5A")))
+     "Phase-4b proposal operators cannot be mixed into Phase 5B")))
 
 (let ((cl-tpg::*current-search-seed* 153))
   (cl-tpg::initialize-official-guided-seed-streams 153)
@@ -100,23 +100,105 @@
 
 (let* ((token (get-universal-time))
        (path (merge-pathnames
-              (format nil "phase5a-anchor-~D.lisp" token)
+              (format nil "phase5b-anchor-~D.lisp" token)
               #p"/tmp/"))
        (team (cl-tpg::%make-team :id "detached-anchor" :learners nil))
        (cl-tpg::*teams* nil)
        (cl-tpg::*num-observations* 62)
-       (cl-tpg::*official-return-credit-approved-count* 0))
+       (cl-tpg::*official-return-credit-enabled* t)
+       (cl-tpg::*official-return-credit-approved-count* 0)
+       (cl-tpg::*official-return-credit-active-lineages* nil)
+       (cl-tpg::*official-return-credit-team-lineages*
+         (make-hash-table :test #'eq))
+       (cl-tpg::*official-return-credit-next-lineage-id* 0))
   (unwind-protect
        (progn
          (cl-tpg::write-best-team-checkpoint team 0.0d0 path)
-         (let ((anchor (cl-tpg::install-official-return-credit-anchor path)))
+         (multiple-value-bind (anchor lineage-id evicted)
+             (cl-tpg::install-official-return-credit-anchor
+              path :generation 17
+              :evaluation '(:paired-mean 2.0d0 :margin 1.0d0))
            (check-official-return-credit
             (and (eq (cl-tpg::team-type anchor) :root)
                  (member anchor cl-tpg::*teams* :test #'eq)
-                 (= cl-tpg::*official-return-credit-approved-count* 1))
-            "approved anchors are independent live roots, not incumbents")))
+                 (= cl-tpg::*official-return-credit-approved-count* 1)
+                 (null evicted)
+                 (equal lineage-id
+                        (cl-tpg::official-return-credit-lineage-for-team
+                         anchor))
+                 (= (getf (first
+                            cl-tpg::*official-return-credit-active-lineages*)
+                          :remaining-selection-cycles)
+                    cl-tpg::+official-return-credit-protection-generations+))
+            "approved anchors establish bounded independent live lineages")
+           (let ((child (cl-tpg::%make-team :id "lineage-child"
+                                            :learners nil)))
+             (cl-tpg::official-return-credit-note-descendant anchor child)
+             (check-official-return-credit
+              (equal lineage-id
+                     (cl-tpg::official-return-credit-lineage-for-team child))
+              "children inherit their parent's active credit lineage"))
+           (loop repeat cl-tpg::+official-return-credit-protection-generations+
+                 do
+             (cl-tpg::official-return-credit-note-selection (list anchor)))
+           (check-official-return-credit
+            (null cl-tpg::*official-return-credit-active-lineages*)
+            "lineage protection expires after its frozen selection budget")
+           (cl-tpg::install-official-return-credit-anchor
+            path :generation 18
+            :evaluation '(:paired-mean 3.0d0 :margin 1.0d0))
+           (let ((state (cl-tpg::official-return-credit-state-copy)))
+             (setf cl-tpg::*teams* nil
+                   cl-tpg::*official-return-credit-active-lineages* nil
+                   cl-tpg::*official-return-credit-team-lineages*
+                     (make-hash-table :test #'eq))
+             (cl-tpg::restore-official-return-credit-state state)
+             (let* ((restored
+                      (first
+                       cl-tpg::*official-return-credit-active-lineages*))
+                    (restored-team (getf restored :team)))
+               (check-official-return-credit
+                (and (= (getf state :version) 2)
+                     restored-team
+                     (member restored-team cl-tpg::*teams* :test #'eq)
+                     (equal (getf restored :lineage-id)
+                            (cl-tpg::official-return-credit-lineage-for-team
+                             restored-team)))
+                "runtime state restores an independently serialized active anchor")))))
     (when (probe-file path)
       (delete-file path))))
+
+(let* ((parent (cl-tpg::%make-team :id "priority-parent" :learners nil))
+       (neutral (cl-tpg::%make-team :id "priority-neutral" :learners nil))
+       (changed (cl-tpg::%make-team :id "priority-changed" :learners nil))
+       (lineage-child
+         (cl-tpg::%make-team :id "priority-lineage" :learners nil))
+       (cl-tpg::*behavioral-team-parents* (make-hash-table :test #'eq))
+       (cl-tpg::*behavioral-team-lineage* (make-hash-table :test #'eq))
+       (cl-tpg::*official-return-credit-team-lineages*
+         (make-hash-table :test #'eq))
+       (cl-tpg::*official-return-credit-active-lineages*
+         (list (list :lineage-id "L1" :remaining-selection-cycles 3))))
+  (dolist (child (list neutral changed lineage-child))
+    (setf (gethash child cl-tpg::*behavioral-team-parents*) parent))
+  (setf (gethash neutral cl-tpg::*behavioral-team-lineage*)
+          '(:top1-hamming 0.0d0 :ranking-distance-mean 0.0d0)
+        (gethash changed cl-tpg::*behavioral-team-lineage*)
+          '(:top1-hamming 0.1d0 :ranking-distance-mean 0.02d0)
+        (gethash lineage-child cl-tpg::*behavioral-team-lineage*)
+          '(:top1-hamming 0.1d0 :ranking-distance-mean 0.02d0)
+        (gethash lineage-child
+                 cl-tpg::*official-return-credit-team-lineages*) "L1")
+  (check-official-return-credit
+   (and (= (cl-tpg::official-return-credit-candidate-priority neutral) 1)
+        (= (cl-tpg::official-return-credit-candidate-priority changed) 3)
+        (= (cl-tpg::official-return-credit-candidate-priority lineage-child) 4)
+        (eq (car (cl-tpg::official-return-credit-candidate-entry
+                  (list (cons neutral 9.0d0)
+                        (cons changed 5.0d0)
+                        (cons lineage-child 1.0d0))))
+            lineage-child))
+   "candidate admission prefers changed active-lineage descendants over imitation score"))
 
 (let ((cl-tpg::*current-search-mode* :official-guided)
       (cl-tpg::*official-return-credit-enabled* t)
@@ -129,9 +211,9 @@
       (cl-tpg::*recurrent-policy-enabled* nil)
       (cl-tpg::*current-gym-environment-name* "Cage2-b_line-100-v0"))
   (check-official-return-credit
-   (search "official-guided-return-credit"
+   (search "official-guided-return-credit-lineage"
            (cl-tpg::best-team-checkpoint-filename))
-   "Phase-5A checkpoints have an isolated filename"))
+   "Phase-5B checkpoints have an isolated filename"))
 
 (format t "~D official return-credit checks passed.~%"
         *official-return-credit-checks*)

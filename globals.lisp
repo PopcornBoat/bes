@@ -194,8 +194,8 @@ independent official paired challenger evaluation.")
   "Standard-error boundary used by racing futility and final promotion.")
 
 (defconstant +official-return-credit-protocol+
-  :paired-parent-child-return-credit-phase5a-v1
-  "Version tag for Phase-5A official child-versus-direct-parent credit.")
+  :paired-parent-child-return-credit-phase5b-v2
+  "Version tag for Phase-5B official child-versus-direct-parent lineage credit.")
 
 (defparameter +official-return-credit-stages+ '(5 20)
   "Cumulative paired official episodes used to reject and then approve one
@@ -203,6 +203,12 @@ direct child.  The first stage can only reject; the final stage can approve.")
 
 (defconstant +official-return-credit-standard-errors+ 1.0d0
   "Paired standard-error margin required for a return-credit anchor.")
+
+(defconstant +official-return-credit-protection-generations+ 12
+  "Selection cycles for which an approved lineage anchor is forced to survive.")
+
+(defconstant +official-return-credit-max-active-lineages+ 3
+  "Maximum number of independently protected return-credit lineages.")
 
 (defconstant +behavioral-locality-protocol+
   :behavioral-locality-phase2-v1
@@ -613,15 +619,32 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 reference, and Phase-5A return-credit stream roots and cursors.")
 
 (defvar *official-return-credit-enabled* nil
-  "When true, positive paired child/direct-parent evidence may reinsert the
-child as a one-generation population anchor.  It never promotes the global
-incumbent directly.")
+  "When true, positive paired child/direct-parent evidence may establish a
+bounded protected lineage.  It never promotes the global incumbent directly.")
 
 (defvar *official-return-credit-approved-count* 0
   "Number of return-approved anchors installed during the current run.")
 
 (defvar *official-return-credit-rejected-count* 0
   "Number of completed direct-parent credit comparisons not approved.")
+
+(defvar *official-return-credit-active-lineages* nil
+  "Serializable plists for currently protected Phase-5B lineage anchors.")
+
+(defvar *official-return-credit-team-lineages* nil
+  "EQ table mapping live roots to inherited Phase-5B lineage identifiers.")
+
+(defvar *official-return-credit-next-lineage-id* 0
+  "Monotone identifier cursor for new Phase-5B return-credit lineages.")
+
+(defvar *official-return-credit-neutral-submissions* 0
+  "Number of neutral fallback children submitted when no changed child existed.")
+
+(defvar *online-staged-best-credit-priority* nil
+  "Phase-5B admission priority of the frozen staged official challenger.")
+
+(defvar *online-staged-best-credit-lineage-id* nil
+  "Inherited Phase-5B lineage identifier of the staged challenger, if any.")
 
 (defvar *phase4-selection-enabled* nil
   "When true, replace aggregate truncation with grouped survivor lexicase.")

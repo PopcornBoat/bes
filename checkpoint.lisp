@@ -46,7 +46,7 @@
     ((eq *current-search-mode* :official-guided)
       (cond
         (*official-return-credit-enabled*
-         "official-guided-return-credit")
+         "official-guided-return-credit-lineage")
         ((and *phase4b-combined-repair-enabled*
               *phase4b-routing-repair-enabled*
               *phase4b-specialist-composition-enabled*)

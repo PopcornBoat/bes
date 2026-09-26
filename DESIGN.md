@@ -46,3 +46,9 @@ tests only whether a child with statistically positive paired official return
 against its direct parent should receive one additional opportunity in the
 live population. The historical incumbent still changes only through the
 frozen fresh-seed Stage-3 promotion rule. See `PHASE5.md`.
+
+Phase 5B responds to Phase 5A's measured 62.1% zero-delta credit rate. It
+prioritizes observed behavior-changing children and permits an approved
+lineage to accumulate further direct-parent improvements under a bounded
+survival budget. It does not change mutation, teacher fitness, grouped case
+scores, or historical promotion. See `PHASE5.md`.
