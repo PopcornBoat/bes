@@ -45,6 +45,8 @@
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
       (cond
+        (*phase5c-targeted-return-credit-enabled*
+         "official-guided-targeted-return-credit")
         (*official-return-credit-enabled*
          "official-guided-return-credit-lineage")
         ((and *phase4b-combined-repair-enabled*

@@ -13,6 +13,7 @@
       (cl-tpg::*semantic-locality-control-enabled* t)
       (cl-tpg::*phase4-selection-enabled* t)
       (cl-tpg::*official-return-credit-enabled* t)
+      (cl-tpg::*phase5c-targeted-return-credit-enabled* nil)
       (cl-tpg::*phase4b-routing-repair-enabled* nil)
       (cl-tpg::*phase4b-specialist-composition-enabled* nil)
       (cl-tpg::*phase4b-combined-repair-enabled* nil))
@@ -23,6 +24,18 @@
     (check-official-return-credit
      (not (cl-tpg::official-return-credit-active-p))
      "Phase-4b proposal operators cannot be mixed into Phase 5B")))
+
+(let ((cl-tpg::*current-search-mode* :official-guided)
+      (cl-tpg::*semantic-locality-control-enabled* t)
+      (cl-tpg::*phase4-selection-enabled* t)
+      (cl-tpg::*official-return-credit-enabled* t)
+      (cl-tpg::*phase5c-targeted-return-credit-enabled* t)
+      (cl-tpg::*phase4b-routing-repair-enabled* t)
+      (cl-tpg::*phase4b-specialist-composition-enabled* t)
+      (cl-tpg::*phase4b-combined-repair-enabled* t))
+  (check-official-return-credit
+   (cl-tpg::official-return-credit-active-p)
+   "Phase 5C explicitly gates combined targeted proposals through return credit"))
 
 (let ((cl-tpg::*current-search-seed* 153))
   (cl-tpg::initialize-official-guided-seed-streams 153)
@@ -202,6 +215,7 @@
 
 (let ((cl-tpg::*current-search-mode* :official-guided)
       (cl-tpg::*official-return-credit-enabled* t)
+      (cl-tpg::*phase5c-targeted-return-credit-enabled* nil)
       (cl-tpg::*num-observations* 62)
       (cl-tpg::*num-actions* 36)
       (cl-tpg::*decoy-order-mode* :fixed)
@@ -214,6 +228,22 @@
    (search "official-guided-return-credit-lineage"
            (cl-tpg::best-team-checkpoint-filename))
    "Phase-5B checkpoints have an isolated filename"))
+
+(let ((cl-tpg::*current-search-mode* :official-guided)
+      (cl-tpg::*official-return-credit-enabled* t)
+      (cl-tpg::*phase5c-targeted-return-credit-enabled* t)
+      (cl-tpg::*num-observations* 62)
+      (cl-tpg::*num-actions* 36)
+      (cl-tpg::*decoy-order-mode* :fixed)
+      (cl-tpg::*teacher-backend* :heuristic)
+      (cl-tpg::*cage2-opening-mode* :fixed)
+      (cl-tpg::*hamming-space-enabled* nil)
+      (cl-tpg::*recurrent-policy-enabled* nil)
+      (cl-tpg::*current-gym-environment-name* "Cage2-b_line-100-v0"))
+  (check-official-return-credit
+   (search "official-guided-targeted-return-credit"
+           (cl-tpg::best-team-checkpoint-filename))
+   "Phase-5C checkpoints cannot overwrite Phase-5B or Phase-4 files"))
 
 (format t "~D official return-credit checks passed.~%"
         *official-return-credit-checks*)

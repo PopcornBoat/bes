@@ -40,6 +40,7 @@ case "${1:-}" in
       "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
       'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
       /usr/bin/sbcl \
+      --dynamic-space-size 4096 \
       --eval '(require :asdf)' \
       --eval '(asdf:load-system :cl-tpg)' \
       --eval '(cl-tpg:start-server)' \
@@ -80,4 +81,3 @@ case "${1:-}" in
     ;;
   *) usage ;;
 esac
-

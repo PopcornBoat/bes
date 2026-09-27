@@ -622,6 +622,11 @@ reference, and Phase-5A return-credit stream roots and cursors.")
   "When true, positive paired child/direct-parent evidence may establish a
 bounded protected lineage.  It never promotes the global incumbent directly.")
 
+(defvar *phase5c-targeted-return-credit-enabled* nil
+  "When true, Phase 5C combines Case-A/B targeted proposals with the existing
+paired official-return credit gate.  Known diagnostic seeds are never used by
+this switch for selection or promotion.")
+
 (defvar *official-return-credit-approved-count* 0
   "Number of return-approved anchors installed during the current run.")
 

@@ -2043,13 +2043,14 @@ reference batch."
         *semantic-locality-control-enabled* (eq mode :official-guided)
         *phase4-selection-enabled* (eq mode :official-guided)
         *phase4b-disagreement-audit-enabled* (eq mode :official-guided)
-        ;; Phase 5A isolates official parent/child return credit.  Phase-4b
-        ;; teacher-directed proposal operators remain available on their
-        ;; archived branches but are deliberately disabled in this treatment.
+        ;; Phase 5C keeps Phase-5B paired return credit, but lets the already
+        ;; measured Case-A/B operators propose ten percent of offspring.
+        ;; Known rare-failure seeds remain diagnostic-only.
         *official-return-credit-enabled* (eq mode :official-guided)
-        *phase4b-combined-repair-enabled* nil
-        *phase4b-routing-repair-enabled* nil
-        *phase4b-specialist-composition-enabled* nil)
+        *phase5c-targeted-return-credit-enabled* (eq mode :official-guided)
+        *phase4b-combined-repair-enabled* (eq mode :official-guided)
+        *phase4b-routing-repair-enabled* (eq mode :official-guided)
+        *phase4b-specialist-composition-enabled* (eq mode :official-guided))
   (ecase mode
     (:online
      (make-fitness-function :gym-environment-name gym-environment-name))

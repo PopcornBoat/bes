@@ -30,5 +30,18 @@
         (= (getf (first failures) :recorded-return) -101.0d0))
    "earlier validation blocks consume their exact seed draws"))
 
+(check-phase5c-diagnostic
+ (not (cl-tpg::phase5c-correction-p nil t nil))
+ "normal replay never substitutes the teacher")
+(check-phase5c-diagnostic
+ (cl-tpg::phase5c-correction-p :first-disagreement t nil)
+ "one-shot correction fires on the first disagreement")
+(check-phase5c-diagnostic
+ (not (cl-tpg::phase5c-correction-p :first-disagreement t 8))
+ "one-shot correction does not fire after the first disagreement")
+(check-phase5c-diagnostic
+ (cl-tpg::phase5c-correction-p :all-disagreements t 8)
+ "persistent correction fires on later disagreements")
+
 (format t "~&Phase 5C diagnostic checks passed: ~D~%"
         *phase5c-diagnostic-checks*)

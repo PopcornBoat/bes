@@ -6,14 +6,18 @@
 ;;; grouped epsilon-lexicase, and historical promotion remain unchanged.
 
 (defun official-return-credit-active-p ()
-  "Return true when the isolated Phase-5B treatment is active."
+  "Return true for Phase 5B or the explicit Phase 5C combined treatment."
   (and *official-return-credit-enabled*
        (official-guided-mode-p)
        *semantic-locality-control-enabled*
        *phase4-selection-enabled*
-       (not *phase4b-routing-repair-enabled*)
-       (not *phase4b-specialist-composition-enabled*)
-       (not *phase4b-combined-repair-enabled*)))
+       (if *phase5c-targeted-return-credit-enabled*
+           (and *phase4b-combined-repair-enabled*
+                *phase4b-routing-repair-enabled*
+                *phase4b-specialist-composition-enabled*)
+           (and (not *phase4b-routing-repair-enabled*)
+                (not *phase4b-specialist-composition-enabled*)
+                (not *phase4b-combined-repair-enabled*)))))
 
 (defun official-return-credit-serialize-lineage (record)
   "Return the persistent portion of one active lineage RECORD."

@@ -115,8 +115,18 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
         unless (eq key :decision-object)
           append (list key value)))
 
+(defun phase5c-correction-p (mode disagreement-p first-disagreement)
+  "Return true when MODE executes the teacher on this disagreement."
+  (cond
+    ((null mode) nil)
+    ((eq mode :first-disagreement)
+     (and disagreement-p (null first-disagreement)))
+    ((eq mode :all-disagreements) disagreement-p)
+    (t (error "Unknown Phase 5C correction mode: ~S" mode))))
+
 (defun phase5c-trace-episode
-       (env controller policies behavior-label environment-name seed)
+       (env controller policies behavior-label environment-name seed
+        &key correction-mode)
   "Trace one policy-controlled episode while querying every POLICY and teacher."
   (unless (find behavior-label policies
                 :key (lambda (policy) (getf policy :label))
@@ -124,7 +134,8 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
     (error "Unknown Phase 5C behavior policy: ~S" behavior-label))
   (let ((steps nil)
         (episode-return 0.0d0)
-        (first-disagreement nil))
+        (first-disagreement nil)
+        (correction-count 0))
     (call-with-fresh-policy-episode
      (lambda ()
        (cage2-controller-reset controller)
@@ -160,9 +171,6 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
                             (and opening-pairs
                                  (cage2-controller-resolve-pair-ranking
                                   controller opening-pairs)))
-                          (executed-decision
-                            (or opening-decision
-                                (getf behavior-record :decision-object)))
                           (teacher-pair
                             (getf (phase5c-decision-record teacher-decision)
                                   :pair))
@@ -171,6 +179,14 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
                           (disagreement-p
                             (and (not opening-pairs)
                                  (not (equal teacher-pair behavior-pair))))
+                          (correction-p
+                            (phase5c-correction-p
+                             correction-mode disagreement-p
+                             first-disagreement))
+                          (executed-decision
+                            (or opening-decision
+                                (and correction-p teacher-decision)
+                                (getf behavior-record :decision-object)))
                           (teacher-rank
                             (and (not opening-pairs)
                                  (position teacher-pair
@@ -178,6 +194,8 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
                                            :test #'equal))))
                      (when (and disagreement-p (null first-disagreement))
                        (setf first-disagreement timestep))
+                     (when correction-p
+                       (incf correction-count))
                      (multiple-value-bind
                            (next-observation reward terminated truncated info)
                          (cl-gym::step
@@ -203,10 +221,14 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
                              (phase5c-decision-record teacher-decision)
                            :teacher-rank-in-behavior teacher-rank
                            :teacher-disagreement-p disagreement-p
+                           :teacher-correction-p correction-p
                            :policy-proposals
                              (mapcar #'phase5c-public-proposal-record proposals)
                            :executed-source
-                             (if opening-pairs :fixed-opening behavior-label)
+                             (cond
+                               (opening-pairs :fixed-opening)
+                               (correction-p :teacher-correction)
+                               (t behavior-label))
                            :executed-decision
                              (phase5c-decision-record executed-decision)
                            :actual-concrete-action actual
@@ -227,6 +249,8 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
           :return episode-return
           :steps-executed (length steps)
           :first-teacher-disagreement first-disagreement
+          :correction-mode (or correction-mode :none)
+          :corrections-executed correction-count
           :catastrophic-p (< episode-return -100.0d0)
           :steps (nreverse steps))))
 
@@ -334,6 +358,126 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
         (error "Phase 5C candidate replay did not reproduce every saved return."))
       summary)))
 
+(defun run-phase5c-causal-confirmation
+       (validation-result-path candidate-path output-directory
+        &key (environment-name "Cage2-b_line-100-v0")
+             (validation-label "b_line-100")
+             (failure-threshold -100.0d0))
+  "Replay rare failures with one-shot and persistent teacher correction."
+  (let* ((output-directory
+           (uiop:ensure-directory-pathname output-directory))
+         (results (phase5c-read-form validation-result-path))
+         (failures
+           (phase5c-validation-failures
+            results validation-label failure-threshold))
+         (*num-observations* 62)
+         (*num-actions* 36)
+         (*factored-actions-enabled* t)
+         (*terminal-action-format* :target-response-36)
+         (*decoy-order-mode* :fixed)
+         (*cage2-opening-mode* :fixed)
+         (*teacher-backend* :heuristic)
+         (*recurrent-policy-enabled* nil)
+         (*hamming-space-enabled* nil)
+         (policies (list (phase5c-load-policy :v17 candidate-path)))
+         (modes '(:none :first-disagreement :all-disagreements))
+         (env nil)
+         (controller nil)
+         (episodes nil))
+    (py4cl2:pyexec "import gymnasium as gym; import cage2_bridge")
+    (setf env (cl-gym::make environment-name)
+          controller
+            (make-cage2-controller :decoy-order-profile :heuristic))
+    (cl-gym::configure-cage2-controller-option-orders env controller)
+    (unwind-protect
+         (dolist (failure failures)
+           (dolist (mode modes)
+             (let ((episode
+                     (phase5c-trace-episode
+                      env controller policies :v17 environment-name
+                      (getf failure :seed)
+                      :correction-mode (unless (eq mode :none) mode))))
+               (format t
+                       "Phase5C causal mode=~A seed=~D return=~,4F corrections=~D~%"
+                       mode (getf failure :seed) (getf episode :return)
+                       (getf episode :corrections-executed))
+               (finish-output)
+               (push episode episodes))))
+      (when env
+        (ignore-errors (py4cl2:pymethod env "close"))))
+    (setf episodes (nreverse episodes))
+    (let* ((paired
+             (loop for failure in failures
+                   for seed = (getf failure :seed)
+                   for normal =
+                     (find-if
+                      (lambda (episode)
+                        (and (= (getf episode :seed) seed)
+                             (eq (getf episode :correction-mode) :none)))
+                      episodes)
+                   for first =
+                     (find-if
+                      (lambda (episode)
+                        (and (= (getf episode :seed) seed)
+                             (eq (getf episode :correction-mode)
+                                 :first-disagreement)))
+                      episodes)
+                   for all =
+                     (find-if
+                      (lambda (episode)
+                        (and (= (getf episode :seed) seed)
+                             (eq (getf episode :correction-mode)
+                                 :all-disagreements)))
+                      episodes)
+                   collect
+                     (list
+                      :seed seed
+                      :recorded-return (getf failure :recorded-return)
+                      :normal-return (getf normal :return)
+                      :first-correction-return (getf first :return)
+                      :first-correction-delta
+                        (- (getf first :return) (getf normal :return))
+                      :first-correction-rescued-p
+                        (not (getf first :catastrophic-p))
+                      :all-corrections-return (getf all :return)
+                      :all-corrections-delta
+                        (- (getf all :return) (getf normal :return))
+                      :all-corrections-rescued-p
+                        (not (getf all :catastrophic-p))
+                      :all-correction-count
+                        (getf all :corrections-executed))))
+           (normal-audit-p
+             (every
+              (lambda (entry)
+                (< (abs (- (getf entry :recorded-return)
+                           (getf entry :normal-return)))
+                   1.0d-9))
+              paired))
+           (summary
+             (list
+              :protocol :phase5c-causal-confirmation-v1
+              :candidate (namestring (pathname candidate-path))
+              :normal-returns-reproduced-p normal-audit-p
+              :first-correction-rescues
+                (count-if
+                 (lambda (entry)
+                   (getf entry :first-correction-rescued-p))
+                 paired)
+              :all-corrections-rescues
+                (count-if
+                 (lambda (entry)
+                   (getf entry :all-corrections-rescued-p))
+                 paired)
+              :episodes (length paired)
+              :paired-results paired)))
+      (phase5c-write-form
+       episodes (merge-pathnames "causal-trajectories.sexp" output-directory))
+      (phase5c-write-form
+       summary (merge-pathnames "causal-summary.sexp" output-directory))
+      (unless normal-audit-p
+        (error "Phase 5C causal replay failed to reproduce normal returns."))
+      summary)))
+
 (defun run-phase5c-rare-failure-diagnosis-from-environment ()
   "Run Phase 5C using paths supplied by the checked-in shell launcher."
   (flet ((required (name)
@@ -342,5 +486,15 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
     (run-phase5c-rare-failure-diagnosis
      (required "PHASE5C_VALIDATION_RESULT")
      (required "PHASE5C_BASELINE_CHECKPOINT")
+     (required "PHASE5C_CANDIDATE_CHECKPOINT")
+     (required "PHASE5C_OUTPUT_DIRECTORY"))))
+
+(defun run-phase5c-causal-confirmation-from-environment ()
+  "Run the Phase 5C causal replay from launcher-supplied paths."
+  (flet ((required (name)
+           (or (uiop:getenv name)
+               (error "Required environment variable ~A is missing." name))))
+    (run-phase5c-causal-confirmation
+     (required "PHASE5C_VALIDATION_RESULT")
      (required "PHASE5C_CANDIDATE_CHECKPOINT")
      (required "PHASE5C_OUTPUT_DIRECTORY"))))
