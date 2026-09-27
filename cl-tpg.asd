@@ -28,6 +28,7 @@
 	       (:file "gym")
 	       (:file "teacher")
 	       (:file "phase5c-diagnostics")
+	       (:file "phase5d-counterfactual")
 	       (:file "official-guided")
 	       (:file "official-return-credit")
 	       (:file "phase4b")

@@ -1,5 +1,12 @@
 # Official-Guided TPG Research Design
 
+## Phase 5D-1 boundary
+
+Phase 5D-1 adds official, exact-prefix counterfactual step credit for recurring
+teacher/student disagreements. It evaluates a frozen policy and performs no
+mutation or selection. The teacher nominates the alternative; official CAGE2
+paired return-to-go supplies the credit. See `PHASE5D.md`.
+
 The research question is:
 
 > How can TPG obtain stable, local, cumulative policy improvement without gradients?

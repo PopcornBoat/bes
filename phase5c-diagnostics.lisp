@@ -124,18 +124,80 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
     ((eq mode :all-disagreements) disagreement-p)
     (t (error "Unknown Phase 5C correction mode: ~S" mode))))
 
+(defun phase5c-intervention-decision
+       (controller intervention teacher-decision timestep opening-pairs
+        policy-observation teacher-pair behavior-pair)
+  "Return the forced decision requested by INTERVENTION at TIMESTEP.
+
+The proposal is resolved against the controller state produced only by the
+real prefix.  Assertions copied from the baseline trace make trajectory drift
+fail loudly instead of silently changing the counterfactual question."
+  (when (and intervention
+             (= timestep (getf intervention :step)))
+    (when opening-pairs
+      (error "Phase 5D cannot intervene during fixed opening step ~D."
+             timestep))
+    (let ((expected-observation
+            (getf intervention :expected-policy-observation))
+          (expected-teacher-pair
+            (getf intervention :expected-teacher-pair))
+          (expected-behavior-pair
+            (getf intervention :expected-behavior-pair)))
+      (when (and expected-observation
+                 (not (equalp expected-observation policy-observation)))
+        (error "Phase 5D state mismatch before intervention at step ~D."
+               timestep))
+      (when (and expected-teacher-pair
+                 (not (equal expected-teacher-pair teacher-pair)))
+        (error "Phase 5D teacher mismatch at step ~D: expected ~S, got ~S."
+               timestep expected-teacher-pair teacher-pair))
+      (when (and expected-behavior-pair
+                 (not (equal expected-behavior-pair behavior-pair)))
+        (error "Phase 5D behavior mismatch at step ~D: expected ~S, got ~S."
+               timestep expected-behavior-pair behavior-pair)))
+    (let* ((source (getf intervention :source))
+           (requested-pair (getf intervention :pair))
+           (decision
+             (case source
+               (:teacher teacher-decision)
+               (:semantic-pair
+                (cage2-controller-resolve-pair-ranking
+                 controller (list requested-pair)))
+               (otherwise
+                (error "Unknown Phase 5D intervention source: ~S" source))))
+           (resolved-pair
+             (getf (phase5c-decision-record decision) :pair)))
+      (when (and requested-pair
+                 (not (equal requested-pair resolved-pair)))
+        (error "Phase 5D requested ~S at step ~D, but controller resolved ~S."
+               requested-pair timestep resolved-pair))
+      decision)))
+
 (defun phase5c-trace-episode
        (env controller policies behavior-label environment-name seed
-        &key correction-mode)
-  "Trace one policy-controlled episode while querying every POLICY and teacher."
+        &key correction-mode intervention expected-prefix)
+  "Trace one policy-controlled episode while querying every POLICY and teacher.
+
+INTERVENTION optionally replaces exactly one decision after replaying and
+verifying EXPECTED-PREFIX.  It exists for Phase 5D counterfactual credit; a
+normal Phase 5C call is unchanged."
   (unless (find behavior-label policies
                 :key (lambda (policy) (getf policy :label))
                 :test #'eq)
     (error "Unknown Phase 5C behavior policy: ~S" behavior-label))
+  (when intervention
+    (let ((step (getf intervention :step)))
+      (unless (and (integerp step) (not (minusp step)))
+        (error "Phase 5D intervention needs a non-negative :STEP, got ~S."
+               step))
+      (unless (= (length expected-prefix) step)
+        (error "Phase 5D expected prefix length ~D for intervention step ~D."
+               (length expected-prefix) step))))
   (let ((steps nil)
         (episode-return 0.0d0)
         (first-disagreement nil)
-        (correction-count 0))
+        (correction-count 0)
+        (intervention-executed-p nil))
     (call-with-fresh-policy-episode
      (lambda ()
        (cage2-controller-reset controller)
@@ -183,8 +245,16 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
                             (phase5c-correction-p
                              correction-mode disagreement-p
                              first-disagreement))
+                          (intervention-decision
+                            (phase5c-intervention-decision
+                             controller intervention teacher-decision timestep
+                             opening-pairs policy-observation teacher-pair
+                             behavior-pair))
+                          (intervention-p
+                            (not (null intervention-decision)))
                           (executed-decision
                             (or opening-decision
+                                intervention-decision
                                 (and correction-p teacher-decision)
                                 (getf behavior-record :decision-object)))
                           (teacher-rank
@@ -196,6 +266,17 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
                        (setf first-disagreement timestep))
                      (when correction-p
                        (incf correction-count))
+                     (when intervention-p
+                       (setf intervention-executed-p t))
+                     (when (< timestep (length expected-prefix))
+                       (let ((expected (elt expected-prefix timestep))
+                             (selected
+                               (cage2-controller-decision-concrete-action
+                                executed-decision)))
+                         (unless (= expected selected)
+                           (error
+                            "Phase 5D prefix mismatch at step ~D: expected concrete action ~D, selected ~D."
+                            timestep expected selected))))
                      (multiple-value-bind
                            (next-observation reward terminated truncated info)
                          (cl-gym::step
@@ -222,11 +303,13 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
                            :teacher-rank-in-behavior teacher-rank
                            :teacher-disagreement-p disagreement-p
                            :teacher-correction-p correction-p
+                           :intervention-p intervention-p
                            :policy-proposals
                              (mapcar #'phase5c-public-proposal-record proposals)
                            :executed-source
                              (cond
                                (opening-pairs :fixed-opening)
+                               (intervention-p :counterfactual-intervention)
                                (correction-p :teacher-correction)
                                (t behavior-label))
                            :executed-decision
@@ -251,6 +334,9 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
           :first-teacher-disagreement first-disagreement
           :correction-mode (or correction-mode :none)
           :corrections-executed correction-count
+          :intervention (copy-tree intervention)
+          :intervention-executed-p intervention-executed-p
+          :prefix-verified-p (and intervention-executed-p t)
           :catastrophic-p (< episode-return -100.0d0)
           :steps (nreverse steps))))
 

@@ -1,5 +1,20 @@
 # Official-Guided Experiments
 
+## Phase 5D-1: counterfactual step credit
+
+Create a frozen request with disjoint discovery and holdout seed blocks, then
+run:
+
+```bash
+cd /home/hardison/bes
+scripts/phase5d-credit /absolute/request.sexp /absolute/output-directory/
+```
+
+The runner rejects prefix/state/proposal mismatches instead of silently
+continuing. Interpret discovery and holdout separately; do not tune the error
+group on holdout results. No result from this diagnostic directly replaces a
+checkpoint. The exact contract and request schema are in `PHASE5D.md`.
+
 ## Completed Phase 1 baseline
 
 The first controlled run stopped cleanly at generation 387. It retained the

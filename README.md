@@ -511,6 +511,16 @@ positive paired direct-parent comparison can advance the protected anchor.
 Historical replacement remains the unchanged fresh 12/40/100 promotion. Run
 `experiments/phase5b-official-return-credit-lineage.sexp` and see `PHASE5.md`.
 
+## Phase 5D counterfactual step credit
+
+Phase 5D-1 diagnoses a recurring teacher/student disagreement without changing
+the policy. It replays the same official seed and exact concrete-action prefix,
+substitutes one teacher-nominated semantic action through the normal controller,
+then returns control to the frozen checkpoint. Discovery and holdout seed blocks
+are explicit and disjoint; official paired return-to-go, not the teacher label,
+assigns credit. Run `scripts/phase5d-credit REQUEST.sexp OUTPUT_DIRECTORY` and
+see `PHASE5D.md`. This diagnostic does not mutate or promote a checkpoint.
+
 ## CAGE2 episode opening
 
 The start, resume, and validation menus expose `Episode Opening` with two

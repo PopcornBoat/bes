@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 REQUEST.sexp OUTPUT_DIRECTORY" >&2
+  exit 2
+fi
+
+request=$1
+output_directory=$2
+repo=/home/hardison/bes
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+
+mkdir -p "$output_directory"
+sha256sum "$request" > "$output_directory/input-sha256.txt"
+
+cd "$repo"
+env \
+  "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+  "PHASE5D_REQUEST=$request" \
+  "PHASE5D_OUTPUT_DIRECTORY=$output_directory" \
+  /usr/bin/sbcl \
+    --dynamic-space-size 4096 \
+    --non-interactive \
+    --eval '(require :asdf)' \
+    --eval '(asdf:load-system :cl-tpg)' \
+    --eval '(cl-tpg::run-phase5d-counterfactual-credit-from-environment)'
