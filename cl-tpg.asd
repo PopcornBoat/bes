@@ -27,6 +27,7 @@
 	       (:file "networking")
 	       (:file "gym")
 	       (:file "teacher")
+	       (:file "phase5c-diagnostics")
 	       (:file "official-guided")
 	       (:file "official-return-credit")
 	       (:file "phase4b")
