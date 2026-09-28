@@ -2048,9 +2048,14 @@ reference batch."
         ;; Known rare-failure seeds remain diagnostic-only.
         *official-return-credit-enabled* (eq mode :official-guided)
         *phase5c-targeted-return-credit-enabled* (eq mode :official-guided)
-        *phase4b-combined-repair-enabled* (eq mode :official-guided)
+        ;; Phase 5D-2 replaces the earlier random Phase-4b repair proposal
+        ;; with a teacher-directed bidder synthesis.  The passive disagreement
+        ;; audit and routing stream remain active; grouped selection and
+        ;; official paired promotion remain the acceptance authorities.
+        *phase5d-directed-repair-enabled* (eq mode :official-guided)
+        *phase4b-combined-repair-enabled* nil
         *phase4b-routing-repair-enabled* (eq mode :official-guided)
-        *phase4b-specialist-composition-enabled* (eq mode :official-guided))
+        *phase4b-specialist-composition-enabled* nil)
   (ecase mode
     (:online
      (make-fitness-function :gym-environment-name gym-environment-name))
@@ -2874,22 +2879,32 @@ through serialization/deserialization and save it to disk."
   (setf *phase4b-routing-repair-generation-records* nil)
   (setf *phase4b-specialist-composition-generation-records* nil)
   (setf *phase4b-combined-repair-generation-records* nil)
+  (setf *phase5d-directed-repair-generation-records* nil)
   (loop while (< (length (root-teams)) *population-size*)
         do (let* ((parents (root-teams))
-                  (combined-p (phase4b-combined-repair-active-p))
+                  (directed-p (phase5d-directed-repair-active-p))
+                  (directed-slot-p
+                    (and directed-p (phase5d-directed-repair-slot-p)))
+                  (combined-p
+                    (and (not directed-p)
+                         (phase4b-combined-repair-active-p)))
                   (combined-slot-p
                     (and combined-p (phase4b-combined-repair-slot-p)))
                   (composition-p
-                    (and (not combined-p)
+                    (and (not directed-p)
+                         (not combined-p)
                          (phase4b-specialist-composition-active-p)
                          (phase4b-specialist-composition-slot-p)))
                   (routing-p
-                    (and (not combined-p)
+                    (and (not directed-p)
+                         (not combined-p)
                          (not composition-p)
                          (phase4b-routing-repair-active-p)
                          (phase4b-routing-repair-slot-p))))
              (multiple-value-bind (repair-child repair-parent)
                  (cond
+                   (directed-slot-p
+                    (phase5d-attempt-directed-repair parents))
                    (combined-slot-p
                     (phase4b-attempt-combined-repair parents))
                    (composition-p
@@ -2912,6 +2927,7 @@ through serialization/deserialization and save it to disk."
   (finish-phase4b-combined-repair-generation)
   (finish-phase4b-routing-repair-generation)
   (finish-phase4b-specialist-composition-generation)
+  (finish-phase5d-directed-repair-generation)
   (persist-behavioral-generation-records)
   (finish-semantic-locality-control-generation))
 

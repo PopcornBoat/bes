@@ -15,6 +15,7 @@ if [[ "${1:-}" == --core ]]; then
     tests/official-return-credit.lisp
     tests/phase5c-diagnostics.lisp
     tests/phase5d-counterfactual.lisp
+    tests/phase5d-directed-repair.lisp
     tests/phase4-selection.lisp
     tests/phase4b-disagreement-audit.lisp
     tests/phase4b-routing-repair.lisp

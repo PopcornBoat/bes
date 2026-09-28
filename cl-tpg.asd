@@ -32,4 +32,5 @@
 	       (:file "official-guided")
 	       (:file "official-return-credit")
 	       (:file "phase4b")
+	       (:file "phase5d-directed-repair")
 	       (:file "main")))

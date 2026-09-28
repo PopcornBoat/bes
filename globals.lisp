@@ -318,6 +318,25 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
   :error-directed-combined-repair-v1
   "Version tag for Phase-4b-C case-directed routing/composition variation.")
 
+(defconstant +phase5d-directed-repair-protocol+
+  :teacher-directed-bidder-repair-v1
+  "Version tag for Phase-5D-2 deterministic disagreement repair.")
+
+(defconstant +phase5d-directed-repair-max-parents+ 8
+  "Maximum candidate roots inspected for one directed repair slot.")
+
+(defconstant +phase5d-directed-repair-max-features+ 8
+  "Maximum invariant observation features retained for repair gates.")
+
+(defconstant +phase5d-directed-repair-max-candidates+ 32
+  "Maximum synthesized bidder gates evaluated for one parent and issue.")
+
+(defconstant +phase5d-directed-repair-bid-margin+ 1.0d0
+  "Positive bid margin applied when a repair gate exactly matches.")
+
+(defconstant +phase5d-directed-repair-mismatch-penalty+ 1000.0d0
+  "Penalty multiplier suppressing a synthesized bidder off its target gate.")
+
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
@@ -728,6 +747,12 @@ this switch for selection or promotion.")
 
 (defvar *phase4b-combined-repair-generation-records* nil
   "Case-directed Phase-4b-C dispatch decisions waiting to be journaled.")
+
+(defvar *phase5d-directed-repair-enabled* nil
+  "When true, synthesize teacher-directed local bidder corrections.")
+
+(defvar *phase5d-directed-repair-generation-records* nil
+  "Phase-5D-2 directed repair decisions waiting for generation journaling.")
 
 (defvar *phase4-selection-generation-record* nil
   "Pending serializable Phase-4a record for the current generation.")
