@@ -246,7 +246,7 @@ and zero means no measurable direct parent is available."
 
 An approval continuing an existing lineage replaces that lineage's protected
 anchor; the previous root remains live but competes normally. The anchor is
-not *BEST-TEAM* and cannot bypass fresh global Stage-3 promotion."
+not *BEST-TEAM* and cannot bypass final tail-aware global promotion."
   (let* ((generation (or generation *generation* 0))
          (lineage-id
            (or lineage-id (official-return-credit-next-id generation)))

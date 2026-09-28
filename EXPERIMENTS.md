@@ -520,3 +520,36 @@ At generation 50 check root accounting and priority; at generation 150 compare
 neutral submissions with Phase 5A; at generation 300 inspect descendant
 approval depth and global paired evidence. Do not interpret lineage approval as
 historical promotion.
+
+## Phase 5E tail-aware multi-horizon promotion
+
+Use branch `phase5e-tail-aware-promotion` and submit:
+
+```bash
+./scripts/bes-search submit experiments/phase5e-tail-aware-promotion.sexp
+```
+
+The run warm-starts from the frozen Phase-5D v18 checkpoint and writes only to:
+
+```text
+/home/hardison/checkpoints/semantic36/phase5e-tail-aware-promotion/
+```
+
+The evolutionary treatment is unchanged. Historical challengers first pass
+5-episode racing, then cumulative 12, 40, and 100 fresh paired 100-step checks.
+Those stages can only reject. The final Stage 4 extends the same fresh block to
+1000 seeds, evaluates the same seeds at 30 and 50 steps, and promotes only when:
+
+```text
+aggregate paired mean > 2 * aggregate paired SE
+100-step paired mean  > 2 * 100-step paired SE
+candidate 100-step worst-10% CVaR >= incumbent CVaR
+candidate 100-step catastrophic count <= incumbent count
+```
+
+Catastrophic means return `<= -steps`; the final 100-step threshold is `-100`.
+The 1000 promotion seeds come from the persisted promotion stream and never
+reuse training, racing, reference, or return-credit seeds. Full validation
+remains a separate report. Inspect generation 50 for worker/runtime health and
+the first Stage-4 result; do not wait for Stage 4 to finish on the search thread,
+because the evaluator remains asynchronous.

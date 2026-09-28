@@ -174,15 +174,28 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
   "Required paired standard-error margin for online best-team promotion.")
 
 (defconstant +official-guided-fitness-protocol+
-  :official-guided-dagger-phase1-v1
-  "Frozen Phase-1 protocol: ranked imitation, clean mixed DAgger, and
-independent official paired challenger evaluation.")
+  :official-guided-dagger-tail-aware-promotion-v2
+  "Official-guided protocol with ranked imitation, clean mixed DAgger,
+independent paired racing, and a multi-horizon tail-aware final audit.")
 
 (defconstant +official-guided-racing-episodes+ 5
   "Cheap paired official episodes used to reject a challenger before promotion.")
 
-(defparameter +official-guided-promotion-stages+ '(12 40 100)
-  "Cumulative fresh paired episode counts used by staged promotion.")
+(defparameter +official-guided-promotion-stages+ '(12 40 100 1000)
+  "Cumulative fresh paired 100-step counts.  Stages 1--3 only reject;
+Stage 4 performs the final multi-horizon tail-aware promotion audit.")
+
+(defparameter +official-guided-final-audit-horizons+ '(30 50 100)
+  "CAGE2 horizons included in the final promotion decision.")
+
+(defconstant +official-guided-final-promotion-standard-errors+ 2.0d0
+  "Paired standard-error margin required at final aggregate and 100-step audit.")
+
+(defconstant +official-guided-tail-fraction+ 0.10d0
+  "Worst-return fraction summarized by the final-audit CVaR metric.")
+
+(defconstant +official-guided-catastrophic-return-per-step+ -1.0d0
+  "A return at or below horizon times this value is counted as catastrophic.")
 
 (defparameter +official-guided-reference-roots+ '(153 42 2026)
   "Fixed roots used only for monitoring, never selection or promotion.")

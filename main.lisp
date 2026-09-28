@@ -1175,7 +1175,7 @@ promotion still requires the stricter positive one-standard-error improvement."
    :fitness-evaluation-protocol +official-guided-fitness-protocol+
    :action-agreement-signature (action-agreement-signature)
    :online-reference-episodes
-     (third +official-guided-promotion-stages+)
+     (car (last +official-guided-promotion-stages+))
    :mixed-training-lineage *mixed-training-lineage*
    :hamming-space-enabled nil
    :num-observations *num-observations*
@@ -1336,7 +1336,7 @@ promotion still requires the stricter positive one-standard-error improvement."
      generation (getf record :behavioral-locality) record)
     ;; Direct-parent credit is independent of the global incumbent version.
     ;; A positive result only restores the frozen child to the live population;
-    ;; it cannot overwrite *BEST-TEAM* or bypass fresh Stage-3 promotion.
+    ;; it cannot overwrite *BEST-TEAM* or bypass the final tail-aware promotion.
     (when credit
       (if (and (eq (getf result :status) :complete)
                (getf credit :accepted))
@@ -1398,23 +1398,31 @@ promotion still requires the stricter positive one-standard-error improvement."
                 (or (getf record :same-seed-correlation) :undefined)
                 (getf record :paired-variance 0.0d0)
                 (getf record :unpaired-variance 0.0d0))))
-      ((not (eq (getf record :stage) :promotion-stage-3))
+      ((not (eq (getf record :stage) :promotion-stage-4))
        (emit-message
         (format nil
-                "Official-guided accepted result rejected defensively: generation=~D stage=~A; only final Stage-3 evidence may overwrite the incumbent checkpoint."
+                "Official-guided accepted result rejected defensively: generation=~D stage=~A; only final tail-aware Stage-4 evidence may overwrite the incumbent checkpoint."
                 generation (getf record :stage))))
       (t
        (let* ((loaded (load-best-team candidate-path))
-              (frozen (deep-copy-team-via-serialization loaded)))
+              (frozen (deep-copy-team-via-serialization loaded))
+              (primary-record
+                (find 100 (getf record :horizon-records)
+                      :key (lambda (entry) (getf entry :horizon))))
+              (primary-mean
+                (if primary-record
+                    (getf primary-record :official-mean)
+                    (getf record :official-mean))))
          (ensure-team-observation-compatible frozen *num-observations*)
          (incf *official-guided-incumbent-version*)
          (setf *best-team* frozen
-               *best-fitness* (getf record :official-mean)
+               *best-fitness* primary-mean
                *official-guided-best-evaluation* (copy-tree record))
          (emit-message
           (format nil
-                  "NEW GLOBAL BEST: generation=~D official-mean=~,4F imitation=~,4F paired-delta=~,4F margin=~,4F episodes=~D."
+                  "NEW GLOBAL BEST: generation=~D official-100-mean=~,4F full-total-mean=~,4F imitation=~,4F aggregate-paired-delta=~,4F margin=~,4F episodes=~D."
                   generation *best-fitness*
+                  (getf record :official-mean)
                   (getf record :imitation-score 0.0d0)
                   (getf record :paired-mean 0.0d0)
                   (getf result :margin 0.0d0)
@@ -1758,7 +1766,8 @@ promotion still requires the stricter positive one-standard-error improvement."
                     (list :elapsed-seconds
                           (- (get-universal-time) started)))
             result-path))
-         (make-record (stage seeds candidate-scores incumbent-scores accepted)
+         (make-record (stage seeds candidate-scores incumbent-scores accepted
+                       &optional horizon)
            (append
             (make-official-guided-evaluation-record
              :stage stage
@@ -1766,7 +1775,8 @@ promotion still requires the stricter positive one-standard-error improvement."
              :seeds seeds
              :candidate-returns candidate-scores
              :incumbent-returns incumbent-scores
-             :accepted accepted)
+             :accepted accepted
+             :horizon horizon)
             (list :behavioral-locality
                     (copy-tree (getf request :behavioral-locality))
                   :parent-child-evaluation
@@ -1864,45 +1874,102 @@ promotion still requires the stricter positive one-standard-error improvement."
                       (let ((final-p
                               (= stage-count (car (last promotion-stages))))
                             (stage
-                              (ecase stage-count
-                                (12 :promotion-stage-1)
-                                (40 :promotion-stage-2)
-                                (100 :promotion-stage-3))))
+                              (official-guided-promotion-stage-name
+                               stage-count)))
                         (if final-p
-                            (multiple-value-bind (accepted delta margin)
-                                (official-guided-promote-p
-                                 candidate-scores incumbent-scores)
-                              (declare (ignore delta))
-                              (let* ((record
-                                       (make-record stage evaluated-seeds
-                                                    candidate-scores
-                                                    incumbent-scores accepted))
-                                     (reference-monitoring
-                                       (when accepted
-                                         (multiple-value-bind
-                                               (reference-candidate
-                                                reference-incumbent)
-                                             (official-guided-paired-rollouts
-                                              candidate incumbent
-                                              *current-gym-environment-name*
-                                              reference-seeds)
-                                           (make-record
-                                            :reference-monitoring
-                                            reference-seeds
-                                            reference-candidate
-                                            reference-incumbent nil)))))
-                                (publish
-                                 (list :status :complete
-                                       :accepted accepted
-                                       :candidate-generation
-                                         (getf request :candidate-generation)
-                                       :incumbent-version
-                                         (getf request :incumbent-version)
-                                       :margin margin
-                                       :racing-record race-record
-                                       :evaluation-record record
-                                       :reference-monitoring
-                                         reference-monitoring))))
+                            (let ((candidate-by-horizon nil)
+                                  (incumbent-by-horizon nil)
+                                  (horizon-records nil))
+                              (dolist
+                                  (horizon
+                                   +official-guided-final-audit-horizons+)
+                                (if (= horizon 100)
+                                    (progn
+                                      (push (cons horizon candidate-scores)
+                                            candidate-by-horizon)
+                                      (push (cons horizon incumbent-scores)
+                                            incumbent-by-horizon))
+                                    (multiple-value-bind
+                                          (horizon-candidate
+                                           horizon-incumbent)
+                                        (official-guided-paired-rollouts
+                                         candidate incumbent
+                                         (official-guided-environment-for-horizon
+                                          *current-gym-environment-name*
+                                          horizon)
+                                         evaluated-seeds)
+                                      (push (cons horizon horizon-candidate)
+                                            candidate-by-horizon)
+                                      (push (cons horizon horizon-incumbent)
+                                            incumbent-by-horizon))))
+                              (setf candidate-by-horizon
+                                      (nreverse candidate-by-horizon)
+                                    incumbent-by-horizon
+                                      (nreverse incumbent-by-horizon))
+                              (dolist (entry candidate-by-horizon)
+                                (let* ((horizon (car entry))
+                                       (horizon-candidate (cdr entry))
+                                       (horizon-incumbent
+                                         (cdr (assoc horizon
+                                                     incumbent-by-horizon))))
+                                  (push
+                                   (make-record stage evaluated-seeds
+                                                horizon-candidate
+                                                horizon-incumbent nil horizon)
+                                   horizon-records)))
+                              (setf horizon-records
+                                      (nreverse horizon-records))
+                              (let* ((aggregate-candidate
+                                       (official-guided-sum-return-lists
+                                        (mapcar #'cdr candidate-by-horizon)))
+                                     (aggregate-incumbent
+                                       (official-guided-sum-return-lists
+                                        (mapcar #'cdr incumbent-by-horizon)))
+                                     (long-candidate
+                                       (cdr (assoc 100 candidate-by-horizon)))
+                                     (long-incumbent
+                                       (cdr (assoc 100 incumbent-by-horizon))))
+                                (multiple-value-bind
+                                      (accepted delta margin tail-audit)
+                                    (official-guided-tail-aware-promote-p
+                                     aggregate-candidate aggregate-incumbent
+                                     long-candidate long-incumbent 100)
+                                  (declare (ignore delta))
+                                  (let* ((record
+                                           (append
+                                            (make-record
+                                             stage evaluated-seeds
+                                             aggregate-candidate
+                                             aggregate-incumbent accepted)
+                                            (list :horizon-records
+                                                    horizon-records
+                                                  :tail-audit tail-audit)))
+                                         (reference-monitoring
+                                           (when accepted
+                                             (multiple-value-bind
+                                                   (reference-candidate
+                                                    reference-incumbent)
+                                                 (official-guided-paired-rollouts
+                                                  candidate incumbent
+                                                  *current-gym-environment-name*
+                                                  reference-seeds)
+                                               (make-record
+                                                :reference-monitoring
+                                                reference-seeds
+                                                reference-candidate
+                                                reference-incumbent nil 100)))))
+                                    (publish
+                                     (list :status :complete
+                                           :accepted accepted
+                                           :candidate-generation
+                                             (getf request :candidate-generation)
+                                           :incumbent-version
+                                             (getf request :incumbent-version)
+                                           :margin margin
+                                           :racing-record race-record
+                                           :evaluation-record record
+                                           :reference-monitoring
+                                             reference-monitoring))))))
                             (multiple-value-bind (continue-p delta margin)
                                 (official-guided-continue-p
                                  candidate-scores incumbent-scores)
@@ -3215,7 +3282,7 @@ checkpoint remains replayable while training continues on changing batches."
 (defun ensure-official-guided-incumbent-checkpoint ()
   "Create the run-local incumbent checkpoint once, never overwrite it here.
 
-Only a challenger that passes final Stage-3 promotion may subsequently call
+Only a challenger that passes final tail-aware Stage-4 promotion may call
 SAVE-BEST-TEAM on this path.  This prevents warm-start/resume bookkeeping from
 rewriting a protected on-disk incumbent."
   (let ((destination (best-team-checkpoint-path)))
@@ -3378,7 +3445,9 @@ normal evolution."
           (when (and saved-best-fitness (null comparable-fitness))
             (emit-message
              (format nil
-                     "Warm-start: saved fitness ~A is not comparable with env=~A episodes=~A; re-baselining."
+                     (if (official-guided-mode-p)
+                         "Warm-start: saved fitness ~A predates the active official-guided protocol for env=~A episodes=~A; retaining it only as the protected incumbent until a challenger passes the current promotion protocol."
+                         "Warm-start: saved fitness ~A is not comparable with env=~A episodes=~A; re-baselining.")
                      saved-best-fitness
                      gym-environment-name
                      *online-fitness-episodes*)))

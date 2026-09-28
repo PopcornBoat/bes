@@ -428,16 +428,67 @@
             unpaired-variance
             differences)))
 
+(defun official-guided-quantile (values probability)
+  "Return the linearly interpolated quantile of non-empty numeric VALUES."
+  (unless values
+    (error "Cannot compute a quantile of an empty return list."))
+  (unless (<= 0.0d0 probability 1.0d0)
+    (error "Quantile probability must be in [0,1], got ~S." probability))
+  (let* ((sorted (sort (mapcar (lambda (value)
+                                 (coerce value 'double-float))
+                               values)
+                       #'<))
+         (position (* probability (1- (length sorted))))
+         (lower (floor position))
+         (upper (ceiling position))
+         (weight (- position lower)))
+    (+ (* (- 1.0d0 weight) (nth lower sorted))
+       (* weight (nth upper sorted)))))
+
+(defun official-guided-lower-cvar
+       (values &optional (fraction +official-guided-tail-fraction+))
+  "Return the mean of the worst FRACTION of non-empty VALUES."
+  (unless values
+    (error "Cannot compute CVaR of an empty return list."))
+  (unless (and (plusp fraction) (<= fraction 1.0d0))
+    (error "CVaR fraction must be in (0,1], got ~S." fraction))
+  (let* ((sorted (sort (mapcar (lambda (value)
+                                 (coerce value 'double-float))
+                               values)
+                       #'<))
+         (count (max 1 (ceiling (* fraction (length sorted))))))
+    (arithmetic-mean (subseq sorted 0 count))))
+
+(defun official-guided-tail-statistics (returns horizon)
+  "Return reproducible distribution and catastrophic-tail metrics."
+  (unless (and (integerp horizon) (plusp horizon))
+    (error "Tail statistics require a positive horizon, got ~S." horizon))
+  (let* ((threshold (* horizon
+                       +official-guided-catastrophic-return-per-step+))
+         (catastrophic-count
+           (count-if (lambda (value) (<= value threshold)) returns)))
+    (list :horizon horizon
+          :median (official-guided-quantile returns 0.5d0)
+          :q05 (official-guided-quantile returns 0.05d0)
+          :q10 (official-guided-quantile returns 0.10d0)
+          :q25 (official-guided-quantile returns 0.25d0)
+          :cvar-10 (official-guided-lower-cvar returns)
+          :catastrophic-threshold (coerce threshold 'double-float)
+          :catastrophic-count catastrophic-count
+          :catastrophic-rate
+            (/ catastrophic-count (coerce (length returns) 'double-float)))))
+
 (defun make-official-guided-evaluation-record
        (&key stage imitation-score seeds candidate-returns incumbent-returns
-             accepted)
+             accepted horizon)
   "Build the structured Phase-1 fitness/evaluation record."
   (multiple-value-bind
         (paired-mean paired-se correlation paired-variance unpaired-variance
          differences)
       (official-guided-comparison-statistics
        candidate-returns incumbent-returns)
-    (list :protocol +official-guided-fitness-protocol+
+    (append
+     (list :protocol +official-guided-fitness-protocol+
           :stage stage
           :accepted (not (null accepted))
           :imitation-score imitation-score
@@ -454,7 +505,13 @@
           :paired-se paired-se
           :same-seed-correlation correlation
           :paired-variance paired-variance
-          :unpaired-variance unpaired-variance)))
+           :unpaired-variance unpaired-variance)
+     (when horizon
+       (list :horizon horizon
+             :official-tail
+               (official-guided-tail-statistics candidate-returns horizon)
+             :incumbent-tail
+               (official-guided-tail-statistics incumbent-returns horizon))))))
 
 (defun make-official-guided-parent-child-evaluation-record
        (child-returns parent-returns seeds behavioral-locality)
@@ -484,3 +541,81 @@
        candidate-returns incumbent-returns)
     (let ((margin (* +official-guided-comparison-standard-errors+ se)))
       (values (> mean margin) mean margin))))
+
+(defun official-guided-promotion-stage-name (episode-count)
+  "Return the frozen stage name associated with EPISODE-COUNT."
+  (ecase episode-count
+    (12 :promotion-stage-1)
+    (40 :promotion-stage-2)
+    (100 :promotion-stage-3)
+    (1000 :promotion-stage-4)))
+
+(defun official-guided-environment-for-horizon (environment-name horizon)
+  "Replace the final numeric CAGE2 horizon in ENVIRONMENT-NAME."
+  (let* ((suffix "-100-v0")
+         (position (search suffix environment-name :from-end t)))
+    (unless (and position
+                 (= (+ position (length suffix))
+                    (length environment-name)))
+      (error "Cannot derive a CAGE2 audit horizon from ~S."
+             environment-name))
+    (format nil "~A-~D-v0" (subseq environment-name 0 position) horizon)))
+
+(defun official-guided-sum-return-lists (return-lists)
+  "Sum aligned per-seed returns across multiple horizons."
+  (unless return-lists
+    (error "Cannot aggregate an empty list of horizon returns."))
+  (let ((lengths (mapcar #'length return-lists)))
+    (unless (apply #'= lengths)
+      (error "Multi-horizon return lengths differ: ~S." lengths)))
+  (apply #'mapcar #'+ return-lists))
+
+(defun official-guided-tail-aware-promote-p
+       (aggregate-candidate aggregate-incumbent
+        long-candidate long-incumbent long-horizon)
+  "Require robust aggregate and long-horizon gains without tail regression."
+  (multiple-value-bind (aggregate-mean aggregate-se)
+      (official-guided-comparison-statistics
+       aggregate-candidate aggregate-incumbent)
+    (multiple-value-bind (long-mean long-se)
+        (official-guided-comparison-statistics
+         long-candidate long-incumbent)
+      (let* ((aggregate-margin
+               (* +official-guided-final-promotion-standard-errors+
+                  aggregate-se))
+             (long-margin
+               (* +official-guided-final-promotion-standard-errors+
+                  long-se))
+             (candidate-tail
+               (official-guided-tail-statistics
+                long-candidate long-horizon))
+             (incumbent-tail
+               (official-guided-tail-statistics
+                long-incumbent long-horizon))
+             (aggregate-pass (> aggregate-mean aggregate-margin))
+             (long-pass (> long-mean long-margin))
+             (cvar-pass
+               (>= (getf candidate-tail :cvar-10)
+                   (getf incumbent-tail :cvar-10)))
+             (catastrophic-pass
+               (<= (getf candidate-tail :catastrophic-count)
+                   (getf incumbent-tail :catastrophic-count)))
+             (accepted
+               (and aggregate-pass long-pass cvar-pass catastrophic-pass))
+             (audit
+               (list :protocol :tail-aware-multi-horizon-v1
+                     :accepted accepted
+                     :aggregate-paired-mean aggregate-mean
+                     :aggregate-paired-se aggregate-se
+                     :aggregate-margin aggregate-margin
+                     :aggregate-pass aggregate-pass
+                     :long-horizon long-horizon
+                     :long-paired-mean long-mean
+                     :long-paired-se long-se
+                     :long-margin long-margin
+                     :long-pass long-pass
+                     :cvar-pass cvar-pass
+                     :catastrophic-pass catastrophic-pass
+                     :candidate-tail candidate-tail
+                     :incumbent-tail incumbent-tail)))
+        (values accepted aggregate-mean aggregate-margin audit)))))

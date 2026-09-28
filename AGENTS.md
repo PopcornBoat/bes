@@ -57,7 +57,8 @@
 - Teacher/controller state changes only from the concrete action actually
   executed by the environment.
 - Historical bests retain serialize/deserialize deep-copy semantics.
-- Official paired racing and fresh 12/40/100 promotion, not mixed return or
-  imitation fitness alone, decide incumbent replacement.
+- Official paired racing and fresh 12/40/100/1000 promotion, not mixed return
+  or imitation fitness alone, decide incumbent replacement.  The final stage
+  requires robust aggregate and 100-step gains plus non-regressing tail risk.
 - Phase-specific frozen controls and attribution rules are documented in
   `DESIGN.md`, `PHASE1.md` through `PHASE4B.md`, and `EXPERIMENTS.md`.

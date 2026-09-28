@@ -427,7 +427,7 @@ The DAgger behavior snapshot and its source generation/fitness are also stored
 in both places. Resume therefore continues the learner trajectory distribution
 without sharing graph references. Warm-start setup creates a run-local
 incumbent checkpoint only when none exists; an existing file is protected, and
-only final Stage-3 official promotion may overwrite it.
+only the configured final official-promotion stage may overwrite it.
 
 ## Grouped epsilon-lexicase survivor selection
 
@@ -520,6 +520,22 @@ then returns control to the frozen checkpoint. Discovery and holdout seed blocks
 are explicit and disjoint; official paired return-to-go, not the teacher label,
 assigns credit. Run `scripts/phase5d-credit REQUEST.sexp OUTPUT_DIRECTORY` and
 see `PHASE5D.md`. This diagnostic does not mutate or promote a checkpoint.
+
+## Phase 5E tail-aware promotion
+
+Phase 5E keeps the existing official-guided DAgger, grouped epsilon-lexicase,
+locality control, and teacher-directed repair. It changes only historical-best
+promotion. The existing 5-episode racing and cumulative 12/40/100 paired
+checks can reject but cannot promote. A survivor proceeds to 1000 fresh paired
+100-step episodes and is also evaluated on the same seeds at 30 and 50 steps.
+
+The final decision uses per-seed 30+50+100 return. Both aggregate and 100-step
+paired improvements must exceed two standard errors. The candidate's worst
+10% 100-step CVaR may not fall below the incumbent, and its count of returns at
+or below -100 may not increase. Records include median, 5/10/25 percentiles,
+CVaR, catastrophic count/rate, and all three horizon records. Roots 153, 42,
+and 2026 remain monitoring-only. See `PHASE5E.md` and
+`experiments/phase5e-tail-aware-promotion.sexp`.
 
 ## CAGE2 episode opening
 

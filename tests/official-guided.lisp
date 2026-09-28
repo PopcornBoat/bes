@@ -165,11 +165,54 @@
    (and promote-p (= mean 1.0d0) (= margin 0.0d0))
    "only final positive paired evidence can promote"))
 
+(let ((tail
+        (cl-tpg::official-guided-tail-statistics
+         '(-200.0d0 -100.0d0 -10.0d0 0.0d0 10.0d0
+           20.0d0 30.0d0 40.0d0 50.0d0 60.0d0)
+         100)))
+  (check-official-guided
+   (and (= (getf tail :median) 15.0d0)
+        (= (getf tail :cvar-10) -200.0d0)
+        (= (getf tail :catastrophic-count) 2)
+        (= (getf tail :catastrophic-rate) 0.2d0))
+   "tail metrics expose median, worst-decile CVaR, and catastrophic rate"))
+
+(multiple-value-bind (accepted mean margin audit)
+    (cl-tpg::official-guided-tail-aware-promote-p
+     '(3.0d0 3.0d0 3.0d0 3.0d0)
+     '(0.0d0 0.0d0 0.0d0 0.0d0)
+     '(1.0d0 1.0d0 1.0d0 1.0d0)
+     '(0.0d0 0.0d0 0.0d0 0.0d0)
+     100)
+  (check-official-guided
+   (and accepted (= mean 3.0d0) (= margin 0.0d0)
+        (getf audit :aggregate-pass)
+        (getf audit :long-pass)
+        (getf audit :cvar-pass)
+        (getf audit :catastrophic-pass))
+   "final audit accepts a robust aggregate and long-horizon improvement"))
+
+(let ((candidate (append (list -101.0d0)
+                         (make-list 999 :initial-element 10.0d0)))
+      (incumbent (make-list 1000 :initial-element 0.0d0)))
+  (multiple-value-bind (accepted mean margin audit)
+      (cl-tpg::official-guided-tail-aware-promote-p
+       candidate incumbent candidate incumbent 100)
+    (declare (ignore mean margin))
+    (check-official-guided
+     (and (not accepted)
+          (getf audit :aggregate-pass)
+          (getf audit :long-pass)
+          (getf audit :cvar-pass)
+          (not (getf audit :catastrophic-pass)))
+     "one new catastrophic episode vetoes an otherwise strong challenger")))
+
 (check-official-guided
  (and (= cl-tpg::+official-guided-racing-episodes+ 5)
-      (equal cl-tpg::+official-guided-promotion-stages+ '(12 40 100))
+      (equal cl-tpg::+official-guided-promotion-stages+ '(12 40 100 1000))
+      (equal cl-tpg::+official-guided-final-audit-horizons+ '(30 50 100))
       (equal cl-tpg::+official-guided-reference-roots+ '(153 42 2026)))
- "racing, staged promotion, and monitoring roots are frozen by contract")
+ "racing, tail-aware staged promotion, and monitoring roots are frozen")
 
 (let ((cl-tpg::*last-dagger-diagnostics*
         '(:disagreement-rate 0.70d0)))
@@ -302,8 +345,8 @@
                 :cage2-opening-mode :fixed
                 :teacher-backend :model
                 :racing-seeds '(1 2 3 4 5)
-                :promotion-seeds (loop for seed from 101 to 200 collect seed)
-                :promotion-stages '(12 40 100)
+                :promotion-seeds (loop for seed from 101 to 1100 collect seed)
+                :promotion-stages '(12 40 100 1000)
                 :reference-seeds '(301 302 303 304 305 306))
           request-path)
          (setf (symbol-function 'cl-gym:rollout)
@@ -325,9 +368,15 @@
             (and (eq (getf result :status) :complete)
                  (getf result :accepted)
                  (eq (getf (getf result :evaluation-record) :stage)
-                     :promotion-stage-3)
+                     :promotion-stage-4)
                  (= (getf (getf result :evaluation-record) :episode-count)
-                    100)
+                    1000)
+                 (= (length
+                     (getf (getf result :evaluation-record)
+                           :horizon-records))
+                    3)
+                 (getf (getf (getf result :evaluation-record) :tail-audit)
+                       :accepted)
                  (= (getf
                      (getf (getf result :evaluation-record)
                            :parent-child-evaluation)
@@ -336,7 +385,7 @@
                  (= (getf (getf result :reference-monitoring) :episode-count)
                     6))
             (format nil
-                    "worker promotes only after Stage 3 and keeps monitoring separate: ~S"
+                    "worker promotes only after tail-aware Stage 4 and keeps monitoring separate: ~S"
                     result))))
     (setf (symbol-function 'cl-gym:rollout) original-rollout)
     (dolist (path (list candidate-path incumbent-path parent-path
