@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 INPUT_DIRECTORY OUTPUT.sexp" >&2
+  exit 2
+fi
+
+repo=/home/hardison/bes
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+
+cd "$repo"
+env \
+  "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+  "PHASE5D_INPUT_DIRECTORY=$1" \
+  "PHASE5D_CONTEXT_OUTPUT=$2" \
+  /usr/bin/sbcl \
+    --dynamic-space-size 4096 \
+    --non-interactive \
+    --eval '(require :asdf)' \
+    --eval '(asdf:load-system :cl-tpg)' \
+    --eval '(cl-tpg::run-phase5d-context-analysis-from-environment)'

@@ -81,6 +81,20 @@ scripts/phase5d-credit REQUEST.sexp OUTPUT_DIRECTORY
 The output contains the normalized request, complete paired trajectories,
 compact paired results, summary statistics, and an input SHA-256 record.
 
+## Context analysis
+
+After a paired run completes, generate a discovery-only context map with:
+
+```bash
+scripts/phase5d-analyze OUTPUT_DIRECTORY OUTPUT_DIRECTORY/context-analysis.sexp
+```
+
+The report separates immediate reward from downstream return and groups the
+effects by episode phase, teacher rank, concrete Decoy option, controller Decoy
+mask, scan state, winning learner, graph-path length, and exact 62-value policy
+observation. Once any holdout result is inspected for subgroup discovery, it is
+treated as discovery material; a derived subgroup requires a new seed root.
+
 ## Gate to Phase 5D-2
 
 Program-patch synthesis begins only if a recurring correction has useful

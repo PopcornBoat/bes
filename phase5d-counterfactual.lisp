@@ -315,3 +315,191 @@ return difference has a single causal action change at the divergence point."
     (run-phase5d-counterfactual-credit
      (required "PHASE5D_REQUEST")
      (required "PHASE5D_OUTPUT_DIRECTORY"))))
+
+(defun phase5d-step-bucket (step)
+  (cond
+    ((< step 20) :early)
+    ((< step 50) :middle)
+    (t :late)))
+
+(defun phase5d-delta-class (delta &optional (epsilon 1.0d-9))
+  (cond
+    ((> delta epsilon) :positive)
+    ((< delta (- epsilon)) :negative)
+    (t :zero)))
+
+(defun phase5d-delta-summary (records)
+  "Summarize :PAIRED-DELTA values without treating floating noise as effect."
+  (let* ((deltas (mapcar (lambda (x) (getf x :paired-delta)) records))
+         (mean (phase5d-mean deltas))
+         (std (phase5d-sample-standard-deviation deltas))
+         (se (and std
+                  (/ std (sqrt (coerce (length deltas) 'double-float))))))
+    (list :count (length records)
+          :positive
+            (count :positive deltas :key #'phase5d-delta-class)
+          :zero (count :zero deltas :key #'phase5d-delta-class)
+          :negative
+            (count :negative deltas :key #'phase5d-delta-class)
+          :mean-delta mean
+          :standard-deviation std
+          :standard-error se
+          :normal-95-percent-interval
+            (and mean se
+                 (list (- mean (* 1.96d0 se))
+                       (+ mean (* 1.96d0 se)))))))
+
+(defun phase5d-context-group-summaries
+       (records key-function &key (minimum-count 1))
+  "Group RECORDS by KEY-FUNCTION and return count-sorted delta summaries."
+  (let ((groups (make-hash-table :test #'equal)))
+    (dolist (record records)
+      (push record (gethash (funcall key-function record) groups)))
+    (sort
+     (loop for key being the hash-keys of groups
+             using (hash-value entries)
+           when (>= (length entries) minimum-count)
+             collect (list :key key
+                           :statistics (phase5d-delta-summary entries)))
+     #'> :key (lambda (entry)
+                (getf (getf entry :statistics) :count)))))
+
+(defun phase5d-find-v17-proposal (step)
+  (or (find :v17 (getf step :policy-proposals)
+            :key (lambda (proposal) (getf proposal :label))
+            :test #'eq)
+      (error "Phase 5D context step has no V17 proposal.")))
+
+(defun phase5d-context-record (paired trajectory)
+  "Join one compact paired result to its baseline/intervention context."
+  (let* ((step-number (getf paired :step))
+         (baseline (getf trajectory :baseline))
+         (intervention (getf trajectory :intervention))
+         (baseline-step
+           (find step-number (getf baseline :steps)
+                 :key (lambda (step) (getf step :step))))
+         (intervention-step
+           (find step-number (getf intervention :steps)
+                 :key (lambda (step) (getf step :step))))
+         (proposal (phase5d-find-v17-proposal baseline-step))
+         (observation (getf baseline-step :policy-observation))
+         (delta (getf paired :paired-delta))
+         (immediate-delta
+           (- (getf intervention-step :reward)
+              (getf baseline-step :reward))))
+    (unless (and baseline-step intervention-step)
+      (error "Phase 5D context is missing seed ~D step ~D."
+             (getf paired :seed) step-number))
+    (list
+     :cohort (getf paired :cohort)
+     :seed (getf paired :seed)
+     :step step-number
+     :step-bucket (phase5d-step-bucket step-number)
+     :paired-delta delta
+     :delta-class (phase5d-delta-class delta)
+     :immediate-reward-delta immediate-delta
+     :downstream-delta (- delta immediate-delta)
+     :baseline-return (getf paired :baseline-return)
+     :intervention-return (getf paired :intervention-return)
+     :teacher-rank-in-behavior (getf paired :teacher-rank-in-behavior)
+     :teacher-option
+       (getf (getf baseline-step :teacher-decision) :option)
+     :teacher-concrete-action
+       (getf paired :intervention-concrete-action)
+     :behavior-concrete-action
+       (getf paired :baseline-concrete-action)
+     :behavior-winning-learner (getf proposal :winning-learner)
+     :behavior-terminal-team (getf proposal :terminal-team)
+     :behavior-path-length (length (getf proposal :preferred-path))
+     :behavior-ranking (copy-tree (getf proposal :ranking))
+     :decoy-mask-before (getf baseline-step :decoy-mask-before)
+     :enterprise0-observation
+       (coerce (subseq observation 4 8) 'list)
+     :op-server0-observation
+       (coerce (subseq observation 28 32) 'list)
+     :scan-state
+       (coerce (subseq observation
+                       +cage2-raw-observation-size+
+                       +cage2-scan-observation-size+)
+               'list)
+     :policy-observation (coerce observation 'list))))
+
+(defun run-phase5d-context-analysis (input-directory output-path)
+  "Explain context dependence in a completed Phase 5D paired experiment."
+  (let* ((directory (uiop:ensure-directory-pathname input-directory))
+         (paired
+           (phase5c-read-form
+            (merge-pathnames "paired-results.sexp" directory)))
+         (trajectories
+           (phase5c-read-form
+            (merge-pathnames "counterfactual-trajectories.sexp" directory)))
+         (evaluated
+           (remove-if-not
+            (lambda (record) (eq (getf record :status) :evaluated))
+            paired))
+         (contexts
+           (mapcar
+            (lambda (record)
+              (let ((trajectory
+                      (find-if
+                       (lambda (entry)
+                         (and (eq (getf entry :cohort)
+                                  (getf record :cohort))
+                              (= (getf entry :seed)
+                                 (getf record :seed))))
+                       trajectories)))
+                (unless trajectory
+                  (error "Missing trajectory for ~S seed ~D."
+                         (getf record :cohort) (getf record :seed)))
+                (phase5d-context-record record trajectory)))
+            evaluated))
+         (report
+           (list
+            :protocol :phase5d-context-analysis-v1
+            :source-directory (namestring directory)
+            :note
+              "All inspected cohorts are discovery material; derived groups require a new holdout stream."
+            :overall (phase5d-delta-summary contexts)
+            :by-cohort
+              (phase5d-context-group-summaries
+               contexts (lambda (x) (getf x :cohort)))
+            :by-step-bucket
+              (phase5d-context-group-summaries
+               contexts (lambda (x) (getf x :step-bucket)))
+            :by-teacher-rank
+              (phase5d-context-group-summaries
+               contexts (lambda (x) (getf x :teacher-rank-in-behavior)))
+            :by-teacher-option
+              (phase5d-context-group-summaries
+               contexts (lambda (x) (getf x :teacher-option)))
+            :by-immediate-reward-delta
+              (phase5d-context-group-summaries
+               contexts (lambda (x) (getf x :immediate-reward-delta)))
+            :by-decoy-mask
+              (phase5d-context-group-summaries
+               contexts (lambda (x) (getf x :decoy-mask-before)))
+            :by-scan-state
+              (phase5d-context-group-summaries
+               contexts (lambda (x) (getf x :scan-state)))
+            :by-winning-learner
+              (phase5d-context-group-summaries
+               contexts (lambda (x) (getf x :behavior-winning-learner)))
+            :by-path-length
+              (phase5d-context-group-summaries
+               contexts (lambda (x) (getf x :behavior-path-length)))
+            :repeated-policy-observations
+              (phase5d-context-group-summaries
+               contexts (lambda (x) (getf x :policy-observation))
+               :minimum-count 2)
+            :contexts contexts)))
+    (phase5c-write-form report output-path)
+    report))
+
+(defun run-phase5d-context-analysis-from-environment ()
+  "Run context analysis from launcher-supplied paths."
+  (flet ((required (name)
+           (or (uiop:getenv name)
+               (error "Required environment variable ~A is missing." name))))
+    (run-phase5d-context-analysis
+     (required "PHASE5D_INPUT_DIRECTORY")
+     (required "PHASE5D_CONTEXT_OUTPUT"))))

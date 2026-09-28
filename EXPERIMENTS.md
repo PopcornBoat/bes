@@ -15,6 +15,18 @@ continuing. Interpret discovery and holdout separately; do not tune the error
 group on holdout results. No result from this diagnostic directly replaces a
 checkpoint. The exact contract and request schema are in `PHASE5D.md`.
 
+The first frozen run used
+`experiments/phase5d-counterfactual-opserver-decoy-v17.sexp`. Discovery found
+12 eligible events from 64 seeds (mean delta `+1.167`, 95% interval
+`[-0.394,+2.727]`). Holdout found 24 from 128 (mean delta `+0.333`, 95%
+interval `[-0.979,+1.645]`), so the fixed one-step correction failed its gate.
+Context analysis showed zero immediate reward difference in all 36 events and
+only two exact 62-input observations; both observations contained mixed
+positive, zero, and negative downstream effects. Teacher rank, concrete Decoy
+option, winning learner, terminal team, and graph path were constant. No
+observed context subgroup justified program-patch synthesis. The next isolated
+hypothesis is teacher-continuation horizon rather than a one-step patch.
+
 ## Completed Phase 1 baseline
 
 The first controlled run stopped cleanly at generation 387. It retained the

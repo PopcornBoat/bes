@@ -82,5 +82,29 @@
         (< (abs (- (getf summary :standard-error) 1.0d0)) 1.0d-12))
    "cohort statistics distinguish requested seeds from eligible events"))
 
+(check-phase5d-counterfactual
+ (and (eq (cl-tpg::phase5d-step-bucket 12) :early)
+      (eq (cl-tpg::phase5d-step-bucket 20) :middle)
+      (eq (cl-tpg::phase5d-step-bucket 50) :late))
+ "episode phases use frozen non-overlapping boundaries")
+
+(check-phase5d-counterfactual
+ (and (eq (cl-tpg::phase5d-delta-class 1.0d0) :positive)
+      (eq (cl-tpg::phase5d-delta-class -1.0d0) :negative)
+      (eq (cl-tpg::phase5d-delta-class 1.0d-14) :zero))
+ "floating-point noise is not counted as a causal effect")
+
+(let* ((records
+         (list (list :group :a :paired-delta 2.0d0)
+               (list :group :a :paired-delta 0.0d0)
+               (list :group :b :paired-delta -1.0d0)))
+       (groups
+         (cl-tpg::phase5d-context-group-summaries
+          records (lambda (x) (getf x :group)))))
+  (check-phase5d-counterfactual
+   (and (equal (getf (first groups) :key) :a)
+        (= (getf (getf (first groups) :statistics) :count) 2))
+   "context groups are ordered by evidence count"))
+
 (format t "~&Phase 5D counterfactual checks passed: ~D~%"
         *phase5d-counterfactual-checks*)
