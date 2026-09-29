@@ -197,6 +197,34 @@ Stage 4 performs the final multi-horizon tail-aware promotion audit.")
 (defconstant +official-guided-catastrophic-return-per-step+ -1.0d0
   "A return at or below horizon times this value is counted as catastrophic.")
 
+(defconstant +phase5f-near-miss-protocol+
+  :bounded-near-miss-lineage-phase5f-v1
+  "Version tag for detached near-miss search memory.")
+
+(defconstant +phase5f-max-lineages+ 2
+  "Maximum detached near-miss basins retained at once.")
+
+(defconstant +phase5f-reproduction-quota+ 0.10d0
+  "Maximum fraction of existing offspring slots sourced from lineage heads.")
+
+(defconstant +phase5f-lineage-submission-period+ 5
+  "At most one in five official challenger slots may be lineage-sourced.")
+
+(defparameter +phase5f-local-screen-and-confirm-counts+ '(5 20)
+  "Fresh 100-step screen count followed by a disjoint multi-horizon confirm count.")
+
+(defconstant +phase5f-local-confirm-standard-errors+ 1.0d0
+  "Paired uncertainty margin required against the current lineage head.")
+
+(defconstant +phase5f-max-reproduction-opportunities+ 80
+  "Maximum explicitly allocated offspring slots over one lineage lifetime.")
+
+(defconstant +phase5f-max-evaluated-descendants+ 12
+  "Maximum completed local descendant comparisons over one lineage lifetime.")
+
+(defconstant +phase5f-max-age-generations+ 250
+  "Hard generation lifetime for one near-miss lineage.")
+
 (defparameter +official-guided-reference-roots+ '(153 42 2026)
   "Fixed roots used only for monitoring, never selection or promotion.")
 
@@ -648,11 +676,38 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 
 (defvar *official-guided-seed-streams* nil
   "Serializable plist holding independent training, racing, promotion,
-reference, and Phase-5A return-credit stream roots and cursors.")
+reference, Phase-5A return-credit, and Phase-5F lineage stream cursors.")
 
 (defvar *official-return-credit-enabled* nil
   "When true, positive paired child/direct-parent evidence may establish a
 bounded protected lineage.  It never promotes the global incumbent directly.")
+
+(defvar *phase5f-near-miss-enabled* nil
+  "When true, retain a bounded detached archive of full-Stage-4 near misses.")
+
+(defvar *phase5f-lineages* nil
+  "Detached Phase-5F archive records; graph payloads live in private files.")
+
+(defvar *phase5f-team-lineages* nil
+  "EQ map from live descendants to (LINEAGE-ID HEAD-VERSION).")
+
+(defvar *phase5f-run-id* nil
+  "Persistent identity used to audit one recovered near-miss archive run.")
+
+(defvar *phase5f-next-lineage-id* 0)
+(defvar *phase5f-variation-root* nil)
+(defvar *phase5f-variation-cursor* 0)
+(defvar *phase5f-submission-count* 0)
+(defvar *phase5f-lineage-submission-count* 0)
+(defvar *phase5f-lineage-official-rollouts* 0)
+(defvar *phase5f-nonlineage-official-rollouts* 0)
+(defvar *phase5f-admission-count* 0)
+(defvar *phase5f-duplicate-count* 0)
+(defvar *phase5f-expiry-count* 0)
+(defvar *phase5f-head-update-count* 0)
+
+(defvar *online-staged-best-phase5f-lineage-id* nil)
+(defvar *online-staged-best-phase5f-head-version* nil)
 
 (defvar *phase5c-targeted-return-credit-enabled* nil
   "When true, Phase 5C combines Case-A/B targeted proposals with the existing

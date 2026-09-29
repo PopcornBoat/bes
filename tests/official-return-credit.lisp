@@ -42,7 +42,7 @@
   (let* ((state (cl-tpg::official-guided-seed-state-copy))
          (credit (cl-tpg::official-guided-take-seeds :credit 5)))
     (check-official-return-credit
-     (and (= (getf state :version) 2)
+     (and (= (getf state :version) 3)
           (= (length credit) 5)
           (every (lambda (seed)
                    (= (ash seed (- cl-tpg::+official-guided-seed-payload-bits+))
@@ -63,14 +63,17 @@
                 :reference (list :roots '(153 42 2026) :cursor 5))))
     (cl-tpg::restore-official-guided-seed-streams legacy)
     (check-official-return-credit
-     (and (= (getf cl-tpg::*official-guided-seed-streams* :version) 2)
+     (and (= (getf cl-tpg::*official-guided-seed-streams* :version) 3)
           (= (getf (getf cl-tpg::*official-guided-seed-streams* :racing)
                    :cursor)
              3)
           (= (getf (getf cl-tpg::*official-guided-seed-streams* :credit)
                    :cursor)
+             0)
+          (= (getf (getf cl-tpg::*official-guided-seed-streams* :lineage)
+                   :cursor)
              0))
-     "legacy four-stream checkpoints gain credit without moving old cursors")))
+     "legacy four-stream checkpoints gain credit and lineage streams without moving old cursors")))
 
 (multiple-value-bind (approved delta margin)
     (cl-tpg::official-return-credit-approve-p

@@ -31,6 +31,7 @@
 	       (:file "phase5d-counterfactual")
 	       (:file "official-guided")
 	       (:file "official-return-credit")
+	       (:file "phase5f-near-miss")
 	       (:file "phase4b")
 	       (:file "phase5d-directed-repair")
 	       (:file "main")))

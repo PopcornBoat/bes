@@ -45,6 +45,8 @@
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
       (cond
+        (*phase5f-near-miss-enabled*
+         "official-guided-near-miss-lineage")
         (*phase5d-directed-repair-enabled*
          "official-guided-teacher-directed-repair")
         (*phase5c-targeted-return-credit-enabled*
@@ -146,6 +148,10 @@ checkpoint directory."
       ,(and *official-return-credit-enabled*
             (fboundp 'official-return-credit-state-copy)
             (official-return-credit-state-copy))
+    :phase5f-near-miss-state
+      ,(and *phase5f-near-miss-enabled*
+            (fboundp 'phase5f-state-copy)
+            (phase5f-state-copy))
     :behavioral-locality-state
       ,(and *behavioral-locality-enabled*
             (fboundp 'behavioral-locality-state-copy)

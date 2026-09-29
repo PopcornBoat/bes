@@ -33,7 +33,8 @@
     ;; Phase-2 diagnostics derive this stream from their own persisted cursor;
     ;; it is not part of the four Phase-1 stream plists.
     (:locality 4)
-    (:credit 5)))
+    (:credit 5)
+    (:lineage 6)))
 
 (defun official-guided-derived-root (search-seed salt)
   "Derive one reproducible stream root from SEARCH-SEED and SALT."
@@ -46,7 +47,7 @@
            search-seed))
   (setf *official-guided-seed-streams*
         (list
-         :version 2
+         :version 3
          :training
            (list :roots
                  (list (official-guided-derived-root search-seed 104729))
@@ -65,12 +66,16 @@
          :credit
            (list :roots
                  (list (official-guided-derived-root search-seed 211081))
+                 :cursor 0)
+         :lineage
+           (list :roots
+                 (list (official-guided-derived-root search-seed 2609299))
                  :cursor 0)))
   *official-guided-seed-streams*)
 
 (defun official-guided-seed-stream-valid-p (name stream)
   "Return true when STREAM is a valid serialized stream for NAME."
-  (and (member name '(:training :racing :promotion :reference :credit)
+  (and (member name '(:training :racing :promotion :reference :credit :lineage)
                :test #'eq)
        (listp stream)
        (let ((roots (getf stream :roots))
@@ -83,16 +88,17 @@
 (defun official-guided-seed-streams-valid-p (state)
   "Return true when STATE contains every stream required by its version."
   (and (listp state)
-       (member (getf state :version 0) '(1 2))
+       (member (getf state :version 0) '(1 2 3))
        (every
         (lambda (name)
           (official-guided-seed-stream-valid-p name (getf state name)))
-        (if (= (getf state :version) 1)
-            '(:training :racing :promotion :reference)
-            '(:training :racing :promotion :reference :credit)))))
+        (case (getf state :version)
+          (1 '(:training :racing :promotion :reference))
+          (2 '(:training :racing :promotion :reference :credit))
+          (3 '(:training :racing :promotion :reference :credit :lineage))))))
 
 (defun upgrade-official-guided-seed-streams (state)
-  "Upgrade a valid Phase-1 four-stream STATE with a fresh credit namespace."
+  "Upgrade old stream state without changing any existing stream cursor."
   (let ((copy (copy-tree state)))
     (when (= (getf copy :version) 1)
       (unless (integerp *current-search-seed*)
@@ -102,6 +108,15 @@
               (list :roots
                     (list (official-guided-derived-root
                            *current-search-seed* 211081))
+                    :cursor 0)))
+    (when (= (getf copy :version) 2)
+      (unless (integerp *current-search-seed*)
+        (error "Cannot derive the Phase-5F lineage stream without a search seed."))
+      (setf (getf copy :version) 3
+            (getf copy :lineage)
+              (list :roots
+                    (list (official-guided-derived-root
+                           *current-search-seed* 2609299))
                     :cursor 0)))
     copy))
 
@@ -123,7 +138,8 @@
 
 (defun official-guided-take-seeds (name count)
   "Take COUNT seeds from one single-root stream and advance its cursor."
-  (unless (member name '(:training :racing :promotion :credit) :test #'eq)
+  (unless (member name '(:training :racing :promotion :credit :lineage)
+                  :test #'eq)
     (error "~S is not a single-root official-guided seed stream." name))
   (unless (and (integerp count) (plusp count))
     (error "Official-guided seed count must be positive, got ~S." count))
@@ -168,7 +184,7 @@
 
 (defun official-guided-runtime-state ()
   "Return the small recoverable state journaled beside the best checkpoint."
-  (list :version 7
+  (list :version 8
         :fitness-protocol +official-guided-fitness-protocol+
         :checkpoint-filename (best-team-checkpoint-filename)
         :generation *generation*
@@ -190,6 +206,14 @@
           (and *official-return-credit-enabled*
                (fboundp 'official-return-credit-state-copy)
                (official-return-credit-state-copy))
+        :phase5f-near-miss-state
+          (and *phase5f-near-miss-enabled*
+               (fboundp 'phase5f-state-copy)
+               (phase5f-state-copy))
+        :phase5f-summary
+          (and *phase5f-near-miss-enabled*
+               (fboundp 'phase5f-summary)
+               (phase5f-summary))
         :incumbent-version *official-guided-incumbent-version*
         :best-evaluation (copy-tree *official-guided-best-evaluation*)
         :teacher-dagger-behavior-state
@@ -306,7 +330,12 @@
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
                (getf journal :official-return-credit-state)
-               (getf metadata :official-return-credit-state))))
+               (getf metadata :official-return-credit-state)))
+         (phase5f-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :phase5f-near-miss-state)
+               (getf metadata :phase5f-near-miss-state))))
     (when chosen-state
       (restore-official-guided-seed-streams chosen-state))
     (setf *official-guided-incumbent-version*
@@ -337,6 +366,14 @@
                official-return-credit-state)
       (restore-official-return-credit-state
        official-return-credit-state))
+    (when *phase5f-near-miss-enabled*
+      (let ((incumbent-hash
+              (and *loaded-best-team*
+                   (phase5f-team-graph-hash *loaded-best-team*))))
+        (if phase5f-state
+            (phase5f-restore-state phase5f-state incumbent-hash)
+            (phase5f-initialize-state
+             *current-search-seed* *loaded-best-team*))))
     (values chosen-state journal-matches-p)))
 
 (defun official-guided-teacher-mixing-rate ()

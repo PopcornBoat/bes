@@ -13,6 +13,7 @@ if [[ "${1:-}" == --core ]]; then
     tests/behavioral-locality.lisp
     tests/official-guided.lisp
     tests/official-return-credit.lisp
+    tests/phase5f-near-miss.lisp
     tests/phase5c-diagnostics.lisp
     tests/phase5d-counterfactual.lisp
     tests/phase5d-directed-repair.lisp

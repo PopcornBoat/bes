@@ -801,7 +801,9 @@ promotion still requires the stricter positive one-standard-error improvement."
         *online-staged-best-lineage* nil
         *online-staged-best-parent-team* nil
         *online-staged-best-credit-priority* nil
-        *online-staged-best-credit-lineage-id* nil))
+        *online-staged-best-credit-lineage-id* nil
+        *online-staged-best-phase5f-lineage-id* nil
+        *online-staged-best-phase5f-head-version* nil))
 
 (defun online-candidate-directory ()
   "Return the private staged-evaluation directory for this checkpoint run."
@@ -849,7 +851,10 @@ promotion still requires the stricter positive one-standard-error improvement."
               (> priority (or *online-staged-best-credit-priority* 0))
               (and (= priority (or *online-staged-best-credit-priority* 0))
                    (> fitness *online-staged-best-fitness*)))
-      (let ((parent (behavioral-parent-for-team team)))
+      (let ((parent (behavioral-parent-for-team team))
+            (phase5f-identity
+              (and (phase5f-active-p)
+                   (phase5f-lineage-for-team team))))
       (setf *online-staged-best-team*
               (deep-copy-team-via-serialization team)
             *online-staged-best-fitness* fitness
@@ -862,7 +867,11 @@ promotion still requires the stricter positive one-standard-error improvement."
             *online-staged-best-credit-priority* priority
             *online-staged-best-credit-lineage-id*
               (and (official-return-credit-active-p)
-                   (official-return-credit-lineage-for-team team)))))))
+                   (official-return-credit-lineage-for-team team))
+            *online-staged-best-phase5f-lineage-id*
+              (first phase5f-identity)
+            *online-staged-best-phase5f-head-version*
+              (second phase5f-identity))))))
 
 (defun launch-online-candidate-evaluation ()
   "Publish the accumulated candidate and start its independent SBCL worker."
@@ -1190,6 +1199,14 @@ promotion still requires the stricter positive one-standard-error improvement."
          (imitation-score *online-staged-best-fitness*)
          (credit-priority *online-staged-best-credit-priority*)
          (credit-lineage-id *online-staged-best-credit-lineage-id*)
+         (phase5f-lineage-id
+           *online-staged-best-phase5f-lineage-id*)
+         (phase5f-head-version
+           *online-staged-best-phase5f-head-version*)
+         (phase5f-request
+           (and phase5f-lineage-id
+                (phase5f-local-comparison-request
+                 phase5f-lineage-id phase5f-head-version)))
          ;; Warm-start resume resets the displayed generation counter.  Include
          ;; the incumbent version and wall-clock second so a resumed search can
          ;; never consume a stale result left by an earlier generation number.
@@ -1224,6 +1241,12 @@ promotion still requires the stricter positive one-standard-error improvement."
                 (official-guided-take-seeds
                  :credit
                  (car (last +official-return-credit-stages+)))))
+         (phase5f-seeds
+           (and phase5f-request
+                (official-guided-take-seeds
+                 :lineage
+                 (reduce #'+
+                         +phase5f-local-screen-and-confirm-counts+))))
          (promotion-seeds
            (official-guided-take-seeds
             :promotion (car (last +official-guided-promotion-stages+))))
@@ -1261,12 +1284,21 @@ promotion still requires the stricter positive one-standard-error improvement."
            :return-credit-stages
              (and credit-seeds
                   (copy-list +official-return-credit-stages+))
+           :phase5f-lineage-request (copy-tree phase5f-request)
+           :phase5f-lineage-seeds phase5f-seeds
+           :phase5f-lineage-counts
+             (and phase5f-seeds
+                  (copy-list +phase5f-local-screen-and-confirm-counts+))
            :racing-seeds racing-seeds
            :promotion-seeds promotion-seeds
            :promotion-stages
              (copy-list +official-guided-promotion-stages+)
            :reference-seeds reference-seeds)
      request-path)
+    ;; Persist cursor reservations before worker launch.  A failed or resumed
+    ;; task reuses its recorded request and never receives a fresh seed draw.
+    (phase5f-note-submission
+     (and phase5f-request (getf phase5f-request :lineage-id)))
     (persist-official-guided-runtime-state)
     (setf *online-candidate-process*
             (uiop:launch-program
@@ -1290,7 +1322,13 @@ promotion still requires the stricter positive one-standard-error improvement."
                   :log-path log-path
                   :incumbent-version *official-guided-incumbent-version*
                   :credit-priority credit-priority
-                  :credit-lineage-id credit-lineage-id)
+                  :credit-lineage-id credit-lineage-id
+                  :phase5f-lineage-id
+                    (and phase5f-request
+                         (getf phase5f-request :lineage-id))
+                  :phase5f-head-version
+                    (and phase5f-request
+                         (getf phase5f-request :head-version)))
           *online-candidate-next-submit-generation*
             (+ *generation* +online-candidate-evaluation-interval+)
           *online-staged-best-team* nil
@@ -1299,17 +1337,21 @@ promotion still requires the stricter positive one-standard-error improvement."
           *online-staged-best-lineage* nil
           *online-staged-best-parent-team* nil
           *online-staged-best-credit-priority* nil
-          *online-staged-best-credit-lineage-id* nil)
+          *online-staged-best-credit-lineage-id* nil
+          *online-staged-best-phase5f-lineage-id* nil
+          *online-staged-best-phase5f-head-version* nil)
     (when (and (official-return-credit-active-p)
                (<= 1 (or credit-priority 0) 2))
       (incf *official-return-credit-neutral-submissions*))
     (emit-message
      (format nil
-             "Generation ~D submitted to official-guided evaluator: imitation=~,4F return-credit=~S priority=~A lineage=~A racing=~D promotion-stages=~S reference-monitor=~D."
+             "Generation ~D submitted to official-guided evaluator: imitation=~,4F phase5f-lineage=~A local-counts=~S racing=~D promotion-stages=~S reference-monitor=~D."
              generation imitation-score
-             (and credit-seeds +official-return-credit-stages+)
-             (or credit-priority :none)
-             (or credit-lineage-id :new)
+             (or (and phase5f-request
+                      (getf phase5f-request :lineage-id))
+                 :none)
+             (and phase5f-seeds
+                  +phase5f-local-screen-and-confirm-counts+)
              (length racing-seeds)
              +official-guided-promotion-stages+ (length reference-seeds)))))
 
@@ -1324,6 +1366,10 @@ promotion still requires the stricter positive one-standard-error improvement."
          (candidate-path (getf *online-candidate-job* :candidate-path))
          (record (getf result :evaluation-record))
          (credit (getf result :return-credit-evaluation))
+         (phase5f-evaluation
+           (getf result :phase5f-lineage-evaluation))
+         (phase5f-lineage-id
+           (getf *online-candidate-job* :phase5f-lineage-id))
          (candidate-lineage-id
            (getf *online-candidate-job* :credit-lineage-id))
          (candidate-priority
@@ -1334,6 +1380,14 @@ promotion still requires the stricter positive one-standard-error improvement."
     (setf *official-guided-last-evaluation* (copy-tree record))
     (persist-behavioral-official-outcome
      generation (getf record :behavioral-locality) record)
+    ;; Phase-5F evidence is consumed only after the worker completed against
+    ;; the still-current incumbent.  A stale result cannot update search memory.
+    (when (and (eq (getf result :status) :complete)
+               (official-guided-incumbent-current-p result))
+      (phase5f-note-global-evaluation-cost phase5f-lineage-id result)
+      (when phase5f-evaluation
+        (phase5f-consume-local-result
+         candidate-path phase5f-evaluation)))
     ;; Direct-parent credit is independent of the global incumbent version.
     ;; A positive result only restores the frozen child to the live population;
     ;; it cannot overwrite *BEST-TEAM* or bypass the final tail-aware promotion.
@@ -1387,6 +1441,12 @@ promotion still requires the stricter positive one-standard-error improvement."
                 generation (getf result :incumbent-version)
                 *official-guided-incumbent-version*)))
       ((not (getf result :accepted))
+       ;; A descendant already belongs to its detached lineage.  Its local
+       ;; confirmation may advance that head, but a global confidence miss
+       ;; must not fork a second archive entry for the same search attempt.
+       (when (and (null phase5f-lineage-id)
+                  (phase5f-near-miss-eligible-p result))
+         (phase5f-admit-near-miss candidate-path result))
        (emit-message
         (format nil
                 "Official-guided challenger rejected: generation=~D stage=~A episodes=~D paired-delta=~,4F margin=~,4F corr=~A paired-var=~,4F independent-var=~,4F."
@@ -1418,6 +1478,8 @@ promotion still requires the stricter positive one-standard-error improvement."
          (setf *best-team* frozen
                *best-fitness* primary-mean
                *official-guided-best-evaluation* (copy-tree record))
+         (when (phase5f-active-p)
+           (phase5f-clear-after-promotion *best-team*))
          (emit-message
           (format nil
                   "NEW GLOBAL BEST: generation=~D official-100-mean=~,4F full-total-mean=~,4F imitation=~,4F aggregate-paired-delta=~,4F margin=~,4F episodes=~D."
@@ -1756,13 +1818,16 @@ promotion still requires the stricter positive one-standard-error improvement."
          (result-path (pathname (getf request :result-path)))
          (started (get-universal-time))
          (parent-child-record nil)
-         (return-credit-record nil))
+         (return-credit-record nil)
+         (phase5f-lineage-record nil))
     (labels
         ((publish (result)
            (write-readable-object-atomically
             (append result
                     (list :return-credit-evaluation
                           (copy-tree return-credit-record))
+                    (list :phase5f-lineage-evaluation
+                          (copy-tree phase5f-lineage-record))
                     (list :elapsed-seconds
                           (- (get-universal-time) started)))
             result-path))
@@ -1805,6 +1870,20 @@ promotion still requires the stricter positive one-standard-error improvement."
                    (getf request :return-credit-seeds))
                  (return-credit-stages
                    (getf request :return-credit-stages))
+                 (phase5f-request
+                   (getf request :phase5f-lineage-request))
+                 (phase5f-seeds
+                   (getf request :phase5f-lineage-seeds))
+                 (phase5f-counts
+                   (getf request :phase5f-lineage-counts))
+                 (phase5f-head
+                   (and phase5f-request
+                        (phase5f-load-detached-team
+                         (getf phase5f-request :head-path))))
+                 (phase5f-anchor
+                   (and phase5f-request
+                        (phase5f-load-detached-team
+                         (getf phase5f-request :anchor-path))))
                  (racing-seeds (getf request :racing-seeds))
                  (promotion-seeds (getf request :promotion-seeds))
                  (promotion-stages (getf request :promotion-stages))
@@ -1814,6 +1893,11 @@ promotion still requires the stricter positive one-standard-error improvement."
             (when direct-parent
               (ensure-team-observation-compatible
                direct-parent *num-observations*))
+            (when phase5f-head
+              (ensure-team-observation-compatible
+               phase5f-head *num-observations*)
+              (ensure-team-observation-compatible
+               phase5f-anchor *num-observations*))
             (when (and direct-parent return-credit-seeds)
               (setf return-credit-record
                     (run-official-return-credit-evaluation
@@ -1821,6 +1905,35 @@ promotion still requires the stricter positive one-standard-error improvement."
                      *current-gym-environment-name*
                      return-credit-seeds return-credit-stages
                      (getf request :behavioral-locality))))
+            (when phase5f-request
+              (unless (and phase5f-head phase5f-anchor
+                           (= (length phase5f-counts) 2)
+                           (= (length phase5f-seeds)
+                              (reduce #'+ phase5f-counts)))
+                (error "Invalid Phase 5F local-comparison request: ~S"
+                       phase5f-request))
+              (let* ((screen-count (first phase5f-counts))
+                     (screen-seeds
+                       (subseq phase5f-seeds 0 screen-count))
+                     (confirm-seeds
+                       (subseq phase5f-seeds screen-count)))
+                (setf phase5f-lineage-record
+                      (phase5f-run-local-comparison
+                       candidate phase5f-head phase5f-anchor
+                       *current-gym-environment-name*
+                       screen-seeds confirm-seeds
+                       (getf phase5f-request :lineage-id)
+                       (getf phase5f-request :head-version))))
+              (unless (getf phase5f-lineage-record :accepted)
+                (publish
+                 (list :status :complete :accepted nil
+                       :candidate-generation
+                         (getf request :candidate-generation)
+                       :incumbent-version
+                         (getf request :incumbent-version)
+                       :margin 0.0d0
+                       :evaluation-record phase5f-lineage-record))
+                (return-from run-official-guided-candidate-evaluation t)))
             (multiple-value-bind (race-candidate race-incumbent)
                 (official-guided-paired-rollouts
                  candidate incumbent *current-gym-environment-name* racing-seeds)
@@ -2110,11 +2223,12 @@ reference batch."
         *semantic-locality-control-enabled* (eq mode :official-guided)
         *phase4-selection-enabled* (eq mode :official-guided)
         *phase4b-disagreement-audit-enabled* (eq mode :official-guided)
-        ;; Phase 5C keeps Phase-5B paired return credit, but lets the already
-        ;; measured Case-A/B operators propose ten percent of offspring.
-        ;; Known rare-failure seeds remain diagnostic-only.
-        *official-return-credit-enabled* (eq mode :official-guided)
-        *phase5c-targeted-return-credit-enabled* (eq mode :official-guided)
+        ;; Phase 5F is isolated from the older Phase-5B protected-survivor,
+        ;; absolute-priority, and extra parent-credit treatments.  Only the
+        ;; bounded detached near-miss archive is active here.
+        *official-return-credit-enabled* nil
+        *phase5c-targeted-return-credit-enabled* nil
+        *phase5f-near-miss-enabled* (eq mode :official-guided)
         ;; Phase 5D-2 replaces the earlier random Phase-4b repair proposal
         ;; with a teacher-directed bidder synthesis.  The passive disagreement
         ;; audit and routing stream remain active; grouped selection and
@@ -2724,12 +2838,15 @@ through serialization/deserialization and save it to disk."
            (car best-entry))
 
          (official-guided-submission-entry
-           (if (official-return-credit-active-p)
+           (cond
+             ((phase5f-active-p)
+              (phase5f-candidate-entry sorted))
+             ((official-return-credit-active-p)
                ;; Phase 5B first admits behavior-changing children from an
                ;; active credit lineage, then other changed children. Neutral
                ;; direct mutations remain a final exploration fallback.
-               (official-return-credit-candidate-entry sorted)
-               best-entry))
+               (official-return-credit-candidate-entry sorted))
+             (t best-entry)))
 
          (historical-candidate-fitness nil)
 
@@ -2832,6 +2949,14 @@ through serialization/deserialization and save it to disk."
                           :imitation-score generation-best
                           :episode-count 0)))
 
+            ;; A fresh official-guided run has no checkpoint metadata from
+            ;; which to restore Phase-5F search memory.  Initialize it only
+            ;; after the first independently frozen incumbent exists.
+            (when (and (phase5f-active-p)
+                       (null *phase5f-run-id*))
+              (phase5f-initialize-state
+               *current-search-seed* *best-team*))
+
             (emit-message
              (format nil
                      "NEW GLOBAL BEST: generation=~A reference-fitness=~A training-fitness=~A. "
@@ -2881,6 +3006,8 @@ through serialization/deserialization and save it to disk."
              scores sorted generation-best-team n-remove)))
     (dolist (entry worst-entries)
       (delete-team (car entry)))
+    (when (phase5f-active-p)
+      (phase5f-prune-live-team-map))
     (when (phase4-selection-active-p)
       (phase4-record-root-accounting internal-teams-before-selection)
       (phase4-update-specialist-lifecycle :post-selection)
@@ -2979,13 +3106,24 @@ through serialization/deserialization and save it to disk."
                    (routing-p
                     (phase4b-attempt-routing-repair parents))
                    (t (values nil nil)))
-               (let* ((parent
-                        (or repair-parent (random-choice parents)))
+               (let* ((lineage-child
+                        (and (null repair-child)
+                             (not directed-slot-p)
+                             (not combined-slot-p)
+                             (not composition-p)
+                             (not routing-p)
+                             (phase5f-attempt-lineage-offspring)))
+                      (parent
+                        (or repair-parent
+                            (and (null lineage-child)
+                                 (random-choice parents))))
                       (child
-                        (or repair-child
+                        (or repair-child lineage-child
                             (reproduce-native-child parent))))
                  (when (official-return-credit-active-p)
                    (official-return-credit-note-descendant parent child))
+                 (when (and parent (phase5f-active-p))
+                   (phase5f-note-descendant parent child))
                  (when (phase4-selection-active-p)
                    (phase4-note-specialist-descendant parent child))))))
   (when (phase4-selection-active-p)
@@ -3019,6 +3157,8 @@ through serialization/deserialization and save it to disk."
     (persist-population-behavioral-diversity :post-selection)
     
     (reproduce)
+    (when (phase5f-active-p)
+      (phase5f-advance-generation))
     (maybe-run-behavioral-locality-sampling)
     (when (official-guided-mode-p)
       (persist-official-guided-runtime-state))))
@@ -3045,6 +3185,7 @@ through serialization/deserialization and save it to disk."
       (reset-online-candidate-evaluation-state)
       (reset-behavioral-locality-state)
       (reset-official-return-credit-state)
+      (phase5f-reset-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
@@ -3390,6 +3531,7 @@ normal evolution."
       (reset-online-candidate-evaluation-state)
       (reset-behavioral-locality-state)
       (reset-official-return-credit-state)
+      (phase5f-reset-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
