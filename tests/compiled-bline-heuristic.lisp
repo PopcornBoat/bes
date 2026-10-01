@@ -41,6 +41,22 @@
      (equal
       (mapcar #'cl-tpg::semantic-action-category-pair ranking)
       (mapcar #'cl-tpg::semantic-action-category-pair
-              (cl-tpg:execute-team-semantic-ranked loaded observation))))))
+              (cl-tpg:execute-team-semantic-ranked loaded observation)))))
+  (multiple-value-bind (checkpoint-team checkpoint-fitness checkpoint-metadata)
+      (cl-tpg::load-best-team
+       (asdf:system-relative-pathname
+        "cl-tpg"
+        "oracles/checkpoints/bline-62-36-compiled-heuristic.lisp"))
+    (assert (= checkpoint-fitness 0.0d0))
+    (assert (= (length (cl-tpg::team-learners checkpoint-team)) 29))
+    (assert (= (getf checkpoint-metadata :num-observations) 62))
+    (assert (eq (getf checkpoint-metadata :terminal-action-format)
+                :target-response-36))
+    (assert
+     (equal
+      (mapcar #'cl-tpg::semantic-action-category-pair ranking)
+      (mapcar
+       #'cl-tpg::semantic-action-category-pair
+       (cl-tpg:execute-team-semantic-ranked checkpoint-team observation))))))
 
 (format t "Compiled B-line heuristic TPG checks passed.~%")

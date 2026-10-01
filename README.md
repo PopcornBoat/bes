@@ -50,6 +50,17 @@ at each 30-, 50-, and 100-step horizon.
 | Same evolved checkpoint with Controller v2 | -4.7461 | -8.9800 | -19.5357 | **-33.2618** |
 | Compiled heuristic TPG with Controller v2 | -4.4561 | -8.0130 | -16.4807 | **-28.9498** |
 
+The validated deterministic graph is versioned at
+`oracles/checkpoints/bline-62-36-compiled-heuristic.lisp`. It contains the
+same versioned team/checkpoint representation as an evolved best team. To
+regenerate it after changing the compiler, load
+`oracles/compiled-bline-heuristic.lisp` and call:
+
+```lisp
+(cl-tpg::write-compiled-bline-heuristic-checkpoint
+ "oracles/checkpoints/bline-62-36-compiled-heuristic.lisp")
+```
+
 The controller correction improved the unchanged evolved checkpoint by
 `8.5924` reward and reduced its penalty by about 20.5%. The remaining gap to
 the compiled heuristic is `4.3120`. The largest improvement appears at 100
