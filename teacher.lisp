@@ -432,13 +432,13 @@ the historical learner-controlled DAgger behavior is preserved."
                   (prin1-to-string (car right)))
          (> (cdr left) (cdr right))))))
 
-(defun phase4b-disagreement-audit-active-p ()
-  "Return true when passive Phase-4b DAgger error classification is active."
-  (and *phase4b-disagreement-audit-enabled*
-       (phase4-selection-active-p)
+(defun targeted-disagreement-audit-active-p ()
+  "Return true when passive targeted repair DAgger error classification is active."
+  (and *targeted-disagreement-audit-enabled*
+       (grouped-selection-active-p)
        (eq *terminal-action-format* :target-response-36)))
 
-(defun phase4b-behavior-terminal-support (team)
+(defun targeted-behavior-terminal-support (team)
   "Return an EQUAL set of direct Semantic-36 terminals reachable from TEAM.
 
 This is genotype support, not a claim that a reachable learner currently bids
@@ -458,14 +458,14 @@ graph."
                    support)
                   t)))))))
 
-(defun phase4b-disagreement-case (teacher-rank teacher-pair support)
+(defun targeted-disagreement-case (teacher-rank teacher-pair support)
   "Classify one Top-1 disagreement using current ranked/genotype support."
   (cond
     (teacher-rank :case-a-routing)
     ((gethash teacher-pair support) :case-b1-reachable-support)
     (t :case-b2-missing-support)))
 
-(defun phase4b-repair-issue-records (counts episodes)
+(defun targeted-repair-issue-records (counts episodes)
   "Return deterministic serializable issue records from audit hash tables."
   (mapcar
    (lambda (entry)
@@ -476,9 +476,9 @@ graph."
                 (sort (copy-list (gethash (car entry) episodes)) #'<))
               (count (cdr entry))
               (systematic-p
-                (and (>= count +phase4b-systematic-minimum-occurrences+)
+                (and (>= count +targeted-systematic-minimum-occurrences+)
                      (>= (length episode-list)
-                         +phase4b-systematic-minimum-episodes+))))
+                         +targeted-systematic-minimum-episodes+))))
          (list :case case
                :phase phase
                :teacher-pair teacher-pair
@@ -490,15 +490,15 @@ graph."
                :systematic-p systematic-p))))
    (dagger-count-table-alist counts)))
 
-(defun phase4b-make-disagreement-audit
+(defun targeted-make-disagreement-audit
        (disagreements support case-counts phase-case-counts
         pair-case-counts rank-counts issue-counts issue-episodes)
-  "Build the passive Phase-4b audit attached to DAgger diagnostics."
-  (let* ((issues (phase4b-repair-issue-records issue-counts issue-episodes))
+  "Build the passive targeted repair audit attached to DAgger diagnostics."
+  (let* ((issues (targeted-repair-issue-records issue-counts issue-episodes))
          (systematic
            (remove-if-not (lambda (record) (getf record :systematic-p))
                           issues)))
-    (list :protocol +phase4b-disagreement-audit-protocol+
+    (list :protocol +targeted-disagreement-audit-protocol+
           :disagreements disagreements
           :case-counts (dagger-count-table-alist case-counts)
           :case-rates
@@ -565,10 +565,10 @@ updated only from the observation and concrete action that actually occurred."
          (phase-disagreements (make-hash-table :test #'eq))
          (confusion-counts (make-hash-table :test #'equal))
          (prediction-counts (make-hash-table :test #'equal))
-         (repair-audit-active (phase4b-disagreement-audit-active-p))
+         (repair-audit-active (targeted-disagreement-audit-active-p))
          (terminal-support
            (if repair-audit-active
-               (phase4b-behavior-terminal-support behavior-team)
+               (targeted-behavior-terminal-support behavior-team)
                (make-hash-table :test #'equal)))
          (repair-case-counts (make-hash-table :test #'eq))
          (repair-phase-case-counts (make-hash-table :test #'equal))
@@ -673,7 +673,7 @@ updated only from the observation and concrete action that actually occurred."
                                   confusion-counts)
                                  (when repair-audit-active
                                    (let* ((case
-                                            (phase4b-disagreement-case
+                                            (targeted-disagreement-case
                                              teacher-rank selected
                                              terminal-support))
                                           (one-based-rank
@@ -758,9 +758,9 @@ updated only from the observation and concrete action that actually occurred."
                   (dagger-count-table-alist confusion-counts)
                 :prediction-distribution
                   (dagger-count-table-alist prediction-counts)
-                :phase4b-repair-audit
+                :targeted-repair-audit
                   (and repair-audit-active
-                       (phase4b-make-disagreement-audit
+                       (targeted-make-disagreement-audit
                         disagreements terminal-support repair-case-counts
                         repair-phase-case-counts repair-pair-case-counts
                         repair-rank-counts repair-issue-counts
@@ -1114,7 +1114,7 @@ official incumbent and is never repurposed as mutable DAgger state."
                                      :mean-mixed-return 0.0d0)))
                       (let ((audit
                               (getf *last-dagger-diagnostics*
-                                    :phase4b-repair-audit)))
+                                    :targeted-repair-audit)))
                         (when audit
                           (flet ((case-count (case)
                                    (or (cdr (assoc case
@@ -1122,7 +1122,7 @@ official incumbent and is never repurposed as mutable DAgger state."
                                        0)))
                             (emit-message
                              (format nil
-                                     "Generation ~D Phase-4b audit: case-A=~D case-B1=~D case-B2=~D systematic-issues=~D."
+                                     "Generation ~D targeted repair audit: case-A=~D case-B1=~D case-B2=~D systematic-issues=~D."
                                      *generation*
                                      (case-count :case-a-routing)
                                      (case-count
@@ -1160,9 +1160,9 @@ official incumbent and is never repurposed as mutable DAgger state."
   (unless *teacher-training-dataset*
     (error "Teacher training trace is not prepared."))
   (cond
-    ((and (fboundp 'phase4-selection-active-p)
-          (phase4-selection-active-p))
-     (phase4-ranked-training-fitness team *teacher-training-dataset*))
+    ((and (fboundp 'grouped-selection-active-p)
+          (grouped-selection-active-p))
+     (grouped-ranked-training-fitness team *teacher-training-dataset*))
     (*recurrent-policy-enabled*
      (semantic-ranked-sequence-fitness team *teacher-training-dataset*))
     (t

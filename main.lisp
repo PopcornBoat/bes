@@ -146,86 +146,86 @@ this function so an entire population can share exactly the same batch."
         (/ (coerce correct 'double-float)
            (coerce count 'double-float)))))
 
-(defun phase4-selection-active-p ()
-  "Return true only for the frozen official-guided Phase-4a treatment."
-  (and *phase4-selection-enabled* (official-guided-mode-p)))
+(defun grouped-selection-active-p ()
+  "Return true only for the frozen official-guided grouped selection treatment."
+  (and *grouped-selection-enabled* (official-guided-mode-p)))
 
-(defun initialize-phase4-selection-state (search-seed)
+(defun initialize-grouped-selection-state (search-seed)
   "Initialize the isolated counter-based survivor-selection stream."
   (unless (integerp search-seed)
-    (error "Phase-4a selection requires an integer search seed, got ~S."
+    (error "grouped selection selection requires an integer search seed, got ~S."
            search-seed))
-  (setf *phase4-selection-rng-root*
+  (setf *grouped-selection-rng-root*
           (official-guided-mix64
-           (+ search-seed +phase4-selection-rng-salt+))
-        *phase4-selection-rng-cursor* 0
-        *phase4-selection-age* 0))
+           (+ search-seed +grouped-selection-rng-salt+))
+        *grouped-selection-rng-cursor* 0
+        *grouped-selection-age* 0))
 
-(defun phase4-selection-state-copy ()
+(defun grouped-selection-state-copy ()
   "Return a serialization-safe copy of the isolated selection stream."
-  (and *phase4-selection-rng-root*
+  (and *grouped-selection-rng-root*
        (list :version 1
-             :protocol +phase4-selection-protocol+
-             :root *phase4-selection-rng-root*
-             :cursor *phase4-selection-rng-cursor*
-             :age *phase4-selection-age*)))
+             :protocol +grouped-selection-protocol+
+             :root *grouped-selection-rng-root*
+             :cursor *grouped-selection-rng-cursor*
+             :age *grouped-selection-age*)))
 
-(defun phase4-selection-state-valid-p (state)
-  "Return true when STATE can exactly resume Phase-4a selection draws."
+(defun grouped-selection-state-valid-p (state)
+  "Return true when STATE can exactly resume grouped selection selection draws."
   (and (listp state)
        (= (getf state :version 0) 1)
-       (eq (getf state :protocol) +phase4-selection-protocol+)
+       (eq (getf state :protocol) +grouped-selection-protocol+)
        (integerp (getf state :root))
        (integerp (getf state :cursor))
        (not (minusp (getf state :cursor)))
        (integerp (getf state :age))
        (not (minusp (getf state :age)))))
 
-(defun restore-phase4-selection-state (state)
-  "Restore a validated Phase-4a selection stream without touching *RANDOM-STATE*."
-  (unless (phase4-selection-state-valid-p state)
-    (error "Invalid Phase-4a selection state: ~S" state))
-  (setf *phase4-selection-rng-root* (getf state :root)
-        *phase4-selection-rng-cursor* (getf state :cursor)
-        *phase4-selection-age* (getf state :age))
+(defun restore-grouped-selection-state (state)
+  "Restore a validated grouped selection selection stream without touching *RANDOM-STATE*."
+  (unless (grouped-selection-state-valid-p state)
+    (error "Invalid grouped selection selection state: ~S" state))
+  (setf *grouped-selection-rng-root* (getf state :root)
+        *grouped-selection-rng-cursor* (getf state :cursor)
+        *grouped-selection-age* (getf state :age))
   state)
 
-(defun phase4-selection-random-below (limit)
+(defun grouped-selection-random-below (limit)
   "Return a deterministic integer below LIMIT from the isolated stream."
   (unless (and (integerp limit) (plusp limit))
-    (error "Phase-4a random limit must be positive, got ~S." limit))
-  (unless *phase4-selection-rng-root*
-    (error "Phase-4a selection RNG is not initialized."))
+    (error "grouped selection random limit must be positive, got ~S." limit))
+  (unless *grouped-selection-rng-root*
+    (error "grouped selection selection RNG is not initialized."))
   (prog1
       (mod (official-guided-mix64
-            (+ *phase4-selection-rng-root*
-               *phase4-selection-rng-cursor*))
+            (+ *grouped-selection-rng-root*
+               *grouped-selection-rng-cursor*))
            limit)
-    (incf *phase4-selection-rng-cursor*)))
+    (incf *grouped-selection-rng-cursor*)))
 
-(defun phase4-shuffled-copy (sequence)
+(defun grouped-shuffled-copy (sequence)
   "Return a selection-stream-shuffled vector copy of SEQUENCE."
   (let ((result (coerce sequence 'vector)))
     (loop for index from (1- (length result)) downto 1
-          for swap = (phase4-selection-random-below (1+ index))
+          for swap = (grouped-selection-random-below (1+ index))
           do (rotatef (aref result index) (aref result swap)))
     result))
 
-(defun reset-phase4-selection-runtime ()
+(defun reset-grouped-selection-runtime ()
   "Clear generation-local and lifecycle diagnostics without changing RNG state."
-  (setf *phase4-case-groups* nil
-        *phase4-row-group-keys* nil
-        *phase4-team-group-scores* (make-hash-table :test #'eq)
-        *phase4-team-group-exact-rates* (make-hash-table :test #'eq)
-        *phase4-team-row-behaviors* (make-hash-table :test #'eq)
-        *phase4-group-epsilons* (make-hash-table :test #'equal)
-        *phase4-group-medians* (make-hash-table :test #'equal)
-        *phase4-active-specialists* (make-hash-table :test #'eq)
-        *phase4-specialist-history* nil
-        *phase4-selection-generation-record* nil))
+  (setf *grouped-case-groups* nil
+        *grouped-row-group-keys* nil
+        *grouped-team-group-scores* (make-hash-table :test #'eq)
+        *grouped-team-group-exact-rates* (make-hash-table :test #'eq)
+        *grouped-team-row-behaviors* (make-hash-table :test #'eq)
+        *grouped-group-epsilons* (make-hash-table :test #'equal)
+        *grouped-group-medians* (make-hash-table :test #'equal)
+        *grouped-active-specialists* (make-hash-table :test #'eq)
+        *grouped-specialist-history* nil
+        *grouped-selection-generation-record* nil))
 
-(defun phase4-step-group-key (step)
-  "Map one recorded step to the frozen Phase-4a phase case."
+(defun grouped-step-group-key (step)
+  "Map one recorded step to the frozen grouped selection phase case."
   (cond
     ((and (integerp step) (<= 3 step 9)) '(:phase :steps-3-9))
     ((and (integerp step) (<= 10 step 29)) '(:phase :steps-10-29))
@@ -233,21 +233,21 @@ this function so an entire population can share exactly the same batch."
     ((and (integerp step) (<= 50 step 99)) '(:phase :steps-50-99))
     (t nil)))
 
-(defun phase4-teacher-pair-group-key (label)
+(defun grouped-teacher-pair-group-key (label)
   "Return the target/response case key for semantic LABEL."
   (let ((pair (semantic-label-category-pair label)))
     (list :teacher-pair (first pair) (second pair))))
 
-(defun phase4-group-key-string (key)
+(defun grouped-group-key-string (key)
   "Return a deterministic sortable representation for a group KEY."
   (with-standard-io-syntax
     (prin1-to-string key)))
 
-(defun prepare-phase4-selection-generation (dataset)
-  "Freeze this generation's Phase-4a cases from existing DAgger metadata."
-  (when (phase4-selection-active-p)
+(defun prepare-grouped-selection-generation (dataset)
+  "Freeze this generation's grouped selection cases from existing DAgger metadata."
+  (when (grouped-selection-active-p)
     (unless (dataset-episode-metadata-p dataset)
-      (error "Phase-4a requires DAgger episode/step metadata."))
+      (error "grouped selection requires DAgger episode/step metadata."))
     (let* ((count (dataset-size dataset))
            (steps (dataset-steps dataset))
            (labels (actions dataset))
@@ -255,63 +255,63 @@ this function so an entire population can share exactly the same batch."
            (pair-counts (make-hash-table :test #'equal))
            (row-groups (make-array count :initial-element nil)))
       (dotimes (index count)
-        (let ((phase-key (phase4-step-group-key (aref steps index)))
-              (pair-key (phase4-teacher-pair-group-key
+        (let ((phase-key (grouped-step-group-key (aref steps index)))
+              (pair-key (grouped-teacher-pair-group-key
                          (aref labels index))))
           (when phase-key
             (push index (gethash phase-key indices-by-key)))
           (incf (gethash pair-key pair-counts 0))))
       (maphash
        (lambda (key pair-count)
-         (when (>= pair-count +phase4-minimum-pair-group-size+)
+         (when (>= pair-count +grouped-minimum-pair-group-size+)
            (dotimes (index count)
              (when (equal key
-                          (phase4-teacher-pair-group-key
+                          (grouped-teacher-pair-group-key
                            (aref labels index)))
                (push index (gethash key indices-by-key))))))
        pair-counts)
       (let ((keys
               (sort (alexandria:hash-table-keys indices-by-key)
-                    #'string< :key #'phase4-group-key-string)))
-        (setf *phase4-case-groups*
+                    #'string< :key #'grouped-group-key-string)))
+        (setf *grouped-case-groups*
               (loop for key in keys
                     for indices = (coerce
                                    (nreverse (gethash key indices-by-key))
                                    'vector)
                     when (plusp (length indices))
                       collect (list :key key :indices indices)))
-        (dolist (group *phase4-case-groups*)
+        (dolist (group *grouped-case-groups*)
           (let ((key (getf group :key)))
             (loop for index across (getf group :indices)
                   do (push key (aref row-groups index)))))
         (dotimes (index count)
           (setf (aref row-groups index)
                 (nreverse (aref row-groups index))))
-        (setf *phase4-row-group-keys* row-groups
-              *phase4-team-group-scores* (make-hash-table :test #'eq)
-              *phase4-team-group-exact-rates* (make-hash-table :test #'eq)
-              *phase4-team-row-behaviors* (make-hash-table :test #'eq)
-              *phase4-group-epsilons* (make-hash-table :test #'equal)
-              *phase4-group-medians* (make-hash-table :test #'equal)
-              *phase4-selection-generation-record* nil)
-        (unless *phase4-case-groups*
-          (error "Phase-4a produced no active case groups."))
+        (setf *grouped-row-group-keys* row-groups
+              *grouped-team-group-scores* (make-hash-table :test #'eq)
+              *grouped-team-group-exact-rates* (make-hash-table :test #'eq)
+              *grouped-team-row-behaviors* (make-hash-table :test #'eq)
+              *grouped-group-epsilons* (make-hash-table :test #'equal)
+              *grouped-group-medians* (make-hash-table :test #'equal)
+              *grouped-selection-generation-record* nil)
+        (unless *grouped-case-groups*
+          (error "grouped selection produced no active case groups."))
         (emit-message
-         (format nil "Generation ~D Phase-4a cases: ~{~S~^, ~}."
+         (format nil "Generation ~D grouped selection cases: ~{~S~^, ~}."
                  *generation* (mapcar (lambda (group) (getf group :key))
-                                      *phase4-case-groups*)))))))
+                                      *grouped-case-groups*)))))))
 
-(defun phase4-groups-intersect-p (left right)
+(defun grouped-groups-intersect-p (left right)
   "Return true when two group-key lists share an EQUAL key."
   (some (lambda (key) (member key right :test #'equal)) left))
 
-(defun phase4-note-routing-observation (row-groups visited terminal-team)
+(defun grouped-note-routing-observation (row-groups visited terminal-team)
   "Accumulate observational specialist routing for one evaluated row."
-  (when (and *phase4-active-specialists* row-groups)
+  (when (and *grouped-active-specialists* row-groups)
     (dolist (team visited)
-      (let ((record (gethash team *phase4-active-specialists*)))
+      (let ((record (gethash team *grouped-active-specialists*)))
         (when (and record
-                   (phase4-groups-intersect-p
+                   (grouped-groups-intersect-p
                     row-groups (getf record :specialty-groups)))
           (incf (getf record :visited-count 0))
           (when (eq team terminal-team)
@@ -365,10 +365,10 @@ this function so an entire population can share exactly the same batch."
   (nth-value 0
     (semantic-ranked-row-evaluation team dataset index option-orders)))
 
-(defun phase4-ranked-training-fitness (team dataset)
+(defun grouped-ranked-training-fitness (team dataset)
   "Evaluate every row once and retain grouped scores and routing diagnostics."
-  (unless *phase4-case-groups*
-    (error "Phase-4a case groups were not prepared before evaluation."))
+  (unless *grouped-case-groups*
+    (error "grouped selection case groups were not prepared before evaluation."))
   (let* ((count (dataset-size dataset))
          (option-orders (effective-team-option-orders team))
          (behaviors (make-array count :element-type 'integer))
@@ -384,30 +384,30 @@ this function so an entire population can share exactly the same batch."
           (semantic-ranked-row-evaluation team dataset index option-orders)
         (setf (aref behaviors index) behavior)
         (incf total row-score)
-        (let ((row-groups (aref *phase4-row-group-keys* index)))
+        (let ((row-groups (aref *grouped-row-group-keys* index)))
           (dolist (key row-groups)
             (incf (gethash key sums 0.0d0) row-score)
             (when exact-p
               (incf (gethash key exact-counts 0)))
             (incf (gethash key counts 0)))
-          (phase4-note-routing-observation
+          (grouped-note-routing-observation
            row-groups visited terminal-team))))
     (let ((group-scores (make-hash-table :test #'equal))
           (group-exact-rates (make-hash-table :test #'equal)))
-      (dolist (group *phase4-case-groups*)
+      (dolist (group *grouped-case-groups*)
         (let* ((key (getf group :key))
                (group-count (gethash key counts 0)))
           (unless (plusp group-count)
-            (error "Active Phase-4a case ~S has no scored rows." key))
+            (error "Active grouped selection case ~S has no scored rows." key))
           (setf (gethash key group-scores)
                 (/ (gethash key sums 0.0d0)
                    (coerce group-count 'double-float))
                 (gethash key group-exact-rates)
                 (/ (coerce (gethash key exact-counts 0) 'double-float)
                    (coerce group-count 'double-float)))))
-      (setf (gethash team *phase4-team-group-scores*) group-scores
-            (gethash team *phase4-team-group-exact-rates*) group-exact-rates
-            (gethash team *phase4-team-row-behaviors*) behaviors))
+      (setf (gethash team *grouped-team-group-scores*) group-scores
+            (gethash team *grouped-team-group-exact-rates*) group-exact-rates
+            (gethash team *grouped-team-row-behaviors*) behaviors))
     (if (zerop count)
         0.0d0
         (/ total (coerce count 'double-float)))))
@@ -802,8 +802,8 @@ promotion still requires the stricter positive one-standard-error improvement."
         *online-staged-best-parent-team* nil
         *online-staged-best-credit-priority* nil
         *online-staged-best-credit-lineage-id* nil
-        *online-staged-best-phase5f-lineage-id* nil
-        *online-staged-best-phase5f-head-version* nil))
+        *online-staged-best-near-miss-lineage-id* nil
+        *online-staged-best-near-miss-head-version* nil))
 
 (defun online-candidate-directory ()
   "Return the private staged-evaluation directory for this checkpoint run."
@@ -852,9 +852,9 @@ promotion still requires the stricter positive one-standard-error improvement."
               (and (= priority (or *online-staged-best-credit-priority* 0))
                    (> fitness *online-staged-best-fitness*)))
       (let ((parent (behavioral-parent-for-team team))
-            (phase5f-identity
-              (and (phase5f-active-p)
-                   (phase5f-lineage-for-team team))))
+            (near-miss-identity
+              (and (near-miss-active-p)
+                   (near-miss-lineage-for-team team))))
       (setf *online-staged-best-team*
               (deep-copy-team-via-serialization team)
             *online-staged-best-fitness* fitness
@@ -868,10 +868,10 @@ promotion still requires the stricter positive one-standard-error improvement."
             *online-staged-best-credit-lineage-id*
               (and (official-return-credit-active-p)
                    (official-return-credit-lineage-for-team team))
-            *online-staged-best-phase5f-lineage-id*
-              (first phase5f-identity)
-            *online-staged-best-phase5f-head-version*
-              (second phase5f-identity))))))
+            *online-staged-best-near-miss-lineage-id*
+              (first near-miss-identity)
+            *online-staged-best-near-miss-head-version*
+              (second near-miss-identity))))))
 
 (defun launch-online-candidate-evaluation ()
   "Publish the accumulated candidate and start its independent SBCL worker."
@@ -1153,18 +1153,18 @@ promotion still requires the stricter positive one-standard-error improvement."
   t)
 
 (defun official-guided-candidate-evaluation-enabled-p ()
-  "Return true when Phase 1 has an incumbent that challengers may race."
+  "Return true when official-guided has an incumbent that challengers may race."
   (and (official-guided-mode-p)
        *checkpoint-directory*
        *best-team*
        (plusp *official-guided-incumbent-version*)))
 
 (defun official-guided-candidate-directory ()
-  "Return the private worker directory for Phase-1 challenger artifacts."
+  "Return the private worker directory for official-guided challenger artifacts."
   (checkpoint-path *checkpoint-directory* ".official-guided-candidates/"))
 
 (defun official-guided-candidate-path (artifact-id kind type)
-  "Return one unique Phase-1 artifact path for ARTIFACT-ID."
+  "Return one unique official-guided artifact path for ARTIFACT-ID."
   (merge-pathnames
    (make-pathname
     :name (format nil "generation-~A-~A" artifact-id kind)
@@ -1174,7 +1174,7 @@ promotion still requires the stricter positive one-standard-error improvement."
 
 (defun write-official-guided-team-checkpoint
        (team imitation-score generation path)
-  "Write one fully independent graph for the Phase-1 worker."
+  "Write one fully independent graph for the official-guided worker."
   (write-best-team-checkpoint
    team imitation-score path
    :generation generation
@@ -1199,14 +1199,14 @@ promotion still requires the stricter positive one-standard-error improvement."
          (imitation-score *online-staged-best-fitness*)
          (credit-priority *online-staged-best-credit-priority*)
          (credit-lineage-id *online-staged-best-credit-lineage-id*)
-         (phase5f-lineage-id
-           *online-staged-best-phase5f-lineage-id*)
-         (phase5f-head-version
-           *online-staged-best-phase5f-head-version*)
-         (phase5f-request
-           (and phase5f-lineage-id
-                (phase5f-local-comparison-request
-                 phase5f-lineage-id phase5f-head-version)))
+         (near-miss-lineage-id
+           *online-staged-best-near-miss-lineage-id*)
+         (near-miss-head-version
+           *online-staged-best-near-miss-head-version*)
+         (near-miss-request
+           (and near-miss-lineage-id
+                (near-miss-local-comparison-request
+                 near-miss-lineage-id near-miss-head-version)))
          ;; Warm-start resume resets the displayed generation counter.  Include
          ;; the incumbent version and wall-clock second so a resumed search can
          ;; never consume a stale result left by an earlier generation number.
@@ -1241,12 +1241,12 @@ promotion still requires the stricter positive one-standard-error improvement."
                 (official-guided-take-seeds
                  :credit
                  (car (last +official-return-credit-stages+)))))
-         (phase5f-seeds
-           (and phase5f-request
+         (near-miss-seeds
+           (and near-miss-request
                 (official-guided-take-seeds
                  :lineage
                  (reduce #'+
-                         +phase5f-local-screen-and-confirm-counts+))))
+                         +near-miss-local-screen-and-confirm-counts+))))
          (promotion-seeds
            (official-guided-take-seeds
             :promotion (car (last +official-guided-promotion-stages+))))
@@ -1284,11 +1284,11 @@ promotion still requires the stricter positive one-standard-error improvement."
            :return-credit-stages
              (and credit-seeds
                   (copy-list +official-return-credit-stages+))
-           :phase5f-lineage-request (copy-tree phase5f-request)
-           :phase5f-lineage-seeds phase5f-seeds
-           :phase5f-lineage-counts
-             (and phase5f-seeds
-                  (copy-list +phase5f-local-screen-and-confirm-counts+))
+           :near-miss-lineage-request (copy-tree near-miss-request)
+           :near-miss-lineage-seeds near-miss-seeds
+           :near-miss-lineage-counts
+             (and near-miss-seeds
+                  (copy-list +near-miss-local-screen-and-confirm-counts+))
            :racing-seeds racing-seeds
            :promotion-seeds promotion-seeds
            :promotion-stages
@@ -1297,8 +1297,8 @@ promotion still requires the stricter positive one-standard-error improvement."
      request-path)
     ;; Persist cursor reservations before worker launch.  A failed or resumed
     ;; task reuses its recorded request and never receives a fresh seed draw.
-    (phase5f-note-submission
-     (and phase5f-request (getf phase5f-request :lineage-id)))
+    (near-miss-note-submission
+     (and near-miss-request (getf near-miss-request :lineage-id)))
     (persist-official-guided-runtime-state)
     (setf *online-candidate-process*
             (uiop:launch-program
@@ -1323,12 +1323,12 @@ promotion still requires the stricter positive one-standard-error improvement."
                   :incumbent-version *official-guided-incumbent-version*
                   :credit-priority credit-priority
                   :credit-lineage-id credit-lineage-id
-                  :phase5f-lineage-id
-                    (and phase5f-request
-                         (getf phase5f-request :lineage-id))
-                  :phase5f-head-version
-                    (and phase5f-request
-                         (getf phase5f-request :head-version)))
+                  :near-miss-lineage-id
+                    (and near-miss-request
+                         (getf near-miss-request :lineage-id))
+                  :near-miss-head-version
+                    (and near-miss-request
+                         (getf near-miss-request :head-version)))
           *online-candidate-next-submit-generation*
             (+ *generation* +online-candidate-evaluation-interval+)
           *online-staged-best-team* nil
@@ -1338,20 +1338,20 @@ promotion still requires the stricter positive one-standard-error improvement."
           *online-staged-best-parent-team* nil
           *online-staged-best-credit-priority* nil
           *online-staged-best-credit-lineage-id* nil
-          *online-staged-best-phase5f-lineage-id* nil
-          *online-staged-best-phase5f-head-version* nil)
+          *online-staged-best-near-miss-lineage-id* nil
+          *online-staged-best-near-miss-head-version* nil)
     (when (and (official-return-credit-active-p)
                (<= 1 (or credit-priority 0) 2))
       (incf *official-return-credit-neutral-submissions*))
     (emit-message
      (format nil
-             "Generation ~D submitted to official-guided evaluator: imitation=~,4F phase5f-lineage=~A local-counts=~S racing=~D promotion-stages=~S reference-monitor=~D."
+             "Generation ~D submitted to official-guided evaluator: imitation=~,4F near-miss-lineage=~A local-counts=~S racing=~D promotion-stages=~S reference-monitor=~D."
              generation imitation-score
-             (or (and phase5f-request
-                      (getf phase5f-request :lineage-id))
+             (or (and near-miss-request
+                      (getf near-miss-request :lineage-id))
                  :none)
-             (and phase5f-seeds
-                  +phase5f-local-screen-and-confirm-counts+)
+             (and near-miss-seeds
+                  +near-miss-local-screen-and-confirm-counts+)
              (length racing-seeds)
              +official-guided-promotion-stages+ (length reference-seeds)))))
 
@@ -1361,15 +1361,15 @@ promotion still requires the stricter positive one-standard-error improvement."
      *official-guided-incumbent-version*))
 
 (defun consume-official-guided-candidate-result (result)
-  "Apply one completed Phase-1 worker result on the main search thread."
+  "Apply one completed official-guided worker result on the main search thread."
   (let* ((generation (getf result :candidate-generation))
          (candidate-path (getf *online-candidate-job* :candidate-path))
          (record (getf result :evaluation-record))
          (credit (getf result :return-credit-evaluation))
-         (phase5f-evaluation
-           (getf result :phase5f-lineage-evaluation))
-         (phase5f-lineage-id
-           (getf *online-candidate-job* :phase5f-lineage-id))
+         (near-miss-evaluation
+           (getf result :near-miss-lineage-evaluation))
+         (near-miss-lineage-id
+           (getf *online-candidate-job* :near-miss-lineage-id))
          (candidate-lineage-id
            (getf *online-candidate-job* :credit-lineage-id))
          (candidate-priority
@@ -1380,14 +1380,14 @@ promotion still requires the stricter positive one-standard-error improvement."
     (setf *official-guided-last-evaluation* (copy-tree record))
     (persist-behavioral-official-outcome
      generation (getf record :behavioral-locality) record)
-    ;; Phase-5F evidence is consumed only after the worker completed against
+    ;; near-miss lineage evidence is consumed only after the worker completed against
     ;; the still-current incumbent.  A stale result cannot update search memory.
     (when (and (eq (getf result :status) :complete)
                (official-guided-incumbent-current-p result))
-      (phase5f-note-global-evaluation-cost phase5f-lineage-id result)
-      (when phase5f-evaluation
-        (phase5f-consume-local-result
-         candidate-path phase5f-evaluation)))
+      (near-miss-note-global-evaluation-cost near-miss-lineage-id result)
+      (when near-miss-evaluation
+        (near-miss-consume-local-result
+         candidate-path near-miss-evaluation)))
     ;; Direct-parent credit is independent of the global incumbent version.
     ;; A positive result only restores the frozen child to the live population;
     ;; it cannot overwrite *BEST-TEAM* or bypass the final tail-aware promotion.
@@ -1444,9 +1444,9 @@ promotion still requires the stricter positive one-standard-error improvement."
        ;; A descendant already belongs to its detached lineage.  Its local
        ;; confirmation may advance that head, but a global confidence miss
        ;; must not fork a second archive entry for the same search attempt.
-       (when (and (null phase5f-lineage-id)
-                  (phase5f-near-miss-eligible-p result))
-         (phase5f-admit-near-miss candidate-path result))
+       (when (and (null near-miss-lineage-id)
+                  (near-miss-lineages-eligible-p result))
+         (near-miss-admit-near-miss candidate-path result))
        (emit-message
         (format nil
                 "Official-guided challenger rejected: generation=~D stage=~A episodes=~D paired-delta=~,4F margin=~,4F corr=~A paired-var=~,4F independent-var=~,4F."
@@ -1478,8 +1478,8 @@ promotion still requires the stricter positive one-standard-error improvement."
          (setf *best-team* frozen
                *best-fitness* primary-mean
                *official-guided-best-evaluation* (copy-tree record))
-         (when (phase5f-active-p)
-           (phase5f-clear-after-promotion *best-team*))
+         (when (near-miss-active-p)
+           (near-miss-clear-after-promotion *best-team*))
          (emit-message
           (format nil
                   "NEW GLOBAL BEST: generation=~D official-100-mean=~,4F full-total-mean=~,4F imitation=~,4F aggregate-paired-delta=~,4F margin=~,4F episodes=~D."
@@ -1498,7 +1498,7 @@ promotion still requires the stricter positive one-standard-error improvement."
     (persist-official-guided-runtime-state)))
 
 (defun poll-official-guided-candidate-evaluation ()
-  "Consume one completed Phase-1 worker result without blocking evolution."
+  "Consume one completed official-guided worker result without blocking evolution."
   (when *online-candidate-job*
     (let ((result-path (getf *online-candidate-job* :result-path)))
       (cond
@@ -1587,7 +1587,7 @@ promotion still requires the stricter positive one-standard-error improvement."
                  :behavioral-locality behavioral-locality))))))))
 
 (defun behavioral-locality-sample-directory ()
-  "Return the private directory for passive Phase-2 worker artifacts."
+  "Return the private directory for passive behavioral-locality worker artifacts."
   (checkpoint-path *checkpoint-directory* ".behavioral-locality-samples/"))
 
 (defun behavioral-locality-sample-path (artifact-id kind type)
@@ -1653,7 +1653,7 @@ promotion still requires the stricter positive one-standard-error improvement."
            :behavioral-locality (copy-tree (getf candidate :record)))
      request-path)
     ;; Cursor/count state is persisted before launch, so a crash cannot reuse
-    ;; this diagnostic seed block.  It remains independent of Phase-1 streams.
+    ;; this diagnostic seed block.  It remains independent of official-guided streams.
     (note-behavioral-locality-stratum-sample stratum)
     (persist-official-guided-runtime-state)
     (setf *behavioral-locality-sample-process*
@@ -1813,21 +1813,21 @@ promotion still requires the stricter positive one-standard-error improvement."
   t)
 
 (defun run-official-guided-candidate-evaluation (request-path)
-  "Worker entry point for frozen Phase-1 official challenger evaluation."
+  "Worker entry point for frozen official-guided official challenger evaluation."
   (let* ((request (read-readable-object request-path))
          (result-path (pathname (getf request :result-path)))
          (started (get-universal-time))
          (parent-child-record nil)
          (return-credit-record nil)
-         (phase5f-lineage-record nil))
+         (near-miss-lineage-record nil))
     (labels
         ((publish (result)
            (write-readable-object-atomically
             (append result
                     (list :return-credit-evaluation
                           (copy-tree return-credit-record))
-                    (list :phase5f-lineage-evaluation
-                          (copy-tree phase5f-lineage-record))
+                    (list :near-miss-lineage-evaluation
+                          (copy-tree near-miss-lineage-record))
                     (list :elapsed-seconds
                           (- (get-universal-time) started)))
             result-path))
@@ -1870,20 +1870,20 @@ promotion still requires the stricter positive one-standard-error improvement."
                    (getf request :return-credit-seeds))
                  (return-credit-stages
                    (getf request :return-credit-stages))
-                 (phase5f-request
-                   (getf request :phase5f-lineage-request))
-                 (phase5f-seeds
-                   (getf request :phase5f-lineage-seeds))
-                 (phase5f-counts
-                   (getf request :phase5f-lineage-counts))
-                 (phase5f-head
-                   (and phase5f-request
-                        (phase5f-load-detached-team
-                         (getf phase5f-request :head-path))))
-                 (phase5f-anchor
-                   (and phase5f-request
-                        (phase5f-load-detached-team
-                         (getf phase5f-request :anchor-path))))
+                 (near-miss-request
+                   (getf request :near-miss-lineage-request))
+                 (near-miss-seeds
+                   (getf request :near-miss-lineage-seeds))
+                 (near-miss-counts
+                   (getf request :near-miss-lineage-counts))
+                 (near-miss-head
+                   (and near-miss-request
+                        (near-miss-load-detached-team
+                         (getf near-miss-request :head-path))))
+                 (near-miss-anchor
+                   (and near-miss-request
+                        (near-miss-load-detached-team
+                         (getf near-miss-request :anchor-path))))
                  (racing-seeds (getf request :racing-seeds))
                  (promotion-seeds (getf request :promotion-seeds))
                  (promotion-stages (getf request :promotion-stages))
@@ -1893,11 +1893,11 @@ promotion still requires the stricter positive one-standard-error improvement."
             (when direct-parent
               (ensure-team-observation-compatible
                direct-parent *num-observations*))
-            (when phase5f-head
+            (when near-miss-head
               (ensure-team-observation-compatible
-               phase5f-head *num-observations*)
+               near-miss-head *num-observations*)
               (ensure-team-observation-compatible
-               phase5f-anchor *num-observations*))
+               near-miss-anchor *num-observations*))
             (when (and direct-parent return-credit-seeds)
               (setf return-credit-record
                     (run-official-return-credit-evaluation
@@ -1905,26 +1905,26 @@ promotion still requires the stricter positive one-standard-error improvement."
                      *current-gym-environment-name*
                      return-credit-seeds return-credit-stages
                      (getf request :behavioral-locality))))
-            (when phase5f-request
-              (unless (and phase5f-head phase5f-anchor
-                           (= (length phase5f-counts) 2)
-                           (= (length phase5f-seeds)
-                              (reduce #'+ phase5f-counts)))
-                (error "Invalid Phase 5F local-comparison request: ~S"
-                       phase5f-request))
-              (let* ((screen-count (first phase5f-counts))
+            (when near-miss-request
+              (unless (and near-miss-head near-miss-anchor
+                           (= (length near-miss-counts) 2)
+                           (= (length near-miss-seeds)
+                              (reduce #'+ near-miss-counts)))
+                (error "Invalid near-miss lineage local-comparison request: ~S"
+                       near-miss-request))
+              (let* ((screen-count (first near-miss-counts))
                      (screen-seeds
-                       (subseq phase5f-seeds 0 screen-count))
+                       (subseq near-miss-seeds 0 screen-count))
                      (confirm-seeds
-                       (subseq phase5f-seeds screen-count)))
-                (setf phase5f-lineage-record
-                      (phase5f-run-local-comparison
-                       candidate phase5f-head phase5f-anchor
+                       (subseq near-miss-seeds screen-count)))
+                (setf near-miss-lineage-record
+                      (near-miss-run-local-comparison
+                       candidate near-miss-head near-miss-anchor
                        *current-gym-environment-name*
                        screen-seeds confirm-seeds
-                       (getf phase5f-request :lineage-id)
-                       (getf phase5f-request :head-version))))
-              (unless (getf phase5f-lineage-record :accepted)
+                       (getf near-miss-request :lineage-id)
+                       (getf near-miss-request :head-version))))
+              (unless (getf near-miss-lineage-record :accepted)
                 (publish
                  (list :status :complete :accepted nil
                        :candidate-generation
@@ -1932,7 +1932,7 @@ promotion still requires the stricter positive one-standard-error improvement."
                        :incumbent-version
                          (getf request :incumbent-version)
                        :margin 0.0d0
-                       :evaluation-record phase5f-lineage-record))
+                       :evaluation-record near-miss-lineage-record))
                 (return-from run-official-guided-candidate-evaluation t)))
             (multiple-value-bind (race-candidate race-incumbent)
                 (official-guided-paired-rollouts
@@ -2219,24 +2219,19 @@ reference batch."
 (defun configure-fitness-function (mode gym-environment-name dataset-name)
   "Configure *FITNESS-FN* according to MODE."
   (setf *behavioral-locality-enabled* (eq mode :official-guided)
-        ;; This branch is the frozen Phase-3 treatment; Phase 2 remains the control.
+        ;; These are the mechanisms retained by the measured mainline.
         *semantic-locality-control-enabled* (eq mode :official-guided)
-        *phase4-selection-enabled* (eq mode :official-guided)
-        *phase4b-disagreement-audit-enabled* (eq mode :official-guided)
-        ;; Phase 5F is isolated from the older Phase-5B protected-survivor,
-        ;; absolute-priority, and extra parent-credit treatments.  Only the
-        ;; bounded detached near-miss archive is active here.
+        *grouped-selection-enabled* (eq mode :official-guided)
+        *targeted-disagreement-audit-enabled* (eq mode :official-guided)
+        ;; Experimental repair/lineage mechanisms remain loadable for archived
+        ;; checkpoints but are not part of the active research configuration.
         *official-return-credit-enabled* nil
-        *phase5c-targeted-return-credit-enabled* nil
-        *phase5f-near-miss-enabled* (eq mode :official-guided)
-        ;; Phase 5D-2 replaces the earlier random Phase-4b repair proposal
-        ;; with a teacher-directed bidder synthesis.  The passive disagreement
-        ;; audit and routing stream remain active; grouped selection and
-        ;; official paired promotion remain the acceptance authorities.
-        *phase5d-directed-repair-enabled* (eq mode :official-guided)
-        *phase4b-combined-repair-enabled* nil
-        *phase4b-routing-repair-enabled* (eq mode :official-guided)
-        *phase4b-specialist-composition-enabled* nil)
+        *rare-failure-targeted-return-credit-enabled* nil
+        *near-miss-lineages-enabled* nil
+        *teacher-directed-repair-enabled* nil
+        *targeted-combined-repair-enabled* nil
+        *targeted-routing-repair-enabled* nil
+        *targeted-specialist-composition-enabled* nil)
   (ecase mode
     (:online
      (make-fitness-function :gym-environment-name gym-environment-name))
@@ -2246,7 +2241,7 @@ reference batch."
      (configure-teacher-forcing-fitness gym-environment-name))
     (:official-guided
      (unless (= *num-observations* +cage2-scan-observation-size+)
-       (error "Official-guided Phase 1 requires exactly ~D observations."
+       (error "Official-guided training requires exactly ~D observations."
               +cage2-scan-observation-size+))
      (unless (= *num-actions* +num-semantic-36-actions+)
        (error "Official-guided direct policy requires exactly ~D target/response actions."
@@ -2288,8 +2283,8 @@ reference batch."
                 :test #'eq)
     (setf *teacher-training-dataset* nil)
     (prepare-teacher-training-dataset)
-    (when (phase4-selection-active-p)
-      (prepare-phase4-selection-generation *teacher-training-dataset*)))
+    (when (grouped-selection-active-p)
+      (prepare-grouped-selection-generation *teacher-training-dataset*)))
   (let* ((results
            (mapcar (lambda (team)
                      (abort-search-if-requested)
@@ -2364,17 +2359,17 @@ reference batch."
         when (> left-value right-value) do (return nil)
          finally (return nil)))
 
-(defun phase4-team-group-score (team key)
+(defun grouped-team-group-score (team key)
   "Return TEAM's frozen score for active case KEY."
-  (let ((scores (and *phase4-team-group-scores*
-                     (gethash team *phase4-team-group-scores*))))
+  (let ((scores (and *grouped-team-group-scores*
+                     (gethash team *grouped-team-group-scores*))))
     (multiple-value-bind (score present-p) (and scores (gethash key scores))
       (unless present-p
-        (error "Missing Phase-4a score for team ~A case ~S."
+        (error "Missing grouped selection score for team ~A case ~S."
                (team-id team) key))
       score)))
 
-(defun phase4-raw-mad (values)
+(defun grouped-raw-mad (values)
   "Return the raw median absolute deviation of VALUES."
   (if (null values)
       0.0d0
@@ -2384,30 +2379,30 @@ reference batch."
                    (abs (- (coerce value 'double-float) median)))
                  values)))))
 
-(defun phase4-compute-group-statistics (scores)
+(defun grouped-compute-group-statistics (scores)
   "Freeze per-case population medians and raw MAD epsilons once."
-  (setf *phase4-group-epsilons* (make-hash-table :test #'equal)
-        *phase4-group-medians* (make-hash-table :test #'equal))
-  (dolist (group *phase4-case-groups*)
+  (setf *grouped-group-epsilons* (make-hash-table :test #'equal)
+        *grouped-group-medians* (make-hash-table :test #'equal))
+  (dolist (group *grouped-case-groups*)
     (let* ((key (getf group :key))
            (values
              (mapcar (lambda (entry)
-                       (phase4-team-group-score (car entry) key))
+                       (grouped-team-group-score (car entry) key))
                      scores)))
-      (setf (gethash key *phase4-group-medians*)
+      (setf (gethash key *grouped-group-medians*)
               (numeric-median values)
-            (gethash key *phase4-group-epsilons*)
-              (phase4-raw-mad values))))
-  *phase4-group-epsilons*)
+            (gethash key *grouped-group-epsilons*)
+              (grouped-raw-mad values))))
+  *grouped-group-epsilons*)
 
-(defun phase4-lexicase-survivors
+(defun grouped-lexicase-survivors
        (scores aggregate-champion survivor-count &optional forced-teams)
   "Choose SURVIVOR-COUNT evaluated roots by grouped epsilon-lexicase.
 
 FORCED-TEAMS consume survivor slots but do not alter case ordering or scores.
-Phase 5B uses this bounded exception only for fresh official-credit anchors."
+return-credit lineage uses this bounded exception only for fresh official-credit anchors."
   (unless (<= 1 survivor-count (length scores))
-    (error "Invalid Phase-4a survivor count ~D for ~D roots."
+    (error "Invalid grouped selection survivor count ~D for ~D roots."
            survivor-count (length scores)))
   (let* ((champion-entry (assoc aggregate-champion scores :test #'eq))
          (forced-entries
@@ -2425,33 +2420,33 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
             scores))
         (selected-others nil)
         (case-keys (mapcar (lambda (group) (getf group :key))
-                           *phase4-case-groups*)))
+                           *grouped-case-groups*)))
     (when (> (1+ (length forced-entries)) survivor-count)
-      (error "Too many forced Phase-5B anchors (~D) for ~D survivor slots."
+      (error "Too many forced return-credit lineage anchors (~D) for ~D survivor slots."
              (length forced-entries) survivor-count))
     (loop repeat (- survivor-count 1 (length forced-entries))
           do (let ((candidates (copy-list available)))
-               (loop for key across (phase4-shuffled-copy case-keys)
+               (loop for key across (grouped-shuffled-copy case-keys)
                      while (> (length candidates) 1)
                      do (let ((best
                                 (reduce #'max candidates
                                         :key (lambda (entry)
-                                               (phase4-team-group-score
+                                               (grouped-team-group-score
                                                 (car entry) key))))
                               (epsilon
-                                (gethash key *phase4-group-epsilons* 0.0d0)))
+                                (gethash key *grouped-group-epsilons* 0.0d0)))
                           (setf candidates
                                 (remove-if
                                  (lambda (entry)
-                                   (< (phase4-team-group-score
+                                   (< (grouped-team-group-score
                                        (car entry) key)
                                       (- best epsilon
-                                         +phase4-selection-numerical-tolerance+)))
+                                         +grouped-selection-numerical-tolerance+)))
                                  candidates))))
                (unless candidates
-                 (error "Phase-4a lexicase unexpectedly eliminated every candidate."))
+                 (error "grouped selection lexicase unexpectedly eliminated every candidate."))
                (let ((winner
-                       (nth (phase4-selection-random-below
+                       (nth (grouped-selection-random-below
                              (length candidates))
                             candidates)))
                  (push winner selected-others)
@@ -2461,17 +2456,17 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
             forced-entries
             (nreverse selected-others))))
 
-(defun phase4-group-behavior-differs-p (team champion group)
+(defun grouped-group-behavior-differs-p (team champion group)
   "Return true when TEAM and CHAMPION differ on at least one row in GROUP."
-  (let ((team-behavior (gethash team *phase4-team-row-behaviors*))
+  (let ((team-behavior (gethash team *grouped-team-row-behaviors*))
         (champion-behavior
-          (gethash champion *phase4-team-row-behaviors*)))
+          (gethash champion *grouped-team-row-behaviors*)))
     (and team-behavior champion-behavior
          (loop for index across (getf group :indices)
                thereis (/= (aref team-behavior index)
                             (aref champion-behavior index))))))
 
-(defun phase4-register-specialists
+(defun grouped-register-specialists
        (scores sorted old-survivors aggregate-champion survivor-count)
   "Classify case elites and generated rescued specialists before deletion."
   (let* ((old-cutoff-entry (nth (1- survivor-count) sorted))
@@ -2488,34 +2483,34 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
              (parent (behavioral-parent-for-team team))
              (elite-groups nil)
              (rescued-groups nil))
-        (dolist (group *phase4-case-groups*)
+        (dolist (group *grouped-case-groups*)
           (let* ((key (getf group :key))
-                 (team-score (phase4-team-group-score team key))
+                 (team-score (grouped-team-group-score team key))
                  (best (reduce #'max scores
                                :key (lambda (candidate)
-                                      (phase4-team-group-score
+                                      (grouped-team-group-score
                                        (car candidate) key))))
-                 (median (gethash key *phase4-group-medians*))
-                 (epsilon (gethash key *phase4-group-epsilons* 0.0d0))
+                 (median (gethash key *grouped-group-medians*))
+                 (epsilon (gethash key *grouped-group-epsilons* 0.0d0))
                  (elite-p
                    (>= team-score
                        (- best epsilon
-                          +phase4-selection-numerical-tolerance+)))
+                          +grouped-selection-numerical-tolerance+)))
                  (discriminative-p
                    (> best (+ median
-                              +phase4-selection-numerical-tolerance+))))
+                              +grouped-selection-numerical-tolerance+))))
             (when elite-p
               (push key elite-groups))
             (when (and discriminative-p
                        elite-p
                        (> team-score
-                          (+ (phase4-team-group-score
+                          (+ (grouped-team-group-score
                               aggregate-champion key)
-                             +phase4-selection-numerical-tolerance+))
+                             +grouped-selection-numerical-tolerance+))
                        (< aggregate
                           (- old-cutoff
-                             +phase4-selection-numerical-tolerance+))
-                       (phase4-group-behavior-differs-p
+                             +grouped-selection-numerical-tolerance+))
+                       (grouped-group-behavior-differs-p
                         team aggregate-champion group))
               (push key rescued-groups))))
         (when elite-groups
@@ -2538,7 +2533,7 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
                         :group-scores
                           (loop for key in groups
                                 collect (cons key
-                                              (phase4-team-group-score
+                                              (grouped-team-group-score
                                                team key)))
                         :aggregate-score aggregate
                         :would-old-scalar-survive
@@ -2556,7 +2551,7 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
                           :group-scores
                             (loop for key in groups
                                   collect (cons key
-                                                (phase4-team-group-score
+                                                (grouped-team-group-score
                                                  team key)))
                           :aggregate-score aggregate
                           :generation-created *generation*
@@ -2569,9 +2564,9 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
                           :would-old-scalar-survive
                             (not (null (member team old-survivors
                                                :key #'car :test #'eq))))))
-              (setf (gethash team *phase4-active-specialists*) record)
+              (setf (gethash team *grouped-active-specialists*) record)
               (let ((parent-record
-                      (gethash parent *phase4-active-specialists*)))
+                      (gethash parent *grouped-active-specialists*)))
                 (when parent-record
                   (pushnew (team-id team)
                            (getf parent-record :descendant-ids)
@@ -2584,13 +2579,13 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
           :generated-rescued-specialists generated-rescued-count
           :rescued-specialist-records (nreverse rescued-records))))
 
-(defun phase4-referencing-roots (team roots)
+(defun grouped-referencing-roots (team roots)
   "Return IDs of ROOTS whose reachable closure contains TEAM."
   (loop for root in roots
         when (member team (closure root) :test #'eq)
           collect (team-id root)))
 
-(defun phase4-direct-referencing-teams (target)
+(defun grouped-direct-referencing-teams (target)
   "Return IDs of live teams with a direct learner edge to TARGET."
   (loop for team in *teams*
         when (some (lambda (learner)
@@ -2600,14 +2595,14 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
                    (team-learners team))
           collect (team-id team)))
 
-(defun phase4-build-reachability-index (roots)
+(defun grouped-build-reachability-index (roots)
   "Map every live reachable team to IDs of roots that can reach it."
   (let ((index (make-hash-table :test #'eq)))
     (dolist (root roots index)
       (dolist (team (closure root))
         (pushnew (team-id root) (gethash team index) :test #'equal)))))
 
-(defun phase4-build-direct-reference-index ()
+(defun grouped-build-direct-reference-index ()
   "Map every directly referenced team to IDs of referring live teams."
   (let ((index (make-hash-table :test #'eq)))
     (dolist (team *teams* index)
@@ -2618,20 +2613,20 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
                      (gethash (action-action action) index)
                      :test #'equal)))))))
 
-(defun phase4-note-specialist-descendant (parent child)
+(defun grouped-note-specialist-descendant (parent child)
   "Attach every direct reproduced CHILD ID to an active specialist PARENT."
-  (let ((record (and *phase4-active-specialists*
-                     (gethash parent *phase4-active-specialists*))))
+  (let ((record (and *grouped-active-specialists*
+                     (gethash parent *grouped-active-specialists*))))
     (when record
       (pushnew (team-id child) (getf record :descendant-ids)
                :test #'equal))))
 
-(defun phase4-update-specialist-lifecycle (stage)
+(defun grouped-update-specialist-lifecycle (stage)
   "Refresh diagnostic specialist state after deletion or reproduction."
-  (when *phase4-active-specialists*
+  (when *grouped-active-specialists*
     (let* ((roots (root-teams))
-           (reachability-index (phase4-build-reachability-index roots))
-           (reference-index (phase4-build-direct-reference-index))
+           (reachability-index (grouped-build-reachability-index roots))
+           (reference-index (grouped-build-direct-reference-index))
           (completed nil)
           (completed-records nil))
       (maphash
@@ -2643,7 +2638,7 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
            (cond
              ((not live-p)
               (setf (getf record :state) :deleted)
-              (push (copy-tree record) *phase4-specialist-history*)
+              (push (copy-tree record) *grouped-specialist-history*)
               (push (copy-tree record) completed-records)
               (push team completed))
              (t
@@ -2662,33 +2657,33 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
                            (null (getf record :generation-internalized)))
                   (setf (getf record :generation-internalized)
                           *generation*)))))))
-       *phase4-active-specialists*)
+       *grouped-active-specialists*)
       (dolist (team completed)
-        (remhash team *phase4-active-specialists*))
-      (when *phase4-selection-generation-record*
-        (setf (getf *phase4-selection-generation-record*
+        (remhash team *grouped-active-specialists*))
+      (when *grouped-selection-generation-record*
+        (setf (getf *grouped-selection-generation-record*
                     (if (eq stage :post-selection)
                         :specialists-post-selection
                         :specialists-post-reproduction))
               (loop for record being the hash-values
-                      of *phase4-active-specialists*
+                      of *grouped-active-specialists*
                     collect (copy-tree record)))
         (when completed-records
-          (setf (getf *phase4-selection-generation-record*
+          (setf (getf *grouped-selection-generation-record*
                       :specialists-completed)
                 (append
-                 (getf *phase4-selection-generation-record*
+                 (getf *grouped-selection-generation-record*
                        :specialists-completed)
                  (nreverse completed-records))))))))
 
-(defun persist-phase4-selection-generation-record ()
-  "Append the completed Phase-4a selection/lifecycle record."
-  (when (and (phase4-selection-active-p)
-             *phase4-selection-generation-record*)
+(defun persist-grouped-selection-generation-record ()
+  "Append the completed grouped selection selection/lifecycle record."
+  (when (and (grouped-selection-active-p)
+             *grouped-selection-generation-record*)
     (append-behavioral-locality-form
-     (copy-tree *phase4-selection-generation-record*))))
+     (copy-tree *grouped-selection-generation-record*))))
 
-(defun phase4-record-root-accounting (internal-teams-before-selection)
+(defun grouped-record-root-accounting (internal-teams-before-selection)
   "Record orphan promotion and the exact post-deletion reproduction pool."
   (let* ((roots-after-deletion (root-teams))
          (orphaned
@@ -2697,31 +2692,31 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
               (and (member team *teams* :test #'eq)
                    (eq (team-type team) :root)))
             internal-teams-before-selection)))
-    (setf (getf *phase4-selection-generation-record*
+    (setf (getf *grouped-selection-generation-record*
                 :orphaned-internal-root-ids)
             (mapcar #'team-id orphaned)
-          (getf *phase4-selection-generation-record*
+          (getf *grouped-selection-generation-record*
                 :orphaned-internal-root-count)
             (length orphaned)
-          (getf *phase4-selection-generation-record*
+          (getf *grouped-selection-generation-record*
                 :final-root-count-before-reproduction)
             (length roots-after-deletion)
-          (getf *phase4-selection-generation-record*
+          (getf *grouped-selection-generation-record*
                 :reproduction-parent-pool-ids)
             (mapcar #'team-id roots-after-deletion))
     roots-after-deletion))
 
-(defun phase4-selection-delete-entries
+(defun grouped-selection-delete-entries
        (scores sorted generation-best-team n-remove)
-  "Return unselected entries and install the Phase-4a generation record."
-  (phase4-compute-group-statistics scores)
+  "Return unselected entries and install the grouped selection generation record."
+  (grouped-compute-group-statistics scores)
   (let* ((survivor-count (- (length sorted) n-remove))
          (old-survivors (subseq sorted 0 survivor-count))
          (return-credit-protected
            (and (official-return-credit-active-p)
                 (official-return-credit-protected-teams)))
          (selected
-           (phase4-lexicase-survivors
+           (grouped-lexicase-survivors
             scores generation-best-team survivor-count
             return-credit-protected))
          (selected-teams (mapcar #'car selected))
@@ -2730,48 +2725,48 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
                         (member (car entry) selected-teams :test #'eq))
                       scores))
          (specialist-summary
-           (phase4-register-specialists
+           (grouped-register-specialists
             scores sorted old-survivors generation-best-team survivor-count)))
-    (setf *phase4-selection-generation-record*
+    (setf *grouped-selection-generation-record*
           (append
-           (list :record-type :phase4a-selection
-                 :protocol +phase4-selection-protocol+
+           (list :record-type :grouped-selection-selection
+                 :protocol +grouped-selection-protocol+
                  :generation *generation*
-                 :selection-age *phase4-selection-age*
+                 :selection-age *grouped-selection-age*
                  :active-groups
                    (mapcar (lambda (group)
                            (list :key (copy-tree (getf group :key))
                                  :rows (length (getf group :indices))
                                  :median
                                    (gethash (getf group :key)
-                                            *phase4-group-medians*)
+                                            *grouped-group-medians*)
                                  :epsilon-raw-mad
                                    (gethash (getf group :key)
-                                            *phase4-group-epsilons*)
+                                            *grouped-group-epsilons*)
                                  :population-best-score
                                    (reduce #'max scores
                                            :key
                                            (lambda (entry)
-                                             (phase4-team-group-score
+                                             (grouped-team-group-score
                                               (car entry)
                                               (getf group :key))))
                                  :aggregate-champion-score
-                                   (phase4-team-group-score
+                                   (grouped-team-group-score
                                     generation-best-team (getf group :key))
                                  :aggregate-champion-exact-rate
                                    (gethash
                                     (getf group :key)
                                     (gethash
                                      generation-best-team
-                                     *phase4-team-group-exact-rates*))
+                                     *grouped-team-group-exact-rates*))
                                  :aggregate-champion-disagreement-rate
                                    (- 1.0d0
                                       (gethash
                                        (getf group :key)
                                        (gethash
                                         generation-best-team
-                                        *phase4-team-group-exact-rates*)))))
-                           *phase4-case-groups*)
+                                        *grouped-team-group-exact-rates*)))))
+                           *grouped-case-groups*)
                  :evaluated-roots (length scores)
                  :intended-survivors survivor-count
                  :lexicase-selected-evaluated-roots (length selected)
@@ -2784,10 +2779,10 @@ Phase 5B uses this bounded exception only for fresh official-credit anchors."
                            old-survivors))
            specialist-summary))
     (when (official-return-credit-active-p)
-      (setf (getf *phase4-selection-generation-record*
+      (setf (getf *grouped-selection-generation-record*
                   :return-credit-expired-lineage-ids)
               (official-return-credit-note-selection selected-teams)))
-    (incf *phase4-selection-age*)
+    (incf *grouped-selection-age*)
     unselected))
 
 (defun select (scores)
@@ -2839,10 +2834,10 @@ through serialization/deserialization and save it to disk."
 
          (official-guided-submission-entry
            (cond
-             ((phase5f-active-p)
-              (phase5f-candidate-entry sorted))
+             ((near-miss-active-p)
+              (near-miss-candidate-entry sorted))
              ((official-return-credit-active-p)
-               ;; Phase 5B first admits behavior-changing children from an
+               ;; return-credit lineage first admits behavior-changing children from an
                ;; active credit lineage, then other changed children. Neutral
                ;; direct mutations remain a final exploration fallback.
                (official-return-credit-candidate-entry sorted))
@@ -2950,11 +2945,11 @@ through serialization/deserialization and save it to disk."
                           :episode-count 0)))
 
             ;; A fresh official-guided run has no checkpoint metadata from
-            ;; which to restore Phase-5F search memory.  Initialize it only
+            ;; which to restore near-miss lineage search memory.  Initialize it only
             ;; after the first independently frozen incumbent exists.
-            (when (and (phase5f-active-p)
-                       (null *phase5f-run-id*))
-              (phase5f-initialize-state
+            (when (and (near-miss-active-p)
+                       (null *near-miss-run-id*))
+              (near-miss-initialize-state
                *current-search-seed* *best-team*))
 
             (emit-message
@@ -3000,28 +2995,28 @@ through serialization/deserialization and save it to disk."
     ;; Selection
     ;; ------------------------------------------------------------
 
-    (when (phase4-selection-active-p)
+    (when (grouped-selection-active-p)
       (setf worst-entries
-            (phase4-selection-delete-entries
+            (grouped-selection-delete-entries
              scores sorted generation-best-team n-remove)))
     (dolist (entry worst-entries)
       (delete-team (car entry)))
-    (when (phase5f-active-p)
-      (phase5f-prune-live-team-map))
-    (when (phase4-selection-active-p)
-      (phase4-record-root-accounting internal-teams-before-selection)
-      (phase4-update-specialist-lifecycle :post-selection)
+    (when (near-miss-active-p)
+      (near-miss-prune-live-team-map))
+    (when (grouped-selection-active-p)
+      (grouped-record-root-accounting internal-teams-before-selection)
+      (grouped-update-specialist-lifecycle :post-selection)
       (emit-message
        (format nil
-               "Generation ~D Phase-4a selection: selected=~D rescued-generated=~D orphan-roots=~D parent-pool=~D."
+               "Generation ~D grouped selection selection: selected=~D rescued-generated=~D orphan-roots=~D parent-pool=~D."
                *generation*
-               (getf *phase4-selection-generation-record*
+               (getf *grouped-selection-generation-record*
                      :lexicase-selected-evaluated-roots)
-               (getf *phase4-selection-generation-record*
+               (getf *grouped-selection-generation-record*
                      :generated-rescued-specialists)
-               (getf *phase4-selection-generation-record*
+               (getf *grouped-selection-generation-record*
                      :orphaned-internal-root-count)
-               (getf *phase4-selection-generation-record*
+               (getf *grouped-selection-generation-record*
                      :final-root-count-before-reproduction))))
     (when (behavioral-locality-active-p)
       (prune-behavioral-team-lineage))
@@ -3058,7 +3053,7 @@ through serialization/deserialization and save it to disk."
 	do (push root-team *teams*)))
 
 (defun reproduce-native-child (parent)
-  "Create one child through the unchanged native/Phase-3 mutation path."
+  "Create one child through the unchanged native/semantic-locality mutation path."
   (if (semantic-locality-control-active-p)
       (mutate-team-with-semantic-locality-control parent)
       (let ((child (clone-team parent)))
@@ -3069,42 +3064,42 @@ through serialization/deserialization and save it to disk."
         child)))
 
 (defun reproduce ()
-  "Refill roots with native mutation plus the active Phase-4b repair quota."
-  (setf *phase4b-routing-repair-generation-records* nil)
-  (setf *phase4b-specialist-composition-generation-records* nil)
-  (setf *phase4b-combined-repair-generation-records* nil)
-  (setf *phase5d-directed-repair-generation-records* nil)
+  "Refill roots with native mutation plus the active targeted repair repair quota."
+  (setf *targeted-routing-repair-generation-records* nil)
+  (setf *targeted-specialist-composition-generation-records* nil)
+  (setf *targeted-combined-repair-generation-records* nil)
+  (setf *teacher-directed-repair-generation-records* nil)
   (loop while (< (length (root-teams)) *population-size*)
         do (let* ((parents (root-teams))
-                  (directed-p (phase5d-directed-repair-active-p))
+                  (directed-p (teacher-directed-repair-active-p))
                   (directed-slot-p
-                    (and directed-p (phase5d-directed-repair-slot-p)))
+                    (and directed-p (teacher-directed-repair-slot-p)))
                   (combined-p
                     (and (not directed-p)
-                         (phase4b-combined-repair-active-p)))
+                         (targeted-combined-repair-active-p)))
                   (combined-slot-p
-                    (and combined-p (phase4b-combined-repair-slot-p)))
+                    (and combined-p (targeted-combined-repair-slot-p)))
                   (composition-p
                     (and (not directed-p)
                          (not combined-p)
-                         (phase4b-specialist-composition-active-p)
-                         (phase4b-specialist-composition-slot-p)))
+                         (targeted-specialist-composition-active-p)
+                         (targeted-specialist-composition-slot-p)))
                   (routing-p
                     (and (not directed-p)
                          (not combined-p)
                          (not composition-p)
-                         (phase4b-routing-repair-active-p)
-                         (phase4b-routing-repair-slot-p))))
+                         (targeted-routing-repair-active-p)
+                         (targeted-routing-repair-slot-p))))
              (multiple-value-bind (repair-child repair-parent)
                  (cond
                    (directed-slot-p
-                    (phase5d-attempt-directed-repair parents))
+                    (teacher-directed-attempt-repair parents))
                    (combined-slot-p
-                    (phase4b-attempt-combined-repair parents))
+                    (targeted-attempt-combined-repair parents))
                    (composition-p
-                    (phase4b-attempt-specialist-composition parents))
+                    (targeted-attempt-specialist-composition parents))
                    (routing-p
-                    (phase4b-attempt-routing-repair parents))
+                    (targeted-attempt-routing-repair parents))
                    (t (values nil nil)))
                (let* ((lineage-child
                         (and (null repair-child)
@@ -3112,7 +3107,7 @@ through serialization/deserialization and save it to disk."
                              (not combined-slot-p)
                              (not composition-p)
                              (not routing-p)
-                             (phase5f-attempt-lineage-offspring)))
+                             (near-miss-attempt-lineage-offspring)))
                       (parent
                         (or repair-parent
                             (and (null lineage-child)
@@ -3122,17 +3117,17 @@ through serialization/deserialization and save it to disk."
                             (reproduce-native-child parent))))
                  (when (official-return-credit-active-p)
                    (official-return-credit-note-descendant parent child))
-                 (when (and parent (phase5f-active-p))
-                   (phase5f-note-descendant parent child))
-                 (when (phase4-selection-active-p)
-                   (phase4-note-specialist-descendant parent child))))))
-  (when (phase4-selection-active-p)
-    (phase4-update-specialist-lifecycle :post-reproduction)
-    (persist-phase4-selection-generation-record))
-  (finish-phase4b-combined-repair-generation)
-  (finish-phase4b-routing-repair-generation)
-  (finish-phase4b-specialist-composition-generation)
-  (finish-phase5d-directed-repair-generation)
+                 (when (and parent (near-miss-active-p))
+                   (near-miss-note-descendant parent child))
+                 (when (grouped-selection-active-p)
+                   (grouped-note-specialist-descendant parent child))))))
+  (when (grouped-selection-active-p)
+    (grouped-update-specialist-lifecycle :post-reproduction)
+    (persist-grouped-selection-generation-record))
+  (finish-targeted-combined-repair-generation)
+  (finish-targeted-routing-repair-generation)
+  (finish-targeted-specialist-composition-generation)
+  (finish-teacher-directed-repair-generation)
   (persist-behavioral-generation-records)
   (finish-semantic-locality-control-generation))
 
@@ -3157,8 +3152,8 @@ through serialization/deserialization and save it to disk."
     (persist-population-behavioral-diversity :post-selection)
     
     (reproduce)
-    (when (phase5f-active-p)
-      (phase5f-advance-generation))
+    (when (near-miss-active-p)
+      (near-miss-advance-generation))
     (maybe-run-behavioral-locality-sampling)
     (when (official-guided-mode-p)
       (persist-official-guided-runtime-state))))
@@ -3185,7 +3180,7 @@ through serialization/deserialization and save it to disk."
       (reset-online-candidate-evaluation-state)
       (reset-behavioral-locality-state)
       (reset-official-return-credit-state)
-      (phase5f-reset-state)
+      (near-miss-reset-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
@@ -3193,13 +3188,13 @@ through serialization/deserialization and save it to disk."
         (initialize-official-guided-seed-streams seed))
 
       (configure-fitness-function mode gym-environment-name dataset-name)
-      (when (phase4-selection-active-p)
-        (initialize-phase4-selection-state seed)
-        (reset-phase4-selection-runtime))
-      (when (phase4b-routing-repair-active-p)
-        (initialize-phase4b-routing-repair-state seed))
-      (when (phase4b-specialist-composition-active-p)
-        (initialize-phase4b-specialist-composition-state seed))
+      (when (grouped-selection-active-p)
+        (initialize-grouped-selection-state seed)
+        (reset-grouped-selection-runtime))
+      (when (targeted-routing-repair-active-p)
+        (initialize-targeted-routing-repair-state seed))
+      (when (targeted-specialist-composition-active-p)
+        (initialize-targeted-specialist-composition-state seed))
       (make-initial-population)
 
       (when (and (official-guided-mode-p)
@@ -3531,7 +3526,7 @@ normal evolution."
       (reset-online-candidate-evaluation-state)
       (reset-behavioral-locality-state)
       (reset-official-return-credit-state)
-      (phase5f-reset-state)
+      (near-miss-reset-state)
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
@@ -3540,13 +3535,13 @@ normal evolution."
 
       ;; Configure the action contract before creating random learners.
       (configure-fitness-function mode gym-environment-name dataset-name)
-      (when (phase4-selection-active-p)
-        (initialize-phase4-selection-state seed)
-        (reset-phase4-selection-runtime))
-      (when (phase4b-routing-repair-active-p)
-        (initialize-phase4b-routing-repair-state seed))
-      (when (phase4b-specialist-composition-active-p)
-        (initialize-phase4b-specialist-composition-state seed))
+      (when (grouped-selection-active-p)
+        (initialize-grouped-selection-state seed)
+        (reset-grouped-selection-runtime))
+      (when (targeted-routing-repair-active-p)
+        (initialize-targeted-routing-repair-state seed))
+      (when (targeted-specialist-composition-active-p)
+        (initialize-targeted-specialist-composition-state seed))
 
       ;; Build fresh random population for this island.
       (make-initial-population)
@@ -3556,6 +3551,9 @@ normal evolution."
       (multiple-value-bind
             (loaded-best-team saved-best-fitness checkpoint-metadata)
           (load-best-team best-team-path)
+        (when (cl-gym:cage2-environment-p gym-environment-name)
+          (report-checkpoint-controller-protocol
+           checkpoint-metadata "Warm-start"))
         (ensure-team-observation-compatible
          loaded-best-team *num-observations*)
         (when (official-guided-mode-p)

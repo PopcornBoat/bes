@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 22
-  "Checkpoint version recording the terminal action representation.")
+(defconstant +best-team-checkpoint-version+ 23
+  "Checkpoint version recording the active CAGE2 Controller protocol.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -45,23 +45,23 @@
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
       (cond
-        (*phase5f-near-miss-enabled*
+        (*near-miss-lineages-enabled*
          "official-guided-near-miss-lineage")
-        (*phase5d-directed-repair-enabled*
+        (*teacher-directed-repair-enabled*
          "official-guided-teacher-directed-repair")
-        (*phase5c-targeted-return-credit-enabled*
+        (*rare-failure-targeted-return-credit-enabled*
          "official-guided-targeted-return-credit")
         (*official-return-credit-enabled*
          "official-guided-return-credit-lineage")
-        ((and *phase4b-combined-repair-enabled*
-              *phase4b-routing-repair-enabled*
-              *phase4b-specialist-composition-enabled*)
+        ((and *targeted-combined-repair-enabled*
+              *targeted-routing-repair-enabled*
+              *targeted-specialist-composition-enabled*)
          "official-guided-combined-repair")
-        (*phase4b-specialist-composition-enabled*
+        (*targeted-specialist-composition-enabled*
          "official-guided-specialist-composition")
-        (*phase4b-routing-repair-enabled*
+        (*targeted-routing-repair-enabled*
          "official-guided-routing-repair")
-        (*phase4-selection-enabled*
+        (*grouped-selection-enabled*
          "official-guided-grouped-lexicase")
         (*semantic-locality-control-enabled*
          "official-guided-locality-control")
@@ -115,6 +115,9 @@ checkpoint directory."
     :dataset-name ,dataset-name
     :dataset-fingerprint ,dataset-fingerprint
     :action-agreement-signature ,action-agreement-signature
+    :cage2-controller-protocol ,+cage2-controller-protocol+
+    :cage2-controller-decoy-order-profile
+      ,*cage2-controller-decoy-order-profile*
     :online-reference-episodes ,online-reference-episodes
     :mixed-training-lineage ,mixed-training-lineage
     :num-observations ,num-observations
@@ -132,26 +135,26 @@ checkpoint directory."
     :official-guided-best-evaluation
       ,(and (eq *current-search-mode* :official-guided)
             (copy-tree *official-guided-best-evaluation*))
-    :phase4-selection-state
-      ,(and *phase4-selection-enabled*
-            (fboundp 'phase4-selection-state-copy)
-            (phase4-selection-state-copy))
-    :phase4b-routing-repair-state
-      ,(and *phase4b-routing-repair-enabled*
-            (fboundp 'phase4b-routing-repair-state-copy)
-            (phase4b-routing-repair-state-copy))
-    :phase4b-specialist-composition-state
-      ,(and *phase4b-specialist-composition-enabled*
-            (fboundp 'phase4b-specialist-composition-state-copy)
-            (phase4b-specialist-composition-state-copy))
+    :grouped-selection-state
+      ,(and *grouped-selection-enabled*
+            (fboundp 'grouped-selection-state-copy)
+            (grouped-selection-state-copy))
+    :targeted-routing-repair-state
+      ,(and *targeted-routing-repair-enabled*
+            (fboundp 'targeted-routing-repair-state-copy)
+            (targeted-routing-repair-state-copy))
+    :targeted-specialist-composition-state
+      ,(and *targeted-specialist-composition-enabled*
+            (fboundp 'targeted-specialist-composition-state-copy)
+            (targeted-specialist-composition-state-copy))
     :official-return-credit-state
       ,(and *official-return-credit-enabled*
             (fboundp 'official-return-credit-state-copy)
             (official-return-credit-state-copy))
-    :phase5f-near-miss-state
-      ,(and *phase5f-near-miss-enabled*
-            (fboundp 'phase5f-state-copy)
-            (phase5f-state-copy))
+    :near-miss-lineages-state
+      ,(and *near-miss-lineages-enabled*
+            (fboundp 'near-miss-state-copy)
+            (near-miss-state-copy))
     :behavioral-locality-state
       ,(and *behavioral-locality-enabled*
             (fboundp 'behavioral-locality-state-copy)
@@ -294,6 +297,33 @@ return NIL for FITNESS and METADATA."
           *loaded-best-fitness* fitness
           *loaded-checkpoint-metadata* metadata)
     (values team fitness metadata)))
+
+(defun report-checkpoint-controller-protocol (metadata context)
+  "Report how checkpoint Controller provenance relates to the active protocol."
+  (let ((saved-protocol (getf metadata :cage2-controller-protocol))
+        (saved-profile
+          (getf metadata :cage2-controller-decoy-order-profile)))
+    (cond
+      ((null saved-protocol)
+       (emit-message
+        (format nil
+                "~A: checkpoint predates Controller provenance; evaluating under active protocol=~A profile=~A. Historical scores are not assumed comparable."
+                context
+                +cage2-controller-protocol+
+                *cage2-controller-decoy-order-profile*)))
+      ((not (eq saved-protocol +cage2-controller-protocol+))
+       (emit-message
+        (format nil
+                "~A: checkpoint Controller protocol changed from ~A/~A to ~A/~A. Historical scores are not comparable until re-evaluated."
+                context
+                saved-protocol saved-profile
+                +cage2-controller-protocol+
+                *cage2-controller-decoy-order-profile*)))
+      (t
+       (emit-message
+        (format nil
+                "~A: checkpoint Controller protocol=~A profile=~A."
+                context saved-protocol saved-profile))))))
 
 (defun upgrade-best-team-checkpoint
        (path fitness &key output-path generation gym-environment-name

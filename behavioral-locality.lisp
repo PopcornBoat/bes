@@ -1,10 +1,10 @@
 (in-package :cl-tpg)
 
-;;; Phase 2 observes semantic disruption only.  None of these helpers chooses
+;;; behavioral-locality observes semantic disruption only.  None of these helpers chooses
 ;;; parents, changes mutation probabilities, or consumes the search RNG.
 
 (defun behavioral-locality-active-p ()
-  "Return true when Phase-2 diagnostics should observe this search."
+  "Return true when behavioral-locality diagnostics should observe this search."
   (and *behavioral-locality-enabled* (official-guided-mode-p)))
 
 (defun make-behavioral-locality-stratum-counts ()
@@ -19,7 +19,7 @@
   event)
 
 (defun reset-behavioral-locality-state ()
-  "Reset run-local Phase-2 archives, caches, and lineage maps."
+  "Reset run-local behavioral-locality archives, caches, and lineage maps."
   (when (and *behavioral-locality-sample-process*
              (ignore-errors
                (uiop:process-alive-p *behavioral-locality-sample-process*)))
@@ -54,7 +54,7 @@
         (list target response))))
 
 (defun make-behavioral-probe (dataset index source)
-  "Copy one DATASET row into an independently owned Phase-2 probe plist."
+  "Copy one DATASET row into an independently owned behavioral-locality probe plist."
   (let* ((label (aref (actions dataset) index))
          (ranking (aref (dataset-semantic-rankings dataset) index))
          (steps (dataset-steps dataset)))
@@ -148,7 +148,7 @@
     (setf *behavioral-teacher-action-support* support)))
 
 (defun update-behavioral-probe-archive (training-dataset)
-  "Refresh the rolling half of the versioned Phase-2 probe archive.
+  "Refresh the rolling half of the versioned behavioral-locality probe archive.
 
 The archive retains fixed teacher/reference and early-critical quarters while
 refreshing recent on-policy and current disagreement quarters.  Selection is
@@ -223,7 +223,7 @@ deterministic and consumes no random state."
         :teacher-ranking (copy-tree (getf probe :teacher-ranking))))
 
 (defun behavioral-locality-state-copy ()
-  "Return the serialization-safe Phase-2 probe state."
+  "Return the serialization-safe behavioral-locality probe state."
   (when (behavioral-locality-active-p)
     (list :version 3
           :protocol +behavioral-locality-protocol+
@@ -243,7 +243,7 @@ deterministic and consumes no random state."
                     *behavioral-probe-archive*))))
 
 (defun restore-behavioral-locality-state (state)
-  "Restore a validated Phase-2 probe STATE without restoring stale lineages."
+  "Restore a validated behavioral-locality probe STATE without restoring stale lineages."
   (when state
     (unless (and (member (getf state :version 0) '(1 2 3))
                  (eq (getf state :protocol) +behavioral-locality-protocol+))
@@ -371,7 +371,7 @@ deterministic and consumes no random state."
 
 (defun compare-behavioral-signatures
        (parent child mutation-events parent-team child-team)
-  "Return one Phase-2 semantic disruption record for PARENT and CHILD."
+  "Return one behavioral-locality semantic disruption record for PARENT and CHILD."
   (let ((count (length parent))
         (top1-changed 0)
         (teacher-rank-changed 0)
@@ -505,7 +505,7 @@ deterministic and consumes no random state."
 
 (defun behavioral-locality-sample-seeds
        (sample-cursor &optional (count +behavioral-locality-sample-episodes+))
-  "Derive COUNT diagnostic seeds without consuming any Phase-1 stream."
+  "Derive COUNT diagnostic seeds without consuming any official-guided stream."
   (unless (and (integerp *current-search-seed*)
                (integerp sample-cursor) (not (minusp sample-cursor)))
     (error "Cannot derive locality seeds from search seed ~S and cursor ~S."
@@ -550,14 +550,14 @@ deterministic and consumes no random state."
    (make-behavioral-mutation-record parent child mutation-events)))
 
 (defun semantic-locality-control-active-p ()
-  "Return true when Phase-3 control can classify offspring safely."
+  "Return true when semantic-locality control can classify offspring safely."
   (and *semantic-locality-control-enabled*
        (behavioral-locality-active-p)
        *behavioral-probe-archive*))
 
 (defun semantic-locality-control-stage (&optional
                                            (age *semantic-locality-control-age*))
-  "Return the frozen Phase-3 schedule entry for control AGE."
+  "Return the frozen semantic-locality schedule entry for control AGE."
   (or (find-if
        (lambda (stage)
          (let ((until (getf stage :until)))
@@ -705,7 +705,7 @@ turning every saturated local slot into a catastrophic large jump."
                              best-record record))
                      (discard-semantic-locality-candidate child)))))
     (unless best-child
-      (error "Phase-3 locality control produced no fallback child."))
+      (error "semantic-locality locality control produced no fallback child."))
     (setf (getf best-record :control-protocol)
             +semantic-locality-control-protocol+
           (getf best-record :control-stage) (getf stage :name)
@@ -755,13 +755,13 @@ turning every saturated local slot into a catastrophic large jump."
             *behavioral-team-parents* retained-parents))))
 
 (defun behavioral-locality-log-path ()
-  "Return the append-only Phase-2 record path for the active run."
+  "Return the append-only behavioral-locality record path for the active run."
   (and *checkpoint-directory*
        (checkpoint-path *checkpoint-directory*
                         "behavioral-locality-records.lisp")))
 
 (defun append-behavioral-locality-form (form)
-  "Append one readable FORM to the Phase-2 diagnostics journal."
+  "Append one readable FORM to the behavioral-locality diagnostics journal."
   (let ((path (behavioral-locality-log-path)))
     (when path
       (ensure-directories-exist path)
@@ -963,7 +963,7 @@ turning every saturated local slot into a catastrophic large jump."
   (count value records :key (lambda (record) (getf record key)) :test #'eq))
 
 (defun finish-semantic-locality-control-generation ()
-  "Journal Phase-3 decisions and advance the persisted control schedule."
+  "Journal semantic-locality decisions and advance the persisted control schedule."
   (when (and *semantic-locality-control-enabled*
              (official-guided-mode-p))
     (let* ((records

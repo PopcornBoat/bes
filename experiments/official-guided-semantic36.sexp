@@ -2,7 +2,7 @@
  :mode :official-guided
  :gym-environment-name "Cage2-b_line-100-v0"
  :dataset-name :none
- :best-team-path "/home/hardison/backup/official-guided/phase5d-directed-gen732-v18/bline-62-36-official-guided-teacher-directed-repair-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp"
+ :best-team-path "/home/hardison/checkpoints/semantic36/mainline/bline-62-36-evolved-mainline.lisp"
  :num-observations 62
  :num-actions 36
  :decoy-order-mode :fixed
@@ -29,7 +29,7 @@
  :migration-interval 50
  :batch-size 1000
  :online-fitness-episodes 5
- :checkpoint-directory "/home/hardison/checkpoints/semantic36/phase5e-tail-aware-promotion/"
+ :checkpoint-directory "/home/hardison/checkpoints/semantic36/official-guided-mainline/"
  :hamming-space-enabled :disabled
  :hamming-dataset-name :none
  :seed 153)

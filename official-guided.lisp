@@ -1,7 +1,7 @@
 (in-package :cl-tpg)
 
 (defun official-guided-mode-p ()
-  "Return true when the frozen Phase-1 official-guided protocol is active."
+  "Return true when the frozen official-guided official-guided protocol is active."
   (eq *current-search-mode* :official-guided))
 
 (defun official-guided-u64 (value)
@@ -30,8 +30,8 @@
     (:racing 1)
     (:promotion 2)
     (:reference 3)
-    ;; Phase-2 diagnostics derive this stream from their own persisted cursor;
-    ;; it is not part of the four Phase-1 stream plists.
+    ;; behavioral-locality diagnostics derive this stream from their own persisted cursor;
+    ;; it is not part of the four official-guided stream plists.
     (:locality 4)
     (:credit 5)
     (:lineage 6)))
@@ -102,7 +102,7 @@
   (let ((copy (copy-tree state)))
     (when (= (getf copy :version) 1)
       (unless (integerp *current-search-seed*)
-        (error "Cannot derive the Phase-5A credit stream without a search seed."))
+        (error "Cannot derive the official return credit credit stream without a search seed."))
       (setf (getf copy :version) 2
             (getf copy :credit)
               (list :roots
@@ -111,7 +111,7 @@
                     :cursor 0)))
     (when (= (getf copy :version) 2)
       (unless (integerp *current-search-seed*)
-        (error "Cannot derive the Phase-5F lineage stream without a search seed."))
+        (error "Cannot derive the near-miss lineage lineage stream without a search seed."))
       (setf (getf copy :version) 3
             (getf copy :lineage)
               (list :roots
@@ -178,7 +178,7 @@
     seeds))
 
 (defun official-guided-seed-state-copy ()
-  "Return a serialization-safe copy of all Phase-1 stream roots and cursors."
+  "Return a serialization-safe copy of all official-guided stream roots and cursors."
   (and *official-guided-seed-streams*
        (copy-tree *official-guided-seed-streams*)))
 
@@ -190,30 +190,30 @@
         :generation *generation*
         :search-seed *current-search-seed*
         :seed-streams (official-guided-seed-state-copy)
-        :phase4-selection-state
-          (and *phase4-selection-enabled*
-               (fboundp 'phase4-selection-state-copy)
-               (phase4-selection-state-copy))
-        :phase4b-routing-repair-state
-          (and *phase4b-routing-repair-enabled*
-               (fboundp 'phase4b-routing-repair-state-copy)
-               (phase4b-routing-repair-state-copy))
-        :phase4b-specialist-composition-state
-          (and *phase4b-specialist-composition-enabled*
-               (fboundp 'phase4b-specialist-composition-state-copy)
-               (phase4b-specialist-composition-state-copy))
+        :grouped-selection-state
+          (and *grouped-selection-enabled*
+               (fboundp 'grouped-selection-state-copy)
+               (grouped-selection-state-copy))
+        :targeted-routing-repair-state
+          (and *targeted-routing-repair-enabled*
+               (fboundp 'targeted-routing-repair-state-copy)
+               (targeted-routing-repair-state-copy))
+        :targeted-specialist-composition-state
+          (and *targeted-specialist-composition-enabled*
+               (fboundp 'targeted-specialist-composition-state-copy)
+               (targeted-specialist-composition-state-copy))
         :official-return-credit-state
           (and *official-return-credit-enabled*
                (fboundp 'official-return-credit-state-copy)
                (official-return-credit-state-copy))
-        :phase5f-near-miss-state
-          (and *phase5f-near-miss-enabled*
-               (fboundp 'phase5f-state-copy)
-               (phase5f-state-copy))
-        :phase5f-summary
-          (and *phase5f-near-miss-enabled*
-               (fboundp 'phase5f-summary)
-               (phase5f-summary))
+        :near-miss-lineages-state
+          (and *near-miss-lineages-enabled*
+               (fboundp 'near-miss-state-copy)
+               (near-miss-state-copy))
+        :near-miss-summary
+          (and *near-miss-lineages-enabled*
+               (fboundp 'near-miss-summary)
+               (near-miss-summary))
         :incumbent-version *official-guided-incumbent-version*
         :best-evaluation (copy-tree *official-guided-best-evaluation*)
         :teacher-dagger-behavior-state
@@ -228,7 +228,7 @@
                         ".official-guided-state.lisp")))
 
 (defun persist-official-guided-runtime-state ()
-  "Atomically persist stream cursors after completed Phase-1 operations."
+  "Atomically persist stream cursors after completed official-guided operations."
   (when (and (official-guided-mode-p) *checkpoint-directory*)
     (let* ((destination (official-guided-state-path))
            (temporary
@@ -311,31 +311,31 @@
                     (>= journal-version metadata-version))
                 (getf journal :teacher-dagger-behavior-state)
                 (getf metadata :teacher-dagger-behavior-state)))
-         (phase4-selection-state
+         (grouped-selection-state
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
-               (getf journal :phase4-selection-state)
-               (getf metadata :phase4-selection-state)))
-         (phase4b-routing-repair-state
+               (getf journal :grouped-selection-state)
+               (getf metadata :grouped-selection-state)))
+         (targeted-routing-repair-state
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
-               (getf journal :phase4b-routing-repair-state)
-               (getf metadata :phase4b-routing-repair-state)))
-         (phase4b-specialist-composition-state
+               (getf journal :targeted-routing-repair-state)
+               (getf metadata :targeted-routing-repair-state)))
+         (targeted-specialist-composition-state
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
-               (getf journal :phase4b-specialist-composition-state)
-               (getf metadata :phase4b-specialist-composition-state)))
+               (getf journal :targeted-specialist-composition-state)
+               (getf metadata :targeted-specialist-composition-state)))
          (official-return-credit-state
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
                (getf journal :official-return-credit-state)
                (getf metadata :official-return-credit-state)))
-         (phase5f-state
+         (near-miss-state
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
-               (getf journal :phase5f-near-miss-state)
-               (getf metadata :phase5f-near-miss-state))))
+               (getf journal :near-miss-lineages-state)
+               (getf metadata :near-miss-lineages-state))))
     (when chosen-state
       (restore-official-guided-seed-streams chosen-state))
     (setf *official-guided-incumbent-version*
@@ -353,26 +353,26 @@
       (restore-behavioral-locality-state behavioral-state))
     (when dagger-behavior-state
       (restore-teacher-dagger-behavior-state dagger-behavior-state))
-    (when (and *phase4-selection-enabled* phase4-selection-state)
-      (restore-phase4-selection-state phase4-selection-state))
-    (when (and *phase4b-routing-repair-enabled*
-               phase4b-routing-repair-state)
-      (restore-phase4b-routing-repair-state phase4b-routing-repair-state))
-    (when (and *phase4b-specialist-composition-enabled*
-               phase4b-specialist-composition-state)
-      (restore-phase4b-specialist-composition-state
-       phase4b-specialist-composition-state))
+    (when (and *grouped-selection-enabled* grouped-selection-state)
+      (restore-grouped-selection-state grouped-selection-state))
+    (when (and *targeted-routing-repair-enabled*
+               targeted-routing-repair-state)
+      (restore-targeted-routing-repair-state targeted-routing-repair-state))
+    (when (and *targeted-specialist-composition-enabled*
+               targeted-specialist-composition-state)
+      (restore-targeted-specialist-composition-state
+       targeted-specialist-composition-state))
     (when (and *official-return-credit-enabled*
                official-return-credit-state)
       (restore-official-return-credit-state
        official-return-credit-state))
-    (when *phase5f-near-miss-enabled*
+    (when *near-miss-lineages-enabled*
       (let ((incumbent-hash
               (and *loaded-best-team*
-                   (phase5f-team-graph-hash *loaded-best-team*))))
-        (if phase5f-state
-            (phase5f-restore-state phase5f-state incumbent-hash)
-            (phase5f-initialize-state
+                   (near-miss-team-graph-hash *loaded-best-team*))))
+        (if near-miss-state
+            (near-miss-restore-state near-miss-state incumbent-hash)
+            (near-miss-initialize-state
              *current-search-seed* *loaded-best-team*))))
     (values chosen-state journal-matches-p)))
 
@@ -518,7 +518,7 @@
 (defun make-official-guided-evaluation-record
        (&key stage imitation-score seeds candidate-returns incumbent-returns
              accepted horizon)
-  "Build the structured Phase-1 fitness/evaluation record."
+  "Build the structured official-guided fitness/evaluation record."
   (multiple-value-bind
         (paired-mean paired-se correlation paired-variance unpaired-variance
          differences)

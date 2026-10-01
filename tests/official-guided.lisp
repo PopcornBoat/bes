@@ -1,4 +1,4 @@
-;;; Focused non-simulator checks for the frozen official-guided Phase-1 contract.
+;;; Focused non-simulator checks for the frozen official-guided official-guided contract.
 ;;; Load :CL-TPG before loading this file.
 
 (in-package :cl-user)
@@ -48,18 +48,18 @@
        (locality-a (cl-tpg::behavioral-locality-sample-seeds 0 5))
        (locality-b (cl-tpg::behavioral-locality-sample-seeds 1 5))
        (after (cl-tpg::official-guided-seed-state-copy))
-       (phase1-comparison
+       (official-guided-comparison
          (append (cl-tpg::official-guided-take-seeds :racing 5)
                  (cl-tpg::official-guided-take-seeds :promotion 5))))
   (check-official-guided
    (equal before after)
-   "passive locality seeds do not advance any Phase-1 stream")
+   "passive locality seeds do not advance any official-guided stream")
   (check-official-guided
    (= (length (remove-duplicates (append locality-a locality-b))) 10)
    "passive locality cursor derives non-overlapping deterministic blocks")
   (check-official-guided
    (every (lambda (seed)
-            (not (member seed phase1-comparison)))
+            (not (member seed official-guided-comparison)))
           locality-a)
    "diagnostic namespace cannot collide with racing or promotion seeds"))
 
@@ -249,7 +249,7 @@
    (string=
     (cl-tpg::best-team-checkpoint-filename)
     "bline-62-36-official-guided-locality-control-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp")
-   "Phase-3 checkpoints cannot overwrite Phase-1 or Phase-2 incumbents"))
+   "semantic-locality checkpoints cannot overwrite official-guided or behavioral-locality incumbents"))
 
 (let ((cl-tpg::*checkpoint-directory* "/tmp/official-guided-test/"))
   (check-official-guided
@@ -305,23 +305,23 @@
                       (get-universal-time) (get-internal-real-time)))
        (directory (uiop:temporary-directory))
        (candidate-path
-         (merge-pathnames (format nil "phase1-~A-candidate.lisp" token)
+         (merge-pathnames (format nil "official-guided-~A-candidate.lisp" token)
                           directory))
        (incumbent-path
-         (merge-pathnames (format nil "phase1-~A-incumbent.lisp" token)
+         (merge-pathnames (format nil "official-guided-~A-incumbent.lisp" token)
                           directory))
        (parent-path
-         (merge-pathnames (format nil "phase1-~A-parent.lisp" token)
+         (merge-pathnames (format nil "official-guided-~A-parent.lisp" token)
                           directory))
        (request-path
-         (merge-pathnames (format nil "phase1-~A-request.lisp" token)
+         (merge-pathnames (format nil "official-guided-~A-request.lisp" token)
                           directory))
        (result-path
-         (merge-pathnames (format nil "phase1-~A-result.lisp" token)
+         (merge-pathnames (format nil "official-guided-~A-result.lisp" token)
                           directory))
-       (candidate (cl-tpg::%make-team :id "phase1-candidate" :learners nil))
-       (incumbent (cl-tpg::%make-team :id "phase1-incumbent" :learners nil))
-       (parent (cl-tpg::%make-team :id "phase1-parent" :learners nil))
+       (candidate (cl-tpg::%make-team :id "official-guided-candidate" :learners nil))
+       (incumbent (cl-tpg::%make-team :id "official-guided-incumbent" :learners nil))
+       (parent (cl-tpg::%make-team :id "official-guided-parent" :learners nil))
        (original-rollout (symbol-function 'cl-gym:rollout))
        (rollout-count 0))
   (unwind-protect

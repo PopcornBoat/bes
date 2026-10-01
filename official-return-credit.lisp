@@ -1,23 +1,23 @@
 (in-package :cl-tpg)
 
-;;; Phase 5B keeps the Phase-5A paired child/direct-parent measurement, but
+;;; return-credit lineage keeps the official return credit paired child/direct-parent measurement, but
 ;;; admits behavior-changing children before neutral fallbacks and gives an
 ;;; approved lineage a small, checkpointed survival budget. Native mutation,
 ;;; grouped epsilon-lexicase, and historical promotion remain unchanged.
 
 (defun official-return-credit-active-p ()
-  "Return true for Phase 5B or the explicit Phase 5C combined treatment."
+  "Return true for return-credit lineage or the explicit rare-failure diagnostics combined treatment."
   (and *official-return-credit-enabled*
        (official-guided-mode-p)
        *semantic-locality-control-enabled*
-       *phase4-selection-enabled*
-       (if *phase5c-targeted-return-credit-enabled*
-           (and *phase4b-combined-repair-enabled*
-                *phase4b-routing-repair-enabled*
-                *phase4b-specialist-composition-enabled*)
-           (and (not *phase4b-routing-repair-enabled*)
-                (not *phase4b-specialist-composition-enabled*)
-                (not *phase4b-combined-repair-enabled*)))))
+       *grouped-selection-enabled*
+       (if *rare-failure-targeted-return-credit-enabled*
+           (and *targeted-combined-repair-enabled*
+                *targeted-routing-repair-enabled*
+                *targeted-specialist-composition-enabled*)
+           (and (not *targeted-routing-repair-enabled*)
+                (not *targeted-specialist-composition-enabled*)
+                (not *targeted-combined-repair-enabled*)))))
 
 (defun official-return-credit-serialize-lineage (record)
   "Return the persistent portion of one active lineage RECORD."
@@ -33,7 +33,7 @@
         :credit-margin (getf record :credit-margin)))
 
 (defun official-return-credit-state-copy ()
-  "Return serializable Phase-5B counters and active lineage anchors."
+  "Return serializable return-credit lineage counters and active lineage anchors."
   (when *official-return-credit-enabled*
     (list :version 2
           :protocol +official-return-credit-protocol+
@@ -64,17 +64,17 @@
     anchor))
 
 (defun restore-official-return-credit-state (state)
-  "Restore validated Phase-5B counters and independently saved anchors."
+  "Restore validated return-credit lineage counters and independently saved anchors."
   (when state
     (let ((version (getf state :version 0))
           (protocol (getf state :protocol)))
       (unless (or (and (= version 2)
                        (eq protocol +official-return-credit-protocol+))
-                  ;; Phase 5A counters can be read for mechanical compatibility,
+                  ;; official return credit counters can be read for mechanical compatibility,
                   ;; but they contain no protected lineage to revive.
                   (and (= version 1)
                        (eq protocol
-                           :paired-parent-child-return-credit-phase5a-v1)))
+                           :paired-parent-child-return-credit-official-return-credit-v1)))
         (error "Invalid official return-credit state: ~S" state))
       (setf *official-return-credit-approved-count*
               (getf state :approved-count 0)
@@ -99,7 +99,7 @@
   state)
 
 (defun reset-official-return-credit-state ()
-  "Reset run-local Phase-5B counters, lineages, and staging metadata."
+  "Reset run-local return-credit lineage counters, lineages, and staging metadata."
   (setf *official-return-credit-approved-count* 0
         *official-return-credit-rejected-count* 0
         *official-return-credit-next-lineage-id* 0
@@ -127,7 +127,7 @@
 (defun make-official-return-credit-record
        (&key stage seeds child-returns parent-returns accepted
              behavioral-locality margin)
-  "Build one structured Phase-5B direct-parent credit record."
+  "Build one structured return-credit lineage direct-parent credit record."
   (append
    (make-official-guided-evaluation-record
     :stage stage
@@ -160,7 +160,7 @@
              :test #'equal)))
 
 (defun official-return-credit-candidate-priority (team)
-  "Return Phase-5B admission priority for one direct mutation child.
+  "Return return-credit lineage admission priority for one direct mutation child.
 
 Four is a changed child of an active lineage, three is another changed child,
 two is an active-lineage neutral fallback, one is another neutral fallback,
@@ -181,7 +181,7 @@ and zero means no measurable direct parent is available."
                 (t 1))))))
 
 (defun official-return-credit-candidate-entry (sorted)
-  "Choose the strongest entry in the highest Phase-5B admission class."
+  "Choose the strongest entry in the highest return-credit lineage admission class."
   (let ((best nil)
         (best-priority 0))
     ;; SORTED is already descending by imitation, so ties retain its first row.
@@ -287,7 +287,7 @@ not *BEST-TEAM* and cannot bypass final tail-aware global promotion."
             (official-return-credit-trim-active-lineages))))
 
 (defun official-return-credit-protected-teams ()
-  "Return live roots whose Phase-5B selection budget remains positive."
+  "Return live roots whose return-credit lineage selection budget remains positive."
   (let ((roots (root-teams)))
     (loop for record in *official-return-credit-active-lineages*
           for team = (getf record :team)
@@ -318,7 +318,7 @@ not *BEST-TEAM* and cannot bypass final tail-aware global promotion."
        (generation evaluation anchor-id
         &key candidate-priority candidate-lineage-id installed-lineage-id
              evicted-lineage-ids)
-  "Append one compact causal Phase-5B decision to the research journal."
+  "Append one compact causal return-credit lineage decision to the research journal."
   (when (behavioral-locality-active-p)
     (append-behavioral-locality-form
      (list :type :official-return-credit-outcome

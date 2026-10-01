@@ -13,20 +13,20 @@ if [[ "${1:-}" == --core ]]; then
     tests/behavioral-locality.lisp
     tests/official-guided.lisp
     tests/official-return-credit.lisp
-    tests/phase5f-near-miss.lisp
-    tests/phase5c-diagnostics.lisp
-    tests/phase5d-counterfactual.lisp
-    tests/phase5d-directed-repair.lisp
-    tests/phase4-selection.lisp
-    tests/phase4b-disagreement-audit.lisp
-    tests/phase4b-routing-repair.lisp
-    tests/phase4b-specialist-composition.lisp
-    tests/phase4b-combined-repair.lisp
+    tests/near-miss-lineages.lisp
+    tests/rare-failure-diagnostics.lisp
+    tests/counterfactual-credit.lisp
+    tests/teacher-directed-repair.lisp
+    tests/grouped-selection.lisp
+    tests/disagreement-audit.lisp
+    tests/routing-repair.lisp
+    tests/specialist-composition.lisp
+    tests/combined-repair.lisp
   )
 elif [[ $# -gt 0 ]]; then
   tests=("$@")
 else
-  tests=(tests/phase4b-combined-repair.lisp)
+  tests=(tests/combined-repair.lisp)
 fi
 
 args=(

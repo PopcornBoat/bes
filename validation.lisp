@@ -197,6 +197,8 @@ CAGE3 MODE:
 
     (let ((team (load-best-team best-team-path)))
       (when cage2-p
+        (report-checkpoint-controller-protocol
+         *loaded-checkpoint-metadata* "Validation")
         (let ((saved-format
                 (or (getf *loaded-checkpoint-metadata*
                           :terminal-action-format)

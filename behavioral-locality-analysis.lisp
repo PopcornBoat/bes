@@ -1,6 +1,6 @@
 (in-package :cl-tpg)
 
-;;; Phase-2 analysis is deliberately offline and passive.  These functions
+;;; behavioral-locality analysis is deliberately offline and passive.  These functions
 ;;; consume the append-only journal but never participate in search decisions.
 
 (defparameter +locality-catastrophic-thresholds+ '(10.0d0 25.0d0 50.0d0 100.0d0))
@@ -453,7 +453,7 @@
     (locality-report-bin-table
      stream "Official outcomes by ranking distance"
      (locality-analysis-summary-ranking-bins summary))
-    (format stream "~%## Interpretation constraint~%~%Mutation-event rows overlap when one child received multiple events. They are conditional associations, not isolated operator effects. Correlations are descriptive and should not drive Phase 3 when the number of behavior-changing official samples is small. Phase 2 does not alter mutation or selection.~%")))
+    (format stream "~%## Interpretation constraint~%~%Mutation-event rows overlap when one child received multiple events. They are conditional associations, not isolated operator effects. Correlations are descriptive and should not drive semantic-locality when the number of behavior-changing official samples is small. behavioral-locality does not alter mutation or selection.~%")))
 
 (defun process-behavioral-locality-journal-file (summary input)
   "Incrementally add readable forms from INPUT to SUMMARY."
@@ -481,7 +481,7 @@
    #'string< :key #'namestring))
 
 (defun analyze-behavioral-locality-journal (input &key output-path)
-  "Incrementally analyze an append-only Phase-2 journal and write Markdown."
+  "Incrementally analyze an append-only behavioral-locality journal and write Markdown."
   (let* ((summary (make-locality-analysis-summary))
          (sample-journal (behavioral-locality-sample-journal-beside input)))
     (process-behavioral-locality-journal-file summary input)

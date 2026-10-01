@@ -1,4 +1,4 @@
-;;; Focused non-simulator checks for Phase-2 journal analysis.
+;;; Focused non-simulator checks for behavioral-locality journal analysis.
 
 (in-package :cl-user)
 

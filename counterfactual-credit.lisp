@@ -1,12 +1,12 @@
 (in-package :cl-tpg)
 
-(defconstant +phase5d-counterfactual-credit-protocol+
-  :phase5d-counterfactual-credit-v1)
+(defconstant +counterfactual-credit-protocol+
+  :counterfactual-credit-v1)
 
-(defconstant +phase5d-counterfactual-request-protocol+
-  :phase5d-counterfactual-credit-request-v1)
+(defconstant +counterfactual-request-protocol+
+  :counterfactual-credit-request-v1)
 
-(defun phase5d-valid-pair-p (pair)
+(defun counterfactual-valid-pair-p (pair)
   (and (typep pair 'sequence)
        (= (length pair) 2)
        (let ((target (elt pair 0))
@@ -19,37 +19,37 @@
               (< response +num-semantic-responses+)
               (or (/= target +global-target+) (= response 0))))))
 
-(defun phase5d-validate-request (request)
-  "Validate and return one frozen Phase 5D counterfactual request."
+(defun counterfactual-validate-request (request)
+  "Validate and return one frozen counterfactual repair counterfactual request."
   (unless (eq (getf request :protocol)
-              +phase5d-counterfactual-request-protocol+)
-    (error "Unknown Phase 5D request protocol: ~S"
+              +counterfactual-request-protocol+)
+    (error "Unknown counterfactual repair request protocol: ~S"
            (getf request :protocol)))
   (dolist (key '(:checkpoint :discovery-seeds :holdout-seeds
                  :teacher-pair :behavior-pair))
     (unless (getf request key)
-      (error "Phase 5D request is missing ~S." key)))
+      (error "counterfactual repair request is missing ~S." key)))
   (dolist (key '(:teacher-pair :behavior-pair))
-    (unless (phase5d-valid-pair-p (getf request key))
-      (error "Phase 5D request has invalid ~S: ~S"
+    (unless (counterfactual-valid-pair-p (getf request key))
+      (error "counterfactual repair request has invalid ~S: ~S"
              key (getf request key))))
   (let ((discovery (getf request :discovery-seeds))
         (holdout (getf request :holdout-seeds)))
     (dolist (entry (append discovery holdout))
       (unless (and (integerp entry) (<= 0 entry) (< entry 9999999))
-        (error "Phase 5D seed must be an integer in [0, 9999999): ~S"
+        (error "counterfactual repair seed must be an integer in [0, 9999999): ~S"
                entry)))
     (unless (= (length discovery)
                (length (remove-duplicates discovery)))
-      (error "Phase 5D discovery seeds contain duplicates."))
+      (error "counterfactual repair discovery seeds contain duplicates."))
     (unless (= (length holdout)
                (length (remove-duplicates holdout)))
-      (error "Phase 5D holdout seeds contain duplicates."))
+      (error "counterfactual repair holdout seeds contain duplicates."))
     (when (intersection discovery holdout)
-      (error "Phase 5D discovery and holdout seed blocks overlap.")))
+      (error "counterfactual repair discovery and holdout seed blocks overlap.")))
   request)
 
-(defun phase5d-matching-event-p
+(defun counterfactual-matching-event-p
        (step teacher-pair behavior-pair)
   "Return true when STEP is the requested non-opening disagreement group."
   (and (null (getf step :opening-pairs))
@@ -59,30 +59,30 @@
        (equal behavior-pair
               (getf (getf step :executed-decision) :pair))))
 
-(defun phase5d-find-event (episode teacher-pair behavior-pair)
+(defun counterfactual-find-event (episode teacher-pair behavior-pair)
   "Return the first matching baseline step, or NIL.
 
-Phase 5D intentionally performs one intervention per episode so its paired
+counterfactual repair intentionally performs one intervention per episode so its paired
 return difference has a single causal action change at the divergence point."
   (find-if
    (lambda (step)
-     (phase5d-matching-event-p step teacher-pair behavior-pair))
+     (counterfactual-matching-event-p step teacher-pair behavior-pair))
    (getf episode :steps)))
 
-(defun phase5d-concrete-prefix (episode intervention-step)
+(defun counterfactual-concrete-prefix (episode intervention-step)
   "Return the exact concrete-action prefix before INTERVENTION-STEP."
   (loop for step in (getf episode :steps)
         while (< (getf step :step) intervention-step)
         collect (getf step :actual-concrete-action)))
 
-(defun phase5d-prefix-return (episode intervention-step)
+(defun counterfactual-prefix-return (episode intervention-step)
   "Return reward accumulated strictly before INTERVENTION-STEP."
   (loop for step in (getf episode :steps)
         while (< (getf step :step) intervention-step)
         sum (getf step :reward) into total
         finally (return (coerce total 'double-float))))
 
-(defun phase5d-make-intervention (event &key (source :teacher))
+(defun counterfactual-make-intervention (event &key (source :teacher))
   "Freeze the baseline state and proposals needed for exact replay."
   (list :step (getf event :step)
         :source source
@@ -94,11 +94,11 @@ return difference has a single causal action change at the divergence point."
         :expected-behavior-pair
           (copy-list (getf (getf event :executed-decision) :pair))))
 
-(defun phase5d-paired-result
+(defun counterfactual-paired-result
        (cohort seed baseline intervention event)
   "Build the serializable paired credit record for one intervention."
   (let* ((step (getf event :step))
-         (prefix-return (phase5d-prefix-return baseline step))
+         (prefix-return (counterfactual-prefix-return baseline step))
          (baseline-return (getf baseline :return))
          (intervention-return (getf intervention :return))
          (baseline-rtg (- baseline-return prefix-return))
@@ -110,7 +110,7 @@ return difference has a single causal action change at the divergence point."
     (unless (and (getf intervention :intervention-executed-p)
                  (getf intervention :prefix-verified-p)
                  (getf intervention-step :intervention-p))
-      (error "Phase 5D intervention audit failed for seed ~D step ~D."
+      (error "counterfactual repair intervention audit failed for seed ~D step ~D."
              seed step))
     (list :cohort cohort
           :seed seed
@@ -137,29 +137,29 @@ return difference has a single causal action change at the divergence point."
           :intervention-catastrophic-p
             (getf intervention :catastrophic-p))))
 
-(defun phase5d-mean (values)
+(defun counterfactual-mean (values)
   (when values
     (/ (reduce #'+ values) (coerce (length values) 'double-float))))
 
-(defun phase5d-sample-standard-deviation (values)
+(defun counterfactual-sample-standard-deviation (values)
   (cond
     ((null values) nil)
     ((null (rest values)) 0.0d0)
     (t
-     (let ((mean (phase5d-mean values)))
+     (let ((mean (counterfactual-mean values)))
        (sqrt
         (/ (loop for value in values
                  sum (expt (- value mean) 2))
            (1- (length values))))))))
 
-(defun phase5d-cohort-summary (cohort records requested-count)
+(defun counterfactual-cohort-summary (cohort records requested-count)
   "Summarize paired counterfactual deltas for one frozen seed cohort."
   (let* ((evaluated
            (remove :evaluated records :key (lambda (x) (getf x :status))
                    :test-not #'eq))
          (deltas (mapcar (lambda (x) (getf x :paired-delta)) evaluated))
-         (mean (phase5d-mean deltas))
-         (std (phase5d-sample-standard-deviation deltas))
+         (mean (counterfactual-mean deltas))
+         (std (counterfactual-sample-standard-deviation deltas))
          (se (and std
                   (/ std (sqrt (coerce (length deltas) 'double-float))))))
     (list :cohort cohort
@@ -182,7 +182,7 @@ return difference has a single causal action change at the divergence point."
           :minimum (and deltas (reduce #'min deltas))
           :maximum (and deltas (reduce #'max deltas)))))
 
-(defun phase5d-run-cohort
+(defun counterfactual-run-cohort
        (cohort seeds env controller policies environment-name
         teacher-pair behavior-pair source)
   "Run baseline/intervention pairs for one independent seed block."
@@ -190,10 +190,10 @@ return difference has a single causal action change at the divergence point."
         (trajectories nil))
     (dolist (seed seeds)
       (let* ((baseline
-               (phase5c-trace-episode
+               (rare-failure-trace-episode
                 env controller policies :v17 environment-name seed))
              (event
-               (phase5d-find-event baseline teacher-pair behavior-pair)))
+               (counterfactual-find-event baseline teacher-pair behavior-pair)))
         (if (null event)
             (progn
               (push (list :cohort cohort :seed seed
@@ -202,25 +202,25 @@ return difference has a single causal action change at the divergence point."
               (push (list :cohort cohort :seed seed :baseline baseline
                           :intervention nil)
                     trajectories)
-              (format t "Phase5D cohort=~A seed=~D no eligible event.~%"
+              (format t "counterfactual cohort=~A seed=~D no eligible event.~%"
                       cohort seed))
             (let* ((step (getf event :step))
-                   (spec (phase5d-make-intervention event :source source))
+                   (spec (counterfactual-make-intervention event :source source))
                    (intervention
-                     (phase5c-trace-episode
+                     (rare-failure-trace-episode
                       env controller policies :v17 environment-name seed
                       :intervention spec
                       :expected-prefix
-                        (phase5d-concrete-prefix baseline step)))
+                        (counterfactual-concrete-prefix baseline step)))
                    (record
-                     (phase5d-paired-result
+                     (counterfactual-paired-result
                       cohort seed baseline intervention event)))
               (push record records)
               (push (list :cohort cohort :seed seed :baseline baseline
                           :intervention intervention)
                     trajectories)
               (format t
-                      "Phase5D cohort=~A seed=~D step=~D baseline=~,4F intervention=~,4F delta=~,4F~%"
+                      "counterfactual cohort=~A seed=~D step=~D baseline=~,4F intervention=~,4F delta=~,4F~%"
                       cohort seed step
                       (getf record :baseline-return)
                       (getf record :intervention-return)
@@ -228,9 +228,9 @@ return difference has a single causal action change at the divergence point."
         (finish-output)))
     (values (nreverse records) (nreverse trajectories))))
 
-(defun run-phase5d-counterfactual-credit (request-path output-directory)
+(defun run-counterfactual-credit (request-path output-directory)
   "Measure one systematic disagreement with official paired interventions."
-  (let* ((request (phase5d-validate-request (phase5c-read-form request-path)))
+  (let* ((request (counterfactual-validate-request (rare-failure-read-form request-path)))
          (output-directory
            (uiop:ensure-directory-pathname output-directory))
          (environment-name
@@ -246,14 +246,14 @@ return difference has a single causal action change at the divergence point."
          (*recurrent-policy-enabled* nil)
          (*hamming-space-enabled* nil)
          (policies
-           (list (phase5c-load-policy :v17 (getf request :checkpoint))))
+           (list (rare-failure-load-policy :v17 (getf request :checkpoint))))
          (env nil)
          (controller nil)
          (all-records nil)
          (all-trajectories nil))
     (unless (member source '(:teacher :semantic-pair))
-      (error "Unsupported Phase 5D intervention source: ~S" source))
-    (phase5c-write-form
+      (error "Unsupported counterfactual repair intervention source: ~S" source))
+    (rare-failure-write-form
      request (merge-pathnames "request.sexp" output-directory))
     (py4cl2:pyexec "import gymnasium as gym; import cage2_bridge")
     (setf env (cl-gym::make environment-name)
@@ -265,7 +265,7 @@ return difference has a single causal action change at the divergence point."
                    (list (cons :discovery (getf request :discovery-seeds))
                          (cons :holdout (getf request :holdout-seeds))))
            (multiple-value-bind (records trajectories)
-               (phase5d-run-cohort
+               (counterfactual-run-cohort
                 (car cohort-spec) (cdr cohort-spec)
                 env controller policies environment-name
                 (getf request :teacher-pair)
@@ -284,63 +284,63 @@ return difference has a single causal action change at the divergence point."
                      :key (lambda (x) (getf x :cohort)) :test-not #'eq))
            (summary
              (list
-              :protocol +phase5d-counterfactual-credit-protocol+
+              :protocol +counterfactual-credit-protocol+
               :checkpoint (getf request :checkpoint)
               :environment environment-name
               :intervention-source source
               :teacher-pair (getf request :teacher-pair)
               :behavior-pair (getf request :behavior-pair)
               :discovery
-                (phase5d-cohort-summary
+                (counterfactual-cohort-summary
                  :discovery discovery-records
                  (length (getf request :discovery-seeds)))
               :holdout
-                (phase5d-cohort-summary
+                (counterfactual-cohort-summary
                  :holdout holdout-records
                  (length (getf request :holdout-seeds))))))
-      (phase5c-write-form
+      (rare-failure-write-form
        all-records (merge-pathnames "paired-results.sexp" output-directory))
-      (phase5c-write-form
+      (rare-failure-write-form
        all-trajectories
        (merge-pathnames "counterfactual-trajectories.sexp" output-directory))
-      (phase5c-write-form
+      (rare-failure-write-form
        summary (merge-pathnames "summary.sexp" output-directory))
       summary)))
 
-(defun run-phase5d-counterfactual-credit-from-environment ()
-  "Run Phase 5D from launcher-supplied paths."
+(defun run-counterfactual-credit-from-environment ()
+  "Run counterfactual repair from launcher-supplied paths."
   (flet ((required (name)
            (or (uiop:getenv name)
                (error "Required environment variable ~A is missing." name))))
-    (run-phase5d-counterfactual-credit
-     (required "PHASE5D_REQUEST")
-     (required "PHASE5D_OUTPUT_DIRECTORY"))))
+    (run-counterfactual-credit
+     (required "COUNTERFACTUAL_REQUEST")
+     (required "COUNTERFACTUAL_OUTPUT_DIRECTORY"))))
 
-(defun phase5d-step-bucket (step)
+(defun counterfactual-step-bucket (step)
   (cond
     ((< step 20) :early)
     ((< step 50) :middle)
     (t :late)))
 
-(defun phase5d-delta-class (delta &optional (epsilon 1.0d-9))
+(defun counterfactual-delta-class (delta &optional (epsilon 1.0d-9))
   (cond
     ((> delta epsilon) :positive)
     ((< delta (- epsilon)) :negative)
     (t :zero)))
 
-(defun phase5d-delta-summary (records)
+(defun counterfactual-delta-summary (records)
   "Summarize :PAIRED-DELTA values without treating floating noise as effect."
   (let* ((deltas (mapcar (lambda (x) (getf x :paired-delta)) records))
-         (mean (phase5d-mean deltas))
-         (std (phase5d-sample-standard-deviation deltas))
+         (mean (counterfactual-mean deltas))
+         (std (counterfactual-sample-standard-deviation deltas))
          (se (and std
                   (/ std (sqrt (coerce (length deltas) 'double-float))))))
     (list :count (length records)
           :positive
-            (count :positive deltas :key #'phase5d-delta-class)
-          :zero (count :zero deltas :key #'phase5d-delta-class)
+            (count :positive deltas :key #'counterfactual-delta-class)
+          :zero (count :zero deltas :key #'counterfactual-delta-class)
           :negative
-            (count :negative deltas :key #'phase5d-delta-class)
+            (count :negative deltas :key #'counterfactual-delta-class)
           :mean-delta mean
           :standard-deviation std
           :standard-error se
@@ -349,7 +349,7 @@ return difference has a single causal action change at the divergence point."
                  (list (- mean (* 1.96d0 se))
                        (+ mean (* 1.96d0 se)))))))
 
-(defun phase5d-context-group-summaries
+(defun counterfactual-context-group-summaries
        (records key-function &key (minimum-count 1))
   "Group RECORDS by KEY-FUNCTION and return count-sorted delta summaries."
   (let ((groups (make-hash-table :test #'equal)))
@@ -360,17 +360,17 @@ return difference has a single causal action change at the divergence point."
              using (hash-value entries)
            when (>= (length entries) minimum-count)
              collect (list :key key
-                           :statistics (phase5d-delta-summary entries)))
+                           :statistics (counterfactual-delta-summary entries)))
      #'> :key (lambda (entry)
                 (getf (getf entry :statistics) :count)))))
 
-(defun phase5d-find-v17-proposal (step)
+(defun counterfactual-find-v17-proposal (step)
   (or (find :v17 (getf step :policy-proposals)
             :key (lambda (proposal) (getf proposal :label))
             :test #'eq)
-      (error "Phase 5D context step has no V17 proposal.")))
+      (error "counterfactual repair context step has no V17 proposal.")))
 
-(defun phase5d-context-record (paired trajectory)
+(defun counterfactual-context-record (paired trajectory)
   "Join one compact paired result to its baseline/intervention context."
   (let* ((step-number (getf paired :step))
          (baseline (getf trajectory :baseline))
@@ -381,22 +381,22 @@ return difference has a single causal action change at the divergence point."
          (intervention-step
            (find step-number (getf intervention :steps)
                  :key (lambda (step) (getf step :step))))
-         (proposal (phase5d-find-v17-proposal baseline-step))
+         (proposal (counterfactual-find-v17-proposal baseline-step))
          (observation (getf baseline-step :policy-observation))
          (delta (getf paired :paired-delta))
          (immediate-delta
            (- (getf intervention-step :reward)
               (getf baseline-step :reward))))
     (unless (and baseline-step intervention-step)
-      (error "Phase 5D context is missing seed ~D step ~D."
+      (error "counterfactual repair context is missing seed ~D step ~D."
              (getf paired :seed) step-number))
     (list
      :cohort (getf paired :cohort)
      :seed (getf paired :seed)
      :step step-number
-     :step-bucket (phase5d-step-bucket step-number)
+     :step-bucket (counterfactual-step-bucket step-number)
      :paired-delta delta
-     :delta-class (phase5d-delta-class delta)
+     :delta-class (counterfactual-delta-class delta)
      :immediate-reward-delta immediate-delta
      :downstream-delta (- delta immediate-delta)
      :baseline-return (getf paired :baseline-return)
@@ -424,14 +424,14 @@ return difference has a single causal action change at the divergence point."
                'list)
      :policy-observation (coerce observation 'list))))
 
-(defun run-phase5d-context-analysis (input-directory output-path)
-  "Explain context dependence in a completed Phase 5D paired experiment."
+(defun run-counterfactual-context-analysis (input-directory output-path)
+  "Explain context dependence in a completed counterfactual repair paired experiment."
   (let* ((directory (uiop:ensure-directory-pathname input-directory))
          (paired
-           (phase5c-read-form
+           (rare-failure-read-form
             (merge-pathnames "paired-results.sexp" directory)))
          (trajectories
-           (phase5c-read-form
+           (rare-failure-read-form
             (merge-pathnames "counterfactual-trajectories.sexp" directory)))
          (evaluated
            (remove-if-not
@@ -451,55 +451,55 @@ return difference has a single causal action change at the divergence point."
                 (unless trajectory
                   (error "Missing trajectory for ~S seed ~D."
                          (getf record :cohort) (getf record :seed)))
-                (phase5d-context-record record trajectory)))
+                (counterfactual-context-record record trajectory)))
             evaluated))
          (report
            (list
-            :protocol :phase5d-context-analysis-v1
+            :protocol :counterfactual-context-analysis-v1
             :source-directory (namestring directory)
             :note
               "All inspected cohorts are discovery material; derived groups require a new holdout stream."
-            :overall (phase5d-delta-summary contexts)
+            :overall (counterfactual-delta-summary contexts)
             :by-cohort
-              (phase5d-context-group-summaries
+              (counterfactual-context-group-summaries
                contexts (lambda (x) (getf x :cohort)))
             :by-step-bucket
-              (phase5d-context-group-summaries
+              (counterfactual-context-group-summaries
                contexts (lambda (x) (getf x :step-bucket)))
             :by-teacher-rank
-              (phase5d-context-group-summaries
+              (counterfactual-context-group-summaries
                contexts (lambda (x) (getf x :teacher-rank-in-behavior)))
             :by-teacher-option
-              (phase5d-context-group-summaries
+              (counterfactual-context-group-summaries
                contexts (lambda (x) (getf x :teacher-option)))
             :by-immediate-reward-delta
-              (phase5d-context-group-summaries
+              (counterfactual-context-group-summaries
                contexts (lambda (x) (getf x :immediate-reward-delta)))
             :by-decoy-mask
-              (phase5d-context-group-summaries
+              (counterfactual-context-group-summaries
                contexts (lambda (x) (getf x :decoy-mask-before)))
             :by-scan-state
-              (phase5d-context-group-summaries
+              (counterfactual-context-group-summaries
                contexts (lambda (x) (getf x :scan-state)))
             :by-winning-learner
-              (phase5d-context-group-summaries
+              (counterfactual-context-group-summaries
                contexts (lambda (x) (getf x :behavior-winning-learner)))
             :by-path-length
-              (phase5d-context-group-summaries
+              (counterfactual-context-group-summaries
                contexts (lambda (x) (getf x :behavior-path-length)))
             :repeated-policy-observations
-              (phase5d-context-group-summaries
+              (counterfactual-context-group-summaries
                contexts (lambda (x) (getf x :policy-observation))
                :minimum-count 2)
             :contexts contexts)))
-    (phase5c-write-form report output-path)
+    (rare-failure-write-form report output-path)
     report))
 
-(defun run-phase5d-context-analysis-from-environment ()
+(defun run-counterfactual-context-analysis-from-environment ()
   "Run context analysis from launcher-supplied paths."
   (flet ((required (name)
            (or (uiop:getenv name)
                (error "Required environment variable ~A is missing." name))))
-    (run-phase5d-context-analysis
-     (required "PHASE5D_INPUT_DIRECTORY")
-     (required "PHASE5D_CONTEXT_OUTPUT"))))
+    (run-counterfactual-context-analysis
+     (required "COUNTERFACTUAL_INPUT_DIRECTORY")
+     (required "COUNTERFACTUAL_CONTEXT_OUTPUT"))))

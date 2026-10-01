@@ -1,4 +1,4 @@
-;;; Focused non-simulator checks for Phase-2 behavioral locality.
+;;; Focused non-simulator checks for behavioral-locality behavioral locality.
 ;;; Load :CL-TPG before loading this file.
 
 (in-package :cl-user)
@@ -79,9 +79,9 @@
 (let ((cl-tpg::*teacher-reference-dataset* nil)
       (legacy-control
         '(:version 3
-          :protocol :behavioral-locality-phase2-v1
+          :protocol :behavioral-locality-behavioral-locality-v1
           :revision 5
-          :control-protocol :semantic-locality-control-phase3-v1
+          :control-protocol :semantic-locality-control-semantic-locality-v1
           :control-age 595
           :sample-cursor 12
           :stratum-counts nil
@@ -92,7 +92,7 @@
   (check-behavioral-locality
    (and (= cl-tpg::*semantic-locality-control-age* 595)
         (= cl-tpg::*behavioral-locality-sample-cursor* 12))
-   "Phase-3 v2 resumes the v1 control age and diagnostic cursor"))
+   "semantic-locality v2 resumes the v1 control age and diagnostic cursor"))
 
 (let* ((neutral-team (cl-tpg::%make-team :id "neutral" :learners nil))
        (small-team (cl-tpg::%make-team :id "small" :learners nil))
@@ -125,7 +125,7 @@
 (let ((cl-tpg::*teacher-reference-dataset* nil)
       (cl-tpg::*behavioral-locality-sample-cursor* 99)
       (legacy '(:version 1
-                :protocol :behavioral-locality-phase2-v1
+                :protocol :behavioral-locality-behavioral-locality-v1
                 :revision 4
                 :fixed-reference nil
                 :fixed-early nil
@@ -136,7 +136,7 @@
         (zerop cl-tpg::*behavioral-locality-sample-cursor*)
         (every #'zerop
                (mapcar #'cdr cl-tpg::*behavioral-locality-stratum-counts*)))
-   "version-1 Phase-2 checkpoints restore with a fresh diagnostic cursor"))
+   "version-1 behavioral-locality checkpoints restore with a fresh diagnostic cursor"))
 
 (check-behavioral-locality
  (and (eq (getf (cl-tpg::semantic-locality-control-stage 0) :name)
@@ -147,7 +147,7 @@
           :transition)
       (eq (getf (cl-tpg::semantic-locality-control-stage 1000) :name)
           :consolidation))
- "Phase-3 schedule boundaries are stable")
+ "semantic-locality schedule boundaries are stable")
 
 (let ((neutral '(:top1-hamming 0.0d0 :ranking-distance-mean 0.0d0))
       (ranking '(:top1-hamming 0.0d0 :ranking-distance-mean 0.01d0))

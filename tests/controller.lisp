@@ -99,6 +99,38 @@
      (= (cl-tpg:cage2-controller-decision-option heuristic-next) 6)
      "heuristic profile keeps its versioned second Op_Server0 option")))
 
+;; The heuristic profile owns one global cross-target schedule, rather than
+;; merely concatenating each target's local option permutation.
+(let* ((controller
+         (cl-tpg:make-cage2-controller :decoy-order-profile :heuristic))
+       (ranking
+         (mapcar (lambda (target) (controller-semantic target :decoy))
+                 '(8 2 3 4 5 9 10)))
+       (actual nil))
+  (loop repeat (length cl-tpg::+cage2-heuristic-decoy-schedule+)
+        for decision =
+          (cl-tpg:cage2-controller-resolve-ranking controller ranking)
+        do (push
+            (list
+             (cl-tpg:semantic-action-target
+              (cl-tpg:cage2-controller-decision-semantic-action decision))
+             (cl-tpg:cage2-controller-decision-option decision))
+            actual)
+           (cl-tpg:cage2-controller-commit-decision controller decision))
+  (check-controller
+   (equal (nreverse actual) cl-tpg::+cage2-heuristic-decoy-schedule+)
+   "heuristic profile preserves the exact global cross-target schedule")
+  (let ((fallback
+          (cl-tpg:cage2-controller-resolve-ranking
+           controller
+           (append ranking (list (controller-semantic 2 :analyse))))))
+    (check-controller
+     (and (= (cl-tpg:cage2-controller-decision-rank fallback) 7)
+          (eq (cl-tpg:semantic-action-response
+               (cl-tpg:cage2-controller-decision-semantic-action fallback))
+              :analyse))
+     "exhausted global schedule advances to a non-Decoy fallback")))
+
 ;; Exhausted Decoy advances through the existing ranked fallback rule; Restore
 ;; is skipped below rank zero and Monitor remains the final safe fallback.
 (let* ((controller
@@ -164,7 +196,7 @@
 ;; Exhaustive mapping sanity: every host exposes all four response categories,
 ;; every fixed Decoy permutation emits eight distinct concrete actions, and the
 ;; ninth Decoy request becomes Monitor.
-(dolist (profile '(:model :heuristic))
+(dolist (profile '(:model))
   (loop for target from 1 below cl-tpg:+num-semantic-targets+
         do (let* ((controller
                     (cl-tpg:make-cage2-controller

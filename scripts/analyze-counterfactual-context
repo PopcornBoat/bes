@@ -13,11 +13,11 @@ cd "$repo"
 env \
   "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
   'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
-  "PHASE5D_INPUT_DIRECTORY=$1" \
-  "PHASE5D_CONTEXT_OUTPUT=$2" \
+  "COUNTERFACTUAL_INPUT_DIRECTORY=$1" \
+  "COUNTERFACTUAL_CONTEXT_OUTPUT=$2" \
   /usr/bin/sbcl \
     --dynamic-space-size 4096 \
     --non-interactive \
     --eval '(require :asdf)' \
     --eval '(asdf:load-system :cl-tpg)' \
-    --eval '(cl-tpg::run-phase5d-context-analysis-from-environment)'
+    --eval '(cl-tpg::run-counterfactual-context-analysis-from-environment)'

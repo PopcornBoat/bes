@@ -14,6 +14,7 @@ uses it only to execute ranked target/response proposals safely."
   agreement
   decoy-order-profile
   option-orders
+  decoy-schedule
   (scan-state
     (make-array +cage2-scan-state-size+
                 :element-type 'double-float
@@ -33,11 +34,16 @@ uses it only to execute ranked target/response proposals safely."
        (&key (agreement (ensure-cage2-action-agreement))
              (decoy-order-profile
                *cage2-controller-decoy-order-profile*))
-  "Create an empty controller using an explicit fixed Decoy-order PROFILE.
+  "Create an empty controller using an explicit fixed Decoy PROFILE.
 
 PROFILE selection is independent from the teacher backend. This prevents a
-teacher switch from silently changing deployment behavior."
-  (let ((orders
+teacher switch from silently changing deployment behavior. The :HEURISTIC
+profile includes both its per-target option orders and its exact cross-target
+global schedule."
+  (let* ((schedule
+           (and (eq decoy-order-profile :heuristic)
+                +cage2-heuristic-decoy-schedule+))
+         (orders
           (action-agreement-decoy-orders-for-profile
            decoy-order-profile agreement)))
     (unless orders
@@ -46,7 +52,8 @@ teacher switch from silently changing deployment behavior."
     (%make-cage2-controller
      :agreement agreement
      :decoy-order-profile decoy-order-profile
-     :option-orders (copy-action-option-orders orders))))
+     :option-orders (copy-action-option-orders orders)
+     :decoy-schedule (and schedule (copy-tree schedule)))))
 
 (defun cage2-controller-reset (controller)
   "Clear all episode-local controller state and return CONTROLLER."
@@ -179,6 +186,31 @@ function. Values are 0=unseen, 1=previous scan, and 2=latest scan."
      :option nil
      :fallback-p fallback-p)))
 
+(defun cage2-controller-decoy-candidate-rank (candidates target)
+  "Return the rank of TARGET's Decoy category, or NIL when absent."
+  (loop for candidate in candidates
+        for rank fixnum from 0 below +semantic-ranking-limit+
+        do (multiple-value-bind (candidate-target response-index valid-p)
+               (cage2-controller-valid-semantic-components candidate)
+             (when (and valid-p
+                        (= candidate-target target)
+                        (= response-index 3))
+               (return rank)))))
+
+(defun cage2-controller-next-scheduled-decoy (controller candidates)
+  "Return the first available scheduled target, option, and proposal rank.
+
+Only targets represented by a Decoy category in CANDIDATES are eligible. The
+schedule therefore resolves a TPG proposal; it does not create an action that
+the policy omitted from its bounded semantic ranking."
+  (loop for (target option) in (cage2-controller-decoy-schedule controller)
+        unless (cage2-controller-decoy-used-p controller target option)
+          do (let ((rank
+                     (cage2-controller-decoy-candidate-rank
+                      candidates target)))
+               (when rank
+                 (return (values target option rank))))))
+
 (defun cage2-controller-resolve-ranking (controller candidates)
   "Purely resolve ranked semantic CANDIDATES into an executable decision.
 
@@ -186,9 +218,10 @@ An exhausted Decoy advances to the next bid without re-running TPG. To retain
 the established teacher/bridge rule, Restore is executable at rank zero but is
 skipped after fallback has begun. Empty, malformed, or exhausted rankings end
 in Monitor. This function never changes scan state, Decoy state, or step count;
-only CAGE2-CONTROLLER-COMMIT-DECISION may do so after a real step succeeds."
+  only CAGE2-CONTROLLER-COMMIT-DECISION may do so after a real step succeeds."
   (block selected
-    (loop for candidate in candidates
+    (loop with scheduled-decoy-considered-p = nil
+          for candidate in candidates
           for rank fixnum from 0 below +semantic-ranking-limit+
           do (multiple-value-bind (target response-index valid-p)
                  (cage2-controller-valid-semantic-components candidate)
@@ -202,6 +235,33 @@ only CAGE2-CONTROLLER-COMMIT-DECISION may do so after a real step succeeds."
                       (return-from selected decision)))
                    ((and (> rank 0) (= response-index 2))
                     nil)
+                   ((and (cage2-controller-decoy-schedule controller)
+                         (= response-index 3))
+                    ;; Resolve the first Decoy proposal through the global
+                    ;; profile once. Later Decoy candidates must be skipped
+                    ;; when the schedule is exhausted so normal non-Decoy
+                    ;; fallbacks can win.
+                    (unless scheduled-decoy-considered-p
+                      (setf scheduled-decoy-considered-p t)
+                      (multiple-value-bind
+                            (scheduled-target option scheduled-rank)
+                          (cage2-controller-next-scheduled-decoy
+                           controller candidates)
+                        (when scheduled-target
+                          (let ((semantic
+                                  (make-semantic-action
+                                   :target scheduled-target
+                                   :response :decoy
+                                   :option option)))
+                            (return-from selected
+                              (make-cage2-controller-decision
+                               :semantic-action semantic
+                               :concrete-action
+                                 (cage2-controller-concrete-action
+                                  controller scheduled-target 3 option)
+                               :rank scheduled-rank
+                               :option option
+                               :fallback-p nil)))))))
                    (t
                     (let ((option
                             (and (= response-index 3)
@@ -273,4 +333,6 @@ clears only its target's Decoys; Decoy marks exactly the selected option."
         :agreement (action-agreement-signature
                     (cage2-controller-agreement controller))
         :decoy-order-profile
-          (cage2-controller-decoy-order-profile controller)))
+          (cage2-controller-decoy-order-profile controller)
+        :decoy-schedule
+          (copy-tree (cage2-controller-decoy-schedule controller))))

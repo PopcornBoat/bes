@@ -12,8 +12,7 @@ offset retains the official 13-host observation layout, while TARGET uses the
 shared nine-host Semantic-36 namespace.")
 
 (defparameter +bline-heuristic-decoy-schedule+
-  '((8 1) (8 6) (2 2) (3 1) (4 1) (2 6) (2 7)
-    (5 2) (5 6) (5 0) (9 7) (9 4) (5 7) (10 7))
+  (copy-tree +cage2-heuristic-decoy-schedule+)
   "Exact (TARGET OPTION) order of BlueBLineHeuristicSimple's Decoy list.
 
 Repeated targets are intentional: after one option is committed, the next

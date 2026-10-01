@@ -1,106 +1,45 @@
-# WSL-First BES Workflow
+# WSL Workflow
 
-## Open the canonical project
+The authoritative checkout is `/home/hardison/bes`.
 
-The source of truth is:
-
-```text
-/home/hardison/bes
-```
-
-From Windows, open the same files through:
-
-```text
-\\wsl.localhost\Ubuntu\home\hardison\bes
-```
-
-Do not maintain a second active clone on a Windows drive. For a native Linux
-Codex session:
+## Health check
 
 ```bash
 cd /home/hardison/bes
-codex
+scripts/bes-doctor
 ```
 
-At the beginning of a new task, verify the execution context:
+## Server lifecycle
 
 ```bash
-./scripts/bes-doctor
+scripts/bes-runtime start
+scripts/bes-runtime status
+scripts/bes-runtime attach
+scripts/bes-runtime capture
+scripts/bes-runtime stop
 ```
 
-## Standard operations
-
-Start a server when port 8080 is free:
+## Search lifecycle
 
 ```bash
-./scripts/bes-runtime start bes
+scripts/bes-search submit experiments/official-guided-semantic36.sexp
+scripts/bes-search stop
 ```
 
-Inspect or attach to it:
+The stop command is graceful. Allow the active generation or checkpoint write
+to reach a safe boundary before considering process-level intervention.
+
+## Tests
 
 ```bash
-./scripts/bes-runtime status
-./scripts/bes-runtime capture bes
-tmux attach -t bes
+scripts/bes-test tests/controller.lisp
+scripts/bes-test tests/compiled-bline-heuristic.lisp
+scripts/bes-test --core
 ```
 
-Submit a version-controlled experiment request:
+## Generated data
 
-```bash
-./scripts/bes-search submit experiments/phase4b-b-specialist-composition.sexp
-```
-
-For the current Phase-4b-C combined treatment, submit:
-
-```bash
-./scripts/bes-search submit experiments/phase4b-c-combined-repair.sexp
-```
-
-Request a graceful stop:
-
-```bash
-./scripts/bes-search stop
-```
-
-The stop request does not kill SBCL. Wait for the `Search stopped` message or
-verify that no search worker remains before replacing the server.
-
-Run focused regression checks:
-
-```bash
-./scripts/bes-test tests/phase4b-specialist-composition.lisp
-./scripts/bes-test --core
-```
-
-The combined dispatcher has a focused check as well:
-
-```bash
-./scripts/bes-test tests/phase4b-combined-repair.lisp
-```
-
-## Runtime and source separation
-
-Runtime output is never written into Git:
-
-```text
-/home/hardison/checkpoints    experiment checkpoints and journals
-/home/hardison/backup         protected experiment sources
-/home/hardison/.datasets      datasets
-/home/hardison/bes-artifacts  local/private artifacts
-```
-
-Each treatment receives a new checkpoint directory. A checked-in request file
-documents the exact source checkpoint, parameters, action contract, seed, and
-destination directory used for a reproducible run.
-
-## Git authentication
-
-Both BES and the Python bridge use SSH remotes inside WSL. Verify without
-changing repository state:
-
-```bash
-git ls-remote --exit-code origin HEAD
-```
-
-Do not store a GitHub PAT, WSL password, or private key in the repository or in
-experiment files.
+Keep checkpoints under `/home/hardison/checkpoints`, datasets under
+`/home/hardison/.datasets`, and generated analysis/validation evidence under
+`/home/hardison/bes-artifacts` or `/home/hardison/backup`. Do not commit these
+artifacts.

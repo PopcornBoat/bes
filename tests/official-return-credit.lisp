@@ -1,4 +1,4 @@
-;;; Focused non-simulator checks for Phase-5B paired official lineage credit.
+;;; Focused non-simulator checks for return-credit lineage paired official lineage credit.
 
 (in-package :cl-user)
 
@@ -11,31 +11,31 @@
 
 (let ((cl-tpg::*current-search-mode* :official-guided)
       (cl-tpg::*semantic-locality-control-enabled* t)
-      (cl-tpg::*phase4-selection-enabled* t)
+      (cl-tpg::*grouped-selection-enabled* t)
       (cl-tpg::*official-return-credit-enabled* t)
-      (cl-tpg::*phase5c-targeted-return-credit-enabled* nil)
-      (cl-tpg::*phase4b-routing-repair-enabled* nil)
-      (cl-tpg::*phase4b-specialist-composition-enabled* nil)
-      (cl-tpg::*phase4b-combined-repair-enabled* nil))
+      (cl-tpg::*rare-failure-targeted-return-credit-enabled* nil)
+      (cl-tpg::*targeted-routing-repair-enabled* nil)
+      (cl-tpg::*targeted-specialist-composition-enabled* nil)
+      (cl-tpg::*targeted-combined-repair-enabled* nil))
   (check-official-return-credit
    (cl-tpg::official-return-credit-active-p)
-   "the isolated Phase-5B feature gate is active")
-  (let ((cl-tpg::*phase4b-routing-repair-enabled* t))
+   "the isolated return-credit lineage feature gate is active")
+  (let ((cl-tpg::*targeted-routing-repair-enabled* t))
     (check-official-return-credit
      (not (cl-tpg::official-return-credit-active-p))
-     "Phase-4b proposal operators cannot be mixed into Phase 5B")))
+     "targeted repair proposal operators cannot be mixed into return-credit lineage")))
 
 (let ((cl-tpg::*current-search-mode* :official-guided)
       (cl-tpg::*semantic-locality-control-enabled* t)
-      (cl-tpg::*phase4-selection-enabled* t)
+      (cl-tpg::*grouped-selection-enabled* t)
       (cl-tpg::*official-return-credit-enabled* t)
-      (cl-tpg::*phase5c-targeted-return-credit-enabled* t)
-      (cl-tpg::*phase4b-routing-repair-enabled* t)
-      (cl-tpg::*phase4b-specialist-composition-enabled* t)
-      (cl-tpg::*phase4b-combined-repair-enabled* t))
+      (cl-tpg::*rare-failure-targeted-return-credit-enabled* t)
+      (cl-tpg::*targeted-routing-repair-enabled* t)
+      (cl-tpg::*targeted-specialist-composition-enabled* t)
+      (cl-tpg::*targeted-combined-repair-enabled* t))
   (check-official-return-credit
    (cl-tpg::official-return-credit-active-p)
-   "Phase 5C explicitly gates combined targeted proposals through return credit"))
+   "rare-failure diagnostics explicitly gates combined targeted proposals through return credit"))
 
 (let ((cl-tpg::*current-search-seed* 153))
   (cl-tpg::initialize-official-guided-seed-streams 153)
@@ -116,7 +116,7 @@
 
 (let* ((token (get-universal-time))
        (path (merge-pathnames
-              (format nil "phase5b-anchor-~D.lisp" token)
+              (format nil "return-credit-lineage-anchor-~D.lisp" token)
               #p"/tmp/"))
        (team (cl-tpg::%make-team :id "detached-anchor" :learners nil))
        (cl-tpg::*teams* nil)
@@ -218,7 +218,7 @@
 
 (let ((cl-tpg::*current-search-mode* :official-guided)
       (cl-tpg::*official-return-credit-enabled* t)
-      (cl-tpg::*phase5c-targeted-return-credit-enabled* nil)
+      (cl-tpg::*rare-failure-targeted-return-credit-enabled* nil)
       (cl-tpg::*num-observations* 62)
       (cl-tpg::*num-actions* 36)
       (cl-tpg::*decoy-order-mode* :fixed)
@@ -230,11 +230,11 @@
   (check-official-return-credit
    (search "official-guided-return-credit-lineage"
            (cl-tpg::best-team-checkpoint-filename))
-   "Phase-5B checkpoints have an isolated filename"))
+   "return-credit lineage checkpoints have an isolated filename"))
 
 (let ((cl-tpg::*current-search-mode* :official-guided)
       (cl-tpg::*official-return-credit-enabled* t)
-      (cl-tpg::*phase5c-targeted-return-credit-enabled* t)
+      (cl-tpg::*rare-failure-targeted-return-credit-enabled* t)
       (cl-tpg::*num-observations* 62)
       (cl-tpg::*num-actions* 36)
       (cl-tpg::*decoy-order-mode* :fixed)
@@ -246,7 +246,7 @@
   (check-official-return-credit
    (search "official-guided-targeted-return-credit"
            (cl-tpg::best-team-checkpoint-filename))
-   "Phase-5C checkpoints cannot overwrite Phase-5B or Phase-4 files"))
+   "rare-failure diagnostics checkpoints cannot overwrite return-credit lineage or grouped selection files"))
 
 (format t "~D official return-credit checks passed.~%"
         *official-return-credit-checks*)

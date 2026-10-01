@@ -57,8 +57,18 @@ head.  Thirty-six selects the direct two-field target/response genotype."
           (t
            (error "Unsupported CAGE2 semantic action count: ~S." count)))))
 
-(defconstant +cage2-controller-protocol+ :cage2-lisp-controller-v1
+(defconstant +cage2-controller-protocol+ :cage2-lisp-controller-v2
   "Version tag for the canonical Lisp-side CAGE2 controller semantics.")
+
+(defparameter +cage2-heuristic-decoy-schedule+
+  '((8 1) (8 6) (2 2) (3 1) (4 1) (2 6) (2 7)
+    (5 2) (5 6) (5 0) (9 7) (9 4) (5 7) (10 7))
+  "Global cross-target Decoy schedule used by the heuristic Controller profile.
+
+Each entry is (TARGET OPTION). Repeated targets are intentional. This is
+controller state, not policy input: the TPG proposes ranked target/response
+categories and the Controller chooses the first still-available scheduled
+concrete Decoy whose target is represented in that ranking.")
 
 (defparameter *cage2-controller-decoy-order-profile* :heuristic
   "Fixed, versioned Decoy order used by the Lisp controller.
@@ -197,32 +207,32 @@ Stage 4 performs the final multi-horizon tail-aware promotion audit.")
 (defconstant +official-guided-catastrophic-return-per-step+ -1.0d0
   "A return at or below horizon times this value is counted as catastrophic.")
 
-(defconstant +phase5f-near-miss-protocol+
-  :bounded-near-miss-lineage-phase5f-v1
+(defconstant +near-miss-lineages-protocol+
+  :bounded-near-miss-lineage-near-miss-v1
   "Version tag for detached near-miss search memory.")
 
-(defconstant +phase5f-max-lineages+ 2
+(defconstant +near-miss-max-lineages+ 2
   "Maximum detached near-miss basins retained at once.")
 
-(defconstant +phase5f-reproduction-quota+ 0.10d0
+(defconstant +near-miss-reproduction-quota+ 0.10d0
   "Maximum fraction of existing offspring slots sourced from lineage heads.")
 
-(defconstant +phase5f-lineage-submission-period+ 5
+(defconstant +near-miss-lineage-submission-period+ 5
   "At most one in five official challenger slots may be lineage-sourced.")
 
-(defparameter +phase5f-local-screen-and-confirm-counts+ '(5 20)
+(defparameter +near-miss-local-screen-and-confirm-counts+ '(5 20)
   "Fresh 100-step screen count followed by a disjoint multi-horizon confirm count.")
 
-(defconstant +phase5f-local-confirm-standard-errors+ 1.0d0
+(defconstant +near-miss-local-confirm-standard-errors+ 1.0d0
   "Paired uncertainty margin required against the current lineage head.")
 
-(defconstant +phase5f-max-reproduction-opportunities+ 80
+(defconstant +near-miss-max-reproduction-opportunities+ 80
   "Maximum explicitly allocated offspring slots over one lineage lifetime.")
 
-(defconstant +phase5f-max-evaluated-descendants+ 12
+(defconstant +near-miss-max-evaluated-descendants+ 12
   "Maximum completed local descendant comparisons over one lineage lifetime.")
 
-(defconstant +phase5f-max-age-generations+ 250
+(defconstant +near-miss-max-age-generations+ 250
   "Hard generation lifetime for one near-miss lineage.")
 
 (defparameter +official-guided-reference-roots+ '(153 42 2026)
@@ -235,8 +245,8 @@ Stage 4 performs the final multi-horizon tail-aware promotion audit.")
   "Standard-error boundary used by racing futility and final promotion.")
 
 (defconstant +official-return-credit-protocol+
-  :paired-parent-child-return-credit-phase5b-v2
-  "Version tag for Phase-5B official child-versus-direct-parent lineage credit.")
+  :paired-parent-child-return-credit-return-credit-lineage-v2
+  "Version tag for return-credit lineage official child-versus-direct-parent lineage credit.")
 
 (defparameter +official-return-credit-stages+ '(5 20)
   "Cumulative paired official episodes used to reject and then approve one
@@ -252,31 +262,31 @@ direct child.  The first stage can only reject; the final stage can approve.")
   "Maximum number of independently protected return-credit lineages.")
 
 (defconstant +behavioral-locality-protocol+
-  :behavioral-locality-phase2-v1
-  "Version tag for observation-only Phase-2 parent/child diagnostics.")
+  :behavioral-locality-behavioral-locality-v1
+  "Version tag for observation-only behavioral-locality parent/child diagnostics.")
 
 (defconstant +behavioral-probe-section-size+ 16
-  "Number of observations retained in each Phase-2 probe archive section.")
+  "Number of observations retained in each behavioral-locality probe archive section.")
 
 (defconstant +behavioral-probe-archive-size+
   (* 4 +behavioral-probe-section-size+)
-  "Maximum observations in the versioned Phase-2 probe archive.")
+  "Maximum observations in the versioned behavioral-locality probe archive.")
 
 (defconstant +behavioral-locality-sample-episodes+ 12
-  "Paired official episodes used by one passive Phase-2 locality sample.")
+  "Paired official episodes used by one passive behavioral-locality locality sample.")
 
 (defparameter +behavioral-locality-sampling-strata+
   '(:probe-neutral :ranking-only :small-top1 :medium-top1 :large-top1)
   "Deterministic strata used to balance passive official mutation samples.")
 
 (defconstant +semantic-locality-control-protocol+
-  :semantic-locality-control-phase3-v2
-  "Version tag for adaptive Phase-3 behavioral mutation control.")
+  :semantic-locality-control-semantic-locality-v2
+  "Version tag for adaptive semantic-locality behavioral mutation control.")
 
 (defparameter +semantic-locality-control-compatible-protocols+
-  '(:semantic-locality-control-phase3-v1
-    :semantic-locality-control-phase3-v2)
-  "Control-state protocols that can resume under the Phase-3 v2 code.")
+  '(:semantic-locality-control-semantic-locality-v1
+    :semantic-locality-control-semantic-locality-v2)
+  "Control-state protocols that can resume under the semantic-locality v2 code.")
 
 (defconstant +semantic-locality-control-max-attempts+ 8
   "Maximum native mutation attempts used to fill one controlled offspring slot.")
@@ -288,94 +298,94 @@ direct child.  The first stage can only reject; the final stage can approve.")
      :local-weight 0.75d0 :bounded-weight 0.20d0 :explore-weight 0.05d0)
     (:name :consolidation :until nil
      :local-weight 0.85d0 :bounded-weight 0.12d0 :explore-weight 0.03d0))
-  "Frozen Phase-3 schedule.
+  "Frozen semantic-locality schedule.
 
 LOCAL slots seek ranking-only or at-most-five-percent Top-1 changes. BOUNDED
 slots additionally accept at-most-twenty-percent Top-1 changes. EXPLORE slots
 accept the first native mutation unchanged, preserving non-local escape moves.")
 
-(defconstant +phase4-selection-protocol+
-  :grouped-epsilon-lexicase-phase4a-v1
-  "Version tag for the causally isolated Phase-4a survivor selection.")
+(defconstant +grouped-selection-protocol+
+  :grouped-epsilon-lexicase-grouped-selection-v1
+  "Version tag for the causally isolated grouped selection survivor selection.")
 
-(defconstant +phase4-minimum-pair-group-size+ 5
+(defconstant +grouped-minimum-pair-group-size+ 5
   "Minimum rows required to activate one teacher target/response case.")
 
-(defconstant +phase4-selection-numerical-tolerance+ 1.0d-12
+(defconstant +grouped-selection-numerical-tolerance+ 1.0d-12
   "Floating comparison tolerance; this is not a statistical epsilon floor.")
 
-(defconstant +phase4-selection-rng-salt+ 1900813
-  "Independent deterministic salt for the Phase-4a selection stream.")
+(defconstant +grouped-selection-rng-salt+ 1900813
+  "Independent deterministic salt for the grouped selection selection stream.")
 
-(defconstant +phase4b-disagreement-audit-protocol+
+(defconstant +targeted-disagreement-audit-protocol+
   :error-directed-variation-audit-v1
-  "Version tag for the passive Phase-4b disagreement classification.")
+  "Version tag for the passive targeted repair disagreement classification.")
 
-(defconstant +phase4b-systematic-minimum-occurrences+ 3
-  "Minimum repeated rows required for one Phase-4b systematic error issue.")
+(defconstant +targeted-systematic-minimum-occurrences+ 3
+  "Minimum repeated rows required for one targeted repair systematic error issue.")
 
-(defconstant +phase4b-systematic-minimum-episodes+ 2
-  "Minimum distinct episodes required for one Phase-4b systematic error issue.")
+(defconstant +targeted-systematic-minimum-episodes+ 2
+  "Minimum distinct episodes required for one targeted repair systematic error issue.")
 
-(defconstant +phase4b-routing-repair-protocol+
+(defconstant +targeted-routing-repair-protocol+
   :error-directed-routing-repair-v1
-  "Version tag for Phase-4b-A targeted routing variation.")
+  "Version tag for targeted routing repair targeted routing variation.")
 
-(defconstant +phase4b-routing-repair-rng-salt+ 2404729
-  "Independent deterministic salt for Phase-4b-A scheduling draws.")
+(defconstant +targeted-routing-repair-rng-salt+ 2404729
+  "Independent deterministic salt for targeted routing repair scheduling draws.")
 
-(defconstant +phase4b-routing-repair-quota+ 0.10d0
+(defconstant +targeted-routing-repair-quota+ 0.10d0
   "Fraction of reproduced roots reserved for attempted targeted repair.")
 
-(defconstant +phase4b-routing-repair-max-attempts+ 8
+(defconstant +targeted-routing-repair-max-attempts+ 8
   "Maximum learner-program variants tried for one targeted repair slot.")
 
-(defconstant +phase4b-routing-repair-minimum-rows+ 3
+(defconstant +targeted-routing-repair-minimum-rows+ 3
   "Minimum matching current-generation rows required to attempt a repair.")
 
-(defconstant +phase4b-routing-repair-max-collateral-rank-rate+ 0.05d0
+(defconstant +targeted-routing-repair-max-collateral-rank-rate+ 0.05d0
   "Maximum fraction of non-target probes whose teacher rank may regress.")
 
-(defconstant +phase4b-specialist-composition-protocol+
+(defconstant +targeted-specialist-composition-protocol+
   :error-directed-specialist-composition-v1
-  "Version tag for the isolated Phase-4b-B composition treatment.")
+  "Version tag for the isolated specialist composition composition treatment.")
 
-(defconstant +phase4b-specialist-composition-rng-salt+ 3404729
-  "Independent deterministic salt for Phase-4b-B scheduling and donor draws.")
+(defconstant +targeted-specialist-composition-rng-salt+ 3404729
+  "Independent deterministic salt for specialist composition scheduling and donor draws.")
 
-(defconstant +phase4b-specialist-composition-quota+ 0.10d0
+(defconstant +targeted-specialist-composition-quota+ 0.10d0
   "Fraction of reproduced roots reserved for specialist-composition attempts.")
 
-(defconstant +phase4b-specialist-composition-max-parents+ 8
+(defconstant +targeted-specialist-composition-max-parents+ 8
   "Maximum candidate parents inspected for one composition slot.")
 
-(defconstant +phase4b-specialist-composition-max-donors+ 8
+(defconstant +targeted-specialist-composition-max-donors+ 8
   "Maximum group-qualified live donor teams inspected per parent.")
 
-(defconstant +phase4b-specialist-composition-max-attempts+ 8
+(defconstant +targeted-specialist-composition-max-attempts+ 8
   "Maximum bidder variants tried for one selected specialist source.")
 
-(defconstant +phase4b-combined-repair-protocol+
+(defconstant +targeted-combined-repair-protocol+
   :error-directed-combined-repair-v1
-  "Version tag for Phase-4b-C case-directed routing/composition variation.")
+  "Version tag for combined targeted repair case-directed routing/composition variation.")
 
-(defconstant +phase5d-directed-repair-protocol+
+(defconstant +teacher-directed-repair-protocol+
   :teacher-directed-bidder-repair-v1
-  "Version tag for Phase-5D-2 deterministic disagreement repair.")
+  "Version tag for teacher-directed repair deterministic disagreement repair.")
 
-(defconstant +phase5d-directed-repair-max-parents+ 8
+(defconstant +teacher-directed-repair-max-parents+ 8
   "Maximum candidate roots inspected for one directed repair slot.")
 
-(defconstant +phase5d-directed-repair-max-features+ 8
+(defconstant +teacher-directed-repair-max-features+ 8
   "Maximum invariant observation features retained for repair gates.")
 
-(defconstant +phase5d-directed-repair-max-candidates+ 32
+(defconstant +teacher-directed-repair-max-candidates+ 32
   "Maximum synthesized bidder gates evaluated for one parent and issue.")
 
-(defconstant +phase5d-directed-repair-bid-margin+ 1.0d0
+(defconstant +teacher-directed-repair-bid-margin+ 1.0d0
   "Positive bid margin applied when a repair gate exactly matches.")
 
-(defconstant +phase5d-directed-repair-mismatch-penalty+ 1000.0d0
+(defconstant +teacher-directed-repair-mismatch-penalty+ 1000.0d0
   "Penalty multiplier suppressing a synthesized bidder off its target gate.")
 
 (defconstant +official-guided-seed-payload-bits+ 28
@@ -414,7 +424,7 @@ candidate to the independent reference evaluator.")
   "Source generation associated with *ONLINE-STAGED-BEST-TEAM*.")
 
 (defvar *online-staged-best-lineage* nil
-  "Phase-2 parent/child diagnostic associated with the staged challenger.")
+  "behavioral-locality parent/child diagnostic associated with the staged challenger.")
 
 (defvar *online-staged-best-parent-team* nil
   "Independent direct-parent graph associated with the staged challenger.")
@@ -676,41 +686,41 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 
 (defvar *official-guided-seed-streams* nil
   "Serializable plist holding independent training, racing, promotion,
-reference, Phase-5A return-credit, and Phase-5F lineage stream cursors.")
+reference, official return credit return-credit, and near-miss lineage lineage stream cursors.")
 
 (defvar *official-return-credit-enabled* nil
   "When true, positive paired child/direct-parent evidence may establish a
 bounded protected lineage.  It never promotes the global incumbent directly.")
 
-(defvar *phase5f-near-miss-enabled* nil
+(defvar *near-miss-lineages-enabled* nil
   "When true, retain a bounded detached archive of full-Stage-4 near misses.")
 
-(defvar *phase5f-lineages* nil
-  "Detached Phase-5F archive records; graph payloads live in private files.")
+(defvar *near-miss-lineages* nil
+  "Detached near-miss lineage archive records; graph payloads live in private files.")
 
-(defvar *phase5f-team-lineages* nil
+(defvar *near-miss-team-lineages* nil
   "EQ map from live descendants to (LINEAGE-ID HEAD-VERSION).")
 
-(defvar *phase5f-run-id* nil
+(defvar *near-miss-run-id* nil
   "Persistent identity used to audit one recovered near-miss archive run.")
 
-(defvar *phase5f-next-lineage-id* 0)
-(defvar *phase5f-variation-root* nil)
-(defvar *phase5f-variation-cursor* 0)
-(defvar *phase5f-submission-count* 0)
-(defvar *phase5f-lineage-submission-count* 0)
-(defvar *phase5f-lineage-official-rollouts* 0)
-(defvar *phase5f-nonlineage-official-rollouts* 0)
-(defvar *phase5f-admission-count* 0)
-(defvar *phase5f-duplicate-count* 0)
-(defvar *phase5f-expiry-count* 0)
-(defvar *phase5f-head-update-count* 0)
+(defvar *near-miss-next-lineage-id* 0)
+(defvar *near-miss-variation-root* nil)
+(defvar *near-miss-variation-cursor* 0)
+(defvar *near-miss-submission-count* 0)
+(defvar *near-miss-lineage-submission-count* 0)
+(defvar *near-miss-lineage-official-rollouts* 0)
+(defvar *near-miss-nonlineage-official-rollouts* 0)
+(defvar *near-miss-admission-count* 0)
+(defvar *near-miss-duplicate-count* 0)
+(defvar *near-miss-expiry-count* 0)
+(defvar *near-miss-head-update-count* 0)
 
-(defvar *online-staged-best-phase5f-lineage-id* nil)
-(defvar *online-staged-best-phase5f-head-version* nil)
+(defvar *online-staged-best-near-miss-lineage-id* nil)
+(defvar *online-staged-best-near-miss-head-version* nil)
 
-(defvar *phase5c-targeted-return-credit-enabled* nil
-  "When true, Phase 5C combines Case-A/B targeted proposals with the existing
+(defvar *rare-failure-targeted-return-credit-enabled* nil
+  "When true, rare-failure diagnostics combines Case-A/B targeted proposals with the existing
 paired official-return credit gate.  Known diagnostic seeds are never used by
 this switch for selection or promotion.")
 
@@ -721,109 +731,109 @@ this switch for selection or promotion.")
   "Number of completed direct-parent credit comparisons not approved.")
 
 (defvar *official-return-credit-active-lineages* nil
-  "Serializable plists for currently protected Phase-5B lineage anchors.")
+  "Serializable plists for currently protected return-credit lineage lineage anchors.")
 
 (defvar *official-return-credit-team-lineages* nil
-  "EQ table mapping live roots to inherited Phase-5B lineage identifiers.")
+  "EQ table mapping live roots to inherited return-credit lineage lineage identifiers.")
 
 (defvar *official-return-credit-next-lineage-id* 0
-  "Monotone identifier cursor for new Phase-5B return-credit lineages.")
+  "Monotone identifier cursor for new return-credit lineage return-credit lineages.")
 
 (defvar *official-return-credit-neutral-submissions* 0
   "Number of neutral fallback children submitted when no changed child existed.")
 
 (defvar *online-staged-best-credit-priority* nil
-  "Phase-5B admission priority of the frozen staged official challenger.")
+  "return-credit lineage admission priority of the frozen staged official challenger.")
 
 (defvar *online-staged-best-credit-lineage-id* nil
-  "Inherited Phase-5B lineage identifier of the staged challenger, if any.")
+  "Inherited return-credit lineage lineage identifier of the staged challenger, if any.")
 
-(defvar *phase4-selection-enabled* nil
+(defvar *grouped-selection-enabled* nil
   "When true, replace aggregate truncation with grouped survivor lexicase.")
 
-(defvar *phase4-selection-rng-root* nil
-  "Root of the independent counter-based Phase-4a selection stream.")
+(defvar *grouped-selection-rng-root* nil
+  "Root of the independent counter-based grouped selection selection stream.")
 
-(defvar *phase4-selection-rng-cursor* 0
-  "Number of deterministic Phase-4a selection draws already consumed.")
+(defvar *grouped-selection-rng-cursor* 0
+  "Number of deterministic grouped selection selection draws already consumed.")
 
-(defvar *phase4-selection-age* 0
-  "Number of completed Phase-4a survivor-selection generations.")
+(defvar *grouped-selection-age* 0
+  "Number of completed grouped selection survivor-selection generations.")
 
-(defvar *phase4-case-groups* nil
+(defvar *grouped-case-groups* nil
   "Active generation case groups as plists containing keys and row indices.")
 
-(defvar *phase4-row-group-keys* nil
-  "Vector mapping each generation row to its active Phase-4a case keys.")
+(defvar *grouped-row-group-keys* nil
+  "Vector mapping each generation row to its active grouped selection case keys.")
 
-(defvar *phase4-team-group-scores* nil
+(defvar *grouped-team-group-scores* nil
   "EQ table mapping evaluated roots to group-score EQUAL hash tables.")
 
-(defvar *phase4-team-group-exact-rates* nil
+(defvar *grouped-team-group-exact-rates* nil
   "EQ table mapping evaluated roots to per-case executable exact rates.")
 
-(defvar *phase4-team-row-behaviors* nil
+(defvar *grouped-team-row-behaviors* nil
   "EQ table mapping evaluated roots to compact exact row behavior vectors.")
 
-(defvar *phase4-group-epsilons* nil
+(defvar *grouped-group-epsilons* nil
   "EQUAL table of full-population raw-MAD epsilons for active cases.")
 
-(defvar *phase4-group-medians* nil
+(defvar *grouped-group-medians* nil
   "EQUAL table of full-population median scores for active cases.")
 
-(defvar *phase4-active-specialists* nil
+(defvar *grouped-active-specialists* nil
   "EQ table of live specialist team objects and lifecycle records.")
 
-(defvar *phase4-specialist-history* nil
-  "Completed serializable Phase-4a specialist lifecycle records.")
+(defvar *grouped-specialist-history* nil
+  "Completed serializable grouped selection specialist lifecycle records.")
 
-(defvar *phase4b-disagreement-audit-enabled* nil
-  "When true, classify DAgger errors for Phase-4b without changing evolution.")
+(defvar *targeted-disagreement-audit-enabled* nil
+  "When true, classify DAgger errors for targeted repair without changing evolution.")
 
-(defvar *phase4b-routing-repair-enabled* nil
+(defvar *targeted-routing-repair-enabled* nil
   "When true, reserve a small offspring quota for targeted routing repair.")
 
-(defvar *phase4b-routing-repair-rng-root* nil
-  "Root of the independent counter-based Phase-4b-A scheduling stream.")
+(defvar *targeted-routing-repair-rng-root* nil
+  "Root of the independent counter-based targeted routing repair scheduling stream.")
 
-(defvar *phase4b-routing-repair-rng-cursor* 0
-  "Number of deterministic Phase-4b-A scheduling draws already consumed.")
+(defvar *targeted-routing-repair-rng-cursor* 0
+  "Number of deterministic targeted routing repair scheduling draws already consumed.")
 
-(defvar *phase4b-routing-repair-age* 0
-  "Number of completed Phase-4b-A reproduction generations.")
+(defvar *targeted-routing-repair-age* 0
+  "Number of completed targeted routing repair reproduction generations.")
 
-(defvar *phase4b-routing-repair-generation-records* nil
+(defvar *targeted-routing-repair-generation-records* nil
   "Targeted-repair decisions waiting to be journaled this generation.")
 
-(defvar *phase4b-specialist-composition-enabled* nil
-  "When true, reserve a small offspring quota for Phase-4b-B composition.")
+(defvar *targeted-specialist-composition-enabled* nil
+  "When true, reserve a small offspring quota for specialist composition composition.")
 
-(defvar *phase4b-specialist-composition-rng-root* nil
-  "Root of the independent counter-based Phase-4b-B scheduling stream.")
+(defvar *targeted-specialist-composition-rng-root* nil
+  "Root of the independent counter-based specialist composition scheduling stream.")
 
-(defvar *phase4b-specialist-composition-rng-cursor* 0
-  "Number of deterministic Phase-4b-B scheduling/donor draws consumed.")
+(defvar *targeted-specialist-composition-rng-cursor* 0
+  "Number of deterministic specialist composition scheduling/donor draws consumed.")
 
-(defvar *phase4b-specialist-composition-age* 0
-  "Number of completed Phase-4b-B reproduction generations.")
+(defvar *targeted-specialist-composition-age* 0
+  "Number of completed specialist composition reproduction generations.")
 
-(defvar *phase4b-specialist-composition-generation-records* nil
+(defvar *targeted-specialist-composition-generation-records* nil
   "Specialist-composition decisions waiting to be journaled this generation.")
 
-(defvar *phase4b-combined-repair-enabled* nil
+(defvar *targeted-combined-repair-enabled* nil
   "When true, share one repair quota between Case-A routing and Case-B1 composition.")
 
-(defvar *phase4b-combined-repair-generation-records* nil
-  "Case-directed Phase-4b-C dispatch decisions waiting to be journaled.")
+(defvar *targeted-combined-repair-generation-records* nil
+  "Case-directed combined targeted repair dispatch decisions waiting to be journaled.")
 
-(defvar *phase5d-directed-repair-enabled* nil
+(defvar *teacher-directed-repair-enabled* nil
   "When true, synthesize teacher-directed local bidder corrections.")
 
-(defvar *phase5d-directed-repair-generation-records* nil
-  "Phase-5D-2 directed repair decisions waiting for generation journaling.")
+(defvar *teacher-directed-repair-generation-records* nil
+  "teacher-directed repair directed repair decisions waiting for generation journaling.")
 
-(defvar *phase4-selection-generation-record* nil
-  "Pending serializable Phase-4a record for the current generation.")
+(defvar *grouped-selection-generation-record* nil
+  "Pending serializable grouped selection record for the current generation.")
 
 (defvar *official-guided-last-evaluation* nil
   "Structured record from the latest completed official challenger evaluation.")
@@ -838,10 +848,10 @@ this switch for selection or promotion.")
   "When true, observe parent/child semantic disruption without changing mutation.")
 
 (defvar *semantic-locality-control-enabled* nil
-  "When true, Phase 3 bounds most offspring by measured behavioral locality.")
+  "When true, semantic-locality bounds most offspring by measured behavioral locality.")
 
 (defvar *semantic-locality-control-age* 0
-  "Number of completed Phase-3 reproduction generations in this run lineage.")
+  "Number of completed semantic-locality reproduction generations in this run lineage.")
 
 (defvar *semantic-locality-control-generation-records* nil
   "Accepted-child control decisions waiting to be journaled this generation.")
@@ -850,22 +860,22 @@ this switch for selection or promotion.")
   "Dynamically bound list of mutation-layer events for one reproduced child.")
 
 (defvar *behavioral-probe-fixed-reference* nil
-  "Long-lived teacher/reference quarter of the Phase-2 probe archive.")
+  "Long-lived teacher/reference quarter of the behavioral-locality probe archive.")
 
 (defvar *behavioral-probe-fixed-early* nil
-  "Long-lived early-critical quarter of the Phase-2 probe archive.")
+  "Long-lived early-critical quarter of the behavioral-locality probe archive.")
 
 (defvar *behavioral-probe-archive* nil
-  "Current versioned mixture of fixed and rolling Phase-2 probes.")
+  "Current versioned mixture of fixed and rolling behavioral-locality probes.")
 
 (defvar *behavioral-probe-revision* 0
-  "Monotonic revision of the active Phase-2 probe archive.")
+  "Monotonic revision of the active behavioral-locality probe archive.")
 
 (defvar *behavioral-teacher-action-support* nil
   "EQUAL hash set of semantic pairs emitted by the active teacher reference.")
 
 (defvar *behavioral-signature-cache* nil
-  "Per-archive EQ cache of policy rankings on Phase-2 probes.")
+  "Per-archive EQ cache of policy rankings on behavioral-locality probes.")
 
 (defvar *behavioral-team-lineage* nil
   "EQ map from live reproduced teams to their parent/child diagnostic record.")
@@ -874,13 +884,13 @@ this switch for selection or promotion.")
   "EQ map from live reproduced children to their unmodified direct parents.")
 
 (defvar *behavioral-generation-records* nil
-  "Phase-2 child diagnostics waiting to be persisted for this generation.")
+  "behavioral-locality child diagnostics waiting to be persisted for this generation.")
 
 (defvar *behavioral-locality-sampling-candidates* nil
   "Live parent/child pairs eligible for passive sampling this generation.")
 
 (defvar *behavioral-locality-sample-cursor* 0
-  "Monotonic cursor for the independent Phase-2 diagnostic seed sequence.")
+  "Monotonic cursor for the independent behavioral-locality diagnostic seed sequence.")
 
 (defvar *behavioral-locality-stratum-counts* nil
   "Serializable alist counting submitted passive samples by distance stratum.")

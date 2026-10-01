@@ -1,15 +1,15 @@
 (in-package :cl-tpg)
 
-(defconstant +phase5c-rare-failure-protocol+
-  :phase5c-rare-failure-diagnosis-v1)
+(defconstant +rare-failure-protocol+
+  :rare-failure-diagnosis-v1)
 
-(defun phase5c-read-form (path)
+(defun rare-failure-read-form (path)
   "Read one Lisp form from PATH with standard reader settings."
   (with-open-file (in path :direction :input)
     (with-standard-io-syntax
       (read in))))
 
-(defun phase5c-write-form (value path)
+(defun rare-failure-write-form (value path)
   "Write VALUE as one reproducible Lisp form to PATH."
   (ensure-directories-exist path)
   (with-open-file (out path
@@ -24,7 +24,7 @@
         (terpri out))))
   path)
 
-(defun phase5c-validation-failures
+(defun rare-failure-validation-failures
        (results label threshold &optional (root +cage2-evaluation-seed+))
   "Recover LABEL's exact validation seeds and returns below THRESHOLD.
 
@@ -54,12 +54,12 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
   #-sbcl
   (declare (ignore results label threshold root))
   #-sbcl
-  (error "Phase 5C validation-seed recovery currently requires SBCL."))
+  (error "rare-failure diagnostics validation-seed recovery currently requires SBCL."))
 
-(defun phase5c-semantic-pairs (ranking)
+(defun rare-failure-semantic-pairs (ranking)
   (mapcar #'semantic-action-category-pair ranking))
 
-(defun phase5c-decision-record (decision)
+(defun rare-failure-decision-record (decision)
   (let ((semantic (cage2-controller-decision-semantic-action decision)))
     (list :pair (semantic-action-category-pair semantic)
           :concrete-action
@@ -68,13 +68,13 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
           :option (cage2-controller-decision-option decision)
           :fallback-p (cage2-controller-decision-fallback-p decision))))
 
-(defun phase5c-load-policy (label path)
+(defun rare-failure-load-policy (label path)
   "Load one independently deserialized policy and capture its provenance."
   (multiple-value-bind (team fitness metadata)
       (load-best-team path)
     (let ((format (or (getf metadata :terminal-action-format) :factored)))
       (unless (eq format :target-response-36)
-        (error "Phase 5C expected TARGET-RESPONSE-36 for ~S, got ~S."
+        (error "rare-failure diagnostics expected TARGET-RESPONSE-36 for ~S, got ~S."
                label format))
       (ensure-team-observation-compatible team 62)
       (list :label label
@@ -84,14 +84,14 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
             :metadata metadata
             :team team))))
 
-(defun phase5c-policy-proposal-record (policy controller observation)
+(defun rare-failure-policy-proposal-record (policy controller observation)
   "Query POLICY without changing controller or environment state."
   (let ((team (getf policy :team)))
     (multiple-value-bind (ranking path terminal-team)
         (execute-team-semantic-ranked team observation)
       (multiple-value-bind (winner registers)
           (execute-team-to-terminal team observation)
-        (let* ((pairs (phase5c-semantic-pairs ranking))
+        (let* ((pairs (rare-failure-semantic-pairs ranking))
                (decision
                  (cage2-controller-resolve-ranking controller ranking))
                (winner-pair
@@ -106,25 +106,25 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
                 :preferred-path (mapcar #'team-id path)
                 :terminal-team (and terminal-team (team-id terminal-team))
                 :ranking pairs
-                :decision (phase5c-decision-record decision)
+                :decision (rare-failure-decision-record decision)
                 :decision-object decision))))))
 
-(defun phase5c-public-proposal-record (record)
+(defun rare-failure-public-proposal-record (record)
   "Remove live Lisp objects before a proposal record is serialized."
   (loop for (key value) on record by #'cddr
         unless (eq key :decision-object)
           append (list key value)))
 
-(defun phase5c-correction-p (mode disagreement-p first-disagreement)
+(defun rare-failure-correction-p (mode disagreement-p first-disagreement)
   "Return true when MODE executes the teacher on this disagreement."
   (cond
     ((null mode) nil)
     ((eq mode :first-disagreement)
      (and disagreement-p (null first-disagreement)))
     ((eq mode :all-disagreements) disagreement-p)
-    (t (error "Unknown Phase 5C correction mode: ~S" mode))))
+    (t (error "Unknown rare-failure diagnostics correction mode: ~S" mode))))
 
-(defun phase5c-intervention-decision
+(defun rare-failure-intervention-decision
        (controller intervention teacher-decision timestep opening-pairs
         policy-observation teacher-pair behavior-pair)
   "Return the forced decision requested by INTERVENTION at TIMESTEP.
@@ -135,7 +135,7 @@ fail loudly instead of silently changing the counterfactual question."
   (when (and intervention
              (= timestep (getf intervention :step)))
     (when opening-pairs
-      (error "Phase 5D cannot intervene during fixed opening step ~D."
+      (error "counterfactual repair cannot intervene during fixed opening step ~D."
              timestep))
     (let ((expected-observation
             (getf intervention :expected-policy-observation))
@@ -145,15 +145,15 @@ fail loudly instead of silently changing the counterfactual question."
             (getf intervention :expected-behavior-pair)))
       (when (and expected-observation
                  (not (equalp expected-observation policy-observation)))
-        (error "Phase 5D state mismatch before intervention at step ~D."
+        (error "counterfactual repair state mismatch before intervention at step ~D."
                timestep))
       (when (and expected-teacher-pair
                  (not (equal expected-teacher-pair teacher-pair)))
-        (error "Phase 5D teacher mismatch at step ~D: expected ~S, got ~S."
+        (error "counterfactual repair teacher mismatch at step ~D: expected ~S, got ~S."
                timestep expected-teacher-pair teacher-pair))
       (when (and expected-behavior-pair
                  (not (equal expected-behavior-pair behavior-pair)))
-        (error "Phase 5D behavior mismatch at step ~D: expected ~S, got ~S."
+        (error "counterfactual repair behavior mismatch at step ~D: expected ~S, got ~S."
                timestep expected-behavior-pair behavior-pair)))
     (let* ((source (getf intervention :source))
            (requested-pair (getf intervention :pair))
@@ -164,34 +164,34 @@ fail loudly instead of silently changing the counterfactual question."
                 (cage2-controller-resolve-pair-ranking
                  controller (list requested-pair)))
                (otherwise
-                (error "Unknown Phase 5D intervention source: ~S" source))))
+                (error "Unknown counterfactual repair intervention source: ~S" source))))
            (resolved-pair
-             (getf (phase5c-decision-record decision) :pair)))
+             (getf (rare-failure-decision-record decision) :pair)))
       (when (and requested-pair
                  (not (equal requested-pair resolved-pair)))
-        (error "Phase 5D requested ~S at step ~D, but controller resolved ~S."
+        (error "counterfactual repair requested ~S at step ~D, but controller resolved ~S."
                requested-pair timestep resolved-pair))
       decision)))
 
-(defun phase5c-trace-episode
+(defun rare-failure-trace-episode
        (env controller policies behavior-label environment-name seed
         &key correction-mode intervention expected-prefix)
   "Trace one policy-controlled episode while querying every POLICY and teacher.
 
 INTERVENTION optionally replaces exactly one decision after replaying and
-verifying EXPECTED-PREFIX.  It exists for Phase 5D counterfactual credit; a
-normal Phase 5C call is unchanged."
+verifying EXPECTED-PREFIX.  It exists for counterfactual repair counterfactual credit; a
+normal rare-failure diagnostics call is unchanged."
   (unless (find behavior-label policies
                 :key (lambda (policy) (getf policy :label))
                 :test #'eq)
-    (error "Unknown Phase 5C behavior policy: ~S" behavior-label))
+    (error "Unknown rare-failure diagnostics behavior policy: ~S" behavior-label))
   (when intervention
     (let ((step (getf intervention :step)))
       (unless (and (integerp step) (not (minusp step)))
-        (error "Phase 5D intervention needs a non-negative :STEP, got ~S."
+        (error "counterfactual repair intervention needs a non-negative :STEP, got ~S."
                step))
       (unless (= (length expected-prefix) step)
-        (error "Phase 5D expected prefix length ~D for intervention step ~D."
+        (error "counterfactual repair expected prefix length ~D for intervention step ~D."
                (length expected-prefix) step))))
   (let ((steps nil)
         (episode-return 0.0d0)
@@ -219,7 +219,7 @@ normal Phase 5C call is unchanged."
                           (proposals
                             (mapcar
                              (lambda (policy)
-                               (phase5c-policy-proposal-record
+                               (rare-failure-policy-proposal-record
                                 policy controller policy-observation))
                              policies))
                           (behavior-record
@@ -234,7 +234,7 @@ normal Phase 5C call is unchanged."
                                  (cage2-controller-resolve-pair-ranking
                                   controller opening-pairs)))
                           (teacher-pair
-                            (getf (phase5c-decision-record teacher-decision)
+                            (getf (rare-failure-decision-record teacher-decision)
                                   :pair))
                           (behavior-pair
                             (getf (getf behavior-record :decision) :pair))
@@ -242,11 +242,11 @@ normal Phase 5C call is unchanged."
                             (and (not opening-pairs)
                                  (not (equal teacher-pair behavior-pair))))
                           (correction-p
-                            (phase5c-correction-p
+                            (rare-failure-correction-p
                              correction-mode disagreement-p
                              first-disagreement))
                           (intervention-decision
-                            (phase5c-intervention-decision
+                            (rare-failure-intervention-decision
                              controller intervention teacher-decision timestep
                              opening-pairs policy-observation teacher-pair
                              behavior-pair))
@@ -275,7 +275,7 @@ normal Phase 5C call is unchanged."
                                 executed-decision)))
                          (unless (= expected selected)
                            (error
-                            "Phase 5D prefix mismatch at step ~D: expected concrete action ~D, selected ~D."
+                            "counterfactual repair prefix mismatch at step ~D: expected concrete action ~D, selected ~D."
                             timestep expected selected))))
                      (multiple-value-bind
                            (next-observation reward terminated truncated info)
@@ -297,15 +297,15 @@ normal Phase 5C call is unchanged."
                            :decoy-mask-before mask-before
                            :opening-pairs (copy-tree opening-pairs)
                            :teacher-ranking
-                             (phase5c-semantic-pairs teacher-ranking)
+                             (rare-failure-semantic-pairs teacher-ranking)
                            :teacher-decision
-                             (phase5c-decision-record teacher-decision)
+                             (rare-failure-decision-record teacher-decision)
                            :teacher-rank-in-behavior teacher-rank
                            :teacher-disagreement-p disagreement-p
                            :teacher-correction-p correction-p
                            :intervention-p intervention-p
                            :policy-proposals
-                             (mapcar #'phase5c-public-proposal-record proposals)
+                             (mapcar #'rare-failure-public-proposal-record proposals)
                            :executed-source
                              (cond
                                (opening-pairs :fixed-opening)
@@ -313,7 +313,7 @@ normal Phase 5C call is unchanged."
                                (correction-p :teacher-correction)
                                (t behavior-label))
                            :executed-decision
-                             (phase5c-decision-record executed-decision)
+                             (rare-failure-decision-record executed-decision)
                            :actual-concrete-action actual
                            :reward (coerce reward 'double-float)
                            :cumulative-return episode-return
@@ -325,7 +325,7 @@ normal Phase 5C call is unchanged."
                        (setf observation next-observation)
                        (when (or terminated truncated)
                          (return))))))))
-    (list :protocol +phase5c-rare-failure-protocol+
+    (list :protocol +rare-failure-protocol+
           :behavior behavior-label
           :seed seed
           :environment environment-name
@@ -340,12 +340,12 @@ normal Phase 5C call is unchanged."
           :catastrophic-p (< episode-return -100.0d0)
           :steps (nreverse steps))))
 
-(defun phase5c-episode-summary (episode)
+(defun rare-failure-episode-summary (episode)
   (loop for (key value) on episode by #'cddr
         unless (eq key :steps)
           append (list key value)))
 
-(defun run-phase5c-rare-failure-diagnosis
+(defun run-rare-failure-diagnosis
        (validation-result-path baseline-path candidate-path output-directory
         &key (environment-name "Cage2-b_line-100-v0")
              (validation-label "b_line-100")
@@ -353,9 +353,9 @@ normal Phase 5C call is unchanged."
   "Audit and trace candidate failures against the protected baseline."
   (let* ((output-directory
            (uiop:ensure-directory-pathname output-directory))
-         (results (phase5c-read-form validation-result-path))
+         (results (rare-failure-read-form validation-result-path))
          (failures
-           (phase5c-validation-failures
+           (rare-failure-validation-failures
             results validation-label failure-threshold))
          (*num-observations* 62)
          (*num-actions* 36)
@@ -367,16 +367,16 @@ normal Phase 5C call is unchanged."
          (*recurrent-policy-enabled* nil)
          (*hamming-space-enabled* nil)
          (policies
-           (list (phase5c-load-policy :phase4a baseline-path)
-                 (phase5c-load-policy :v17 candidate-path)))
+           (list (rare-failure-load-policy :grouped-selection baseline-path)
+                 (rare-failure-load-policy :v17 candidate-path)))
          (env nil)
          (controller nil)
          (episodes nil))
     (unless failures
-      (error "Phase 5C found no ~A returns below ~A."
+      (error "rare-failure diagnostics found no ~A returns below ~A."
              validation-label failure-threshold))
-    (phase5c-write-form
-     (list :protocol +phase5c-rare-failure-protocol+
+    (rare-failure-write-form
+     (list :protocol +rare-failure-protocol+
            :validation-result (namestring (pathname validation-result-path))
            :validation-root +cage2-evaluation-seed+
            :validation-label validation-label
@@ -390,13 +390,13 @@ normal Phase 5C call is unchanged."
     (cl-gym::configure-cage2-controller-option-orders env controller)
     (unwind-protect
          (dolist (failure failures)
-           (dolist (behavior '(:v17 :phase4a))
+           (dolist (behavior '(:v17 :grouped-selection))
              (let ((episode
-                     (phase5c-trace-episode
+                     (rare-failure-trace-episode
                       env controller policies behavior environment-name
                       (getf failure :seed))))
                (format t
-                       "Phase5C trace behavior=~A seed=~D return=~,4F expected=~A~%"
+                       "rare-failure trace behavior=~A seed=~D return=~,4F expected=~A~%"
                        behavior
                        (getf failure :seed)
                        (getf episode :return)
@@ -423,7 +423,7 @@ normal Phase 5C call is unchanged."
                                         (getf episode :return)))
                                 1.0d-9))))
            (summary
-             (list :protocol +phase5c-rare-failure-protocol+
+             (list :protocol +rare-failure-protocol+
                    :policies
                      (mapcar
                       (lambda (policy)
@@ -435,16 +435,16 @@ normal Phase 5C call is unchanged."
                    :seed-audit audit
                    :all-candidate-returns-reproduced-p
                      (every (lambda (entry) (getf entry :match-p)) audit)
-                   :episodes (mapcar #'phase5c-episode-summary episodes))))
-      (phase5c-write-form
+                   :episodes (mapcar #'rare-failure-episode-summary episodes))))
+      (rare-failure-write-form
        episodes (merge-pathnames "trajectories.sexp" output-directory))
-      (phase5c-write-form
+      (rare-failure-write-form
        summary (merge-pathnames "summary.sexp" output-directory))
       (unless (getf summary :all-candidate-returns-reproduced-p)
-        (error "Phase 5C candidate replay did not reproduce every saved return."))
+        (error "rare-failure diagnostics candidate replay did not reproduce every saved return."))
       summary)))
 
-(defun run-phase5c-causal-confirmation
+(defun run-rare-failure-causal-confirmation
        (validation-result-path candidate-path output-directory
         &key (environment-name "Cage2-b_line-100-v0")
              (validation-label "b_line-100")
@@ -452,9 +452,9 @@ normal Phase 5C call is unchanged."
   "Replay rare failures with one-shot and persistent teacher correction."
   (let* ((output-directory
            (uiop:ensure-directory-pathname output-directory))
-         (results (phase5c-read-form validation-result-path))
+         (results (rare-failure-read-form validation-result-path))
          (failures
-           (phase5c-validation-failures
+           (rare-failure-validation-failures
             results validation-label failure-threshold))
          (*num-observations* 62)
          (*num-actions* 36)
@@ -465,7 +465,7 @@ normal Phase 5C call is unchanged."
          (*teacher-backend* :heuristic)
          (*recurrent-policy-enabled* nil)
          (*hamming-space-enabled* nil)
-         (policies (list (phase5c-load-policy :v17 candidate-path)))
+         (policies (list (rare-failure-load-policy :v17 candidate-path)))
          (modes '(:none :first-disagreement :all-disagreements))
          (env nil)
          (controller nil)
@@ -479,12 +479,12 @@ normal Phase 5C call is unchanged."
          (dolist (failure failures)
            (dolist (mode modes)
              (let ((episode
-                     (phase5c-trace-episode
+                     (rare-failure-trace-episode
                       env controller policies :v17 environment-name
                       (getf failure :seed)
                       :correction-mode (unless (eq mode :none) mode))))
                (format t
-                       "Phase5C causal mode=~A seed=~D return=~,4F corrections=~D~%"
+                       "rare-failure causal mode=~A seed=~D return=~,4F corrections=~D~%"
                        mode (getf failure :seed) (getf episode :return)
                        (getf episode :corrections-executed))
                (finish-output)
@@ -541,7 +541,7 @@ normal Phase 5C call is unchanged."
               paired))
            (summary
              (list
-              :protocol :phase5c-causal-confirmation-v1
+              :protocol :rare-failure-causal-confirmation-v1
               :candidate (namestring (pathname candidate-path))
               :normal-returns-reproduced-p normal-audit-p
               :first-correction-rescues
@@ -556,31 +556,31 @@ normal Phase 5C call is unchanged."
                  paired)
               :episodes (length paired)
               :paired-results paired)))
-      (phase5c-write-form
+      (rare-failure-write-form
        episodes (merge-pathnames "causal-trajectories.sexp" output-directory))
-      (phase5c-write-form
+      (rare-failure-write-form
        summary (merge-pathnames "causal-summary.sexp" output-directory))
       (unless normal-audit-p
-        (error "Phase 5C causal replay failed to reproduce normal returns."))
+        (error "rare-failure diagnostics causal replay failed to reproduce normal returns."))
       summary)))
 
-(defun run-phase5c-rare-failure-diagnosis-from-environment ()
-  "Run Phase 5C using paths supplied by the checked-in shell launcher."
+(defun run-rare-failure-diagnosis-from-environment ()
+  "Run rare-failure diagnostics using paths supplied by the checked-in shell launcher."
   (flet ((required (name)
            (or (uiop:getenv name)
                (error "Required environment variable ~A is missing." name))))
-    (run-phase5c-rare-failure-diagnosis
-     (required "PHASE5C_VALIDATION_RESULT")
-     (required "PHASE5C_BASELINE_CHECKPOINT")
-     (required "PHASE5C_CANDIDATE_CHECKPOINT")
-     (required "PHASE5C_OUTPUT_DIRECTORY"))))
+    (run-rare-failure-diagnosis
+     (required "RARE_FAILURE_VALIDATION_RESULT")
+     (required "RARE_FAILURE_BASELINE_CHECKPOINT")
+     (required "RARE_FAILURE_CANDIDATE_CHECKPOINT")
+     (required "RARE_FAILURE_OUTPUT_DIRECTORY"))))
 
-(defun run-phase5c-causal-confirmation-from-environment ()
-  "Run the Phase 5C causal replay from launcher-supplied paths."
+(defun run-rare-failure-causal-confirmation-from-environment ()
+  "Run the rare-failure diagnostics causal replay from launcher-supplied paths."
   (flet ((required (name)
            (or (uiop:getenv name)
                (error "Required environment variable ~A is missing." name))))
-    (run-phase5c-causal-confirmation
-     (required "PHASE5C_VALIDATION_RESULT")
-     (required "PHASE5C_CANDIDATE_CHECKPOINT")
-     (required "PHASE5C_OUTPUT_DIRECTORY"))))
+    (run-rare-failure-causal-confirmation
+     (required "RARE_FAILURE_VALIDATION_RESULT")
+     (required "RARE_FAILURE_CANDIDATE_CHECKPOINT")
+     (required "RARE_FAILURE_OUTPUT_DIRECTORY"))))

@@ -1,4 +1,4 @@
-;;; Simulator-free integration check for the passive Phase-2 worker protocol.
+;;; Simulator-free integration check for the passive behavioral-locality worker protocol.
 
 (in-package :cl-user)
 

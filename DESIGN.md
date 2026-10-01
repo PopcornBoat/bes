@@ -1,61 +1,78 @@
-# Official-Guided TPG Research Design
+# Semantic-36 Official-Guided Design
 
-## Phase 5D-1 boundary
+## Objective
 
-Phase 5D-1 adds official, exact-prefix counterfactual step credit for recurring
-teacher/student disagreements. It evaluates a frozen policy and performs no
-mutation or selection. The teacher nominates the alternative; official CAGE2
-paired return-to-go supplies the credit. See `PHASE5D.md`.
+The system studies how an evolutionary program policy can obtain stable,
+local, cumulative improvement without gradients. It separates four concerns:
 
-The research question is:
+1. trajectory quality;
+2. noisy candidate comparison;
+3. genotype-to-behavior locality;
+4. population-level specialist preservation.
 
-> How can TPG obtain stable, local, cumulative policy improvement without gradients?
+## Policy and controller boundary
 
-The work is deliberately split into phases so improvements remain
-attributable.
+The TPG receives 62 inputs and produces a ranked list of direct Semantic-36
+terminals. Each terminal identifies a target and response type. Concrete Decoy
+options are not predicted by the TPG.
 
-1. **Trustworthy trajectories and comparison.** Clean mixed DAgger and
-   uncertainty-aware official CAGE2 challenger evaluation.
-2. **Measure semantic disruption.** Observe parent/child action and ranking
-   distance without changing mutation.
-3. **Control semantic disruption.** Adapt mutation locality only after Phase 2
-   establishes its relationship with official regression.
-4. **Preserve complementary specialists.** Study grouped case-wise selection,
-   lexicase, and behavioral diversity.
-5. **Accumulate official local improvements.** Use paired child/direct-parent
-   return evidence as evolutionary credit without weakening global promotion.
+The controller owns:
 
-Phase 1 must not implement mutation-locality control, lexicase, recurrent TPG,
-soft teacher distillation, or counterfactual advantage. Existing ranked
-semantic imitation and mutation operators remain unchanged.
+- the fixed opening;
+- scan-state maintenance;
+- used-Decoy state;
+- the global ordered Decoy schedule;
+- executable-action resolution;
+- concrete CAGE2 action conversion.
 
-Phase 2 preserves those operators and selection rules. It adds only passive
-parent/child measurement on a versioned probe archive. The measurements must
-not draw from the search random state, reject a child, choose a parent, or alter
-a mutation probability. Mutation-locality control remains Phase 3 work.
+Proposal generation is pure. Controller state is committed only from the
+concrete action that the environment executes.
 
-Phase 3 preserves Phase-1 evaluation and Phase-2 measurement. It controls the
-behavioral consequence of the unchanged native mutation pipeline with bounded
-resampling, while retaining an explicit non-local exploration fraction. It does
-not adapt individual mutation operators and does not introduce Phase-4
-population selection.
+## Training path
 
-The current baseline contract is 62 policy inputs (52 raw plus 10 scan state),
-a direct Semantic-36 target/response terminal genotype, stateless TPG
-execution, heuristic-guided DAgger, fixed controller-owned opening, and fixed
-bridge-owned Decoy ordering. The bridge owns scan and used-Decoy state.
+The deterministic heuristic labels teacher-controlled and learner-visited
+states. Ranked imitation combines executable Top-1 agreement and ranking NDCG.
+Every candidate in one generation sees the same sampled rows.
 
-Later phases may measure or change other mechanisms, but only on separate
-branches with explicit ablations.
+Behavioral-locality probes measure action and ranking disruption between each
+parent and child. Mutation control bounds most outcomes but reserves explicit
+unrestricted exploration. Grouped epsilon-lexicase then preserves candidates
+that solve complementary target/response, trajectory, confidence, and failure
+groups.
 
-Phase 5A retains Phases 1--4a and disables Phase-4b targeted proposals. It
-tests only whether a child with statistically positive paired official return
-against its direct parent should receive one additional opportunity in the
-live population. The historical incumbent still changes only through the
-frozen fresh-seed Stage-3 promotion rule. See `PHASE5.md`.
+## Official comparison
 
-Phase 5B responds to Phase 5A's measured 62.1% zero-delta credit rate. It
-prioritizes observed behavior-changing children and permits an approved
-lineage to accumulate further direct-parent improvements under a bounded
-survival budget. It does not change mutation, teacher fitness, grouped case
-scores, or historical promotion. See `PHASE5.md`.
+Training, racing, promotion, and fixed monitoring use independent seed streams.
+Candidates and incumbents share the same initial seeds within a racing round.
+Fresh promotion blocks never reuse training or racing seeds. Early promotion
+stages may reject but cannot promote. The final stage requires aggregate,
+long-horizon, and tail-risk evidence.
+
+The paired comparison is reproducible but not a perfect counterfactual: after
+policies choose different actions, simulator branches may consume random values
+differently.
+
+## Checkpoint contract
+
+The accepted best graph is saved immediately and copied through serialization
+and deserialization so later population mutation cannot change it by reference.
+Warm start loads that graph into a newly initialized population. It does not
+restore the complete population or ordinary mutation state; that is deliberate
+to control memory use and recover diversity.
+
+Checkpoint metadata records the policy shape, teacher/controller protocol,
+opening, observation prefix, action format, memory mode, and saved seed-stream
+state where applicable. A legacy checkpoint without controller provenance may
+be validated, but its old score is not assumed comparable under a new
+controller protocol.
+
+## Maintained and inactive mechanisms
+
+The maintained path enables behavioral-locality measurement, bounded semantic
+locality, grouped epsilon-lexicase, official paired racing, tail-aware staged
+promotion, and Controller v2.
+
+Targeted routing repair, specialist composition, teacher-directed repair,
+return-credit lineages, and near-miss lineages remain available for historical
+reproduction but are disabled by the active configuration because controlled
+runs did not establish reliable official improvement.

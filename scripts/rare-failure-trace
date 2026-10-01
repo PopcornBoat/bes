@@ -1,33 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 3 ]]; then
-  echo "Usage: $0 VALIDATION_RESULT CANDIDATE_CHECKPOINT OUTPUT_DIRECTORY" >&2
+if [[ $# -ne 4 ]]; then
+  echo "Usage: $0 VALIDATION_RESULT BASELINE_CHECKPOINT CANDIDATE_CHECKPOINT OUTPUT_DIRECTORY" >&2
   exit 2
 fi
 
 validation_result=$1
-candidate_checkpoint=$2
-output_directory=$3
+baseline_checkpoint=$2
+candidate_checkpoint=$3
+output_directory=$4
 repo=/home/hardison/bes
 bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
 
 mkdir -p "$output_directory"
 sha256sum \
   "$validation_result" \
+  "$baseline_checkpoint" \
   "$candidate_checkpoint" \
-  > "$output_directory/causal-input-sha256.txt"
+  > "$output_directory/input-sha256.txt"
 
 cd "$repo"
 env \
   "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
   'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
-  "PHASE5C_VALIDATION_RESULT=$validation_result" \
-  "PHASE5C_CANDIDATE_CHECKPOINT=$candidate_checkpoint" \
-  "PHASE5C_OUTPUT_DIRECTORY=$output_directory" \
+  "RARE_FAILURE_VALIDATION_RESULT=$validation_result" \
+  "RARE_FAILURE_BASELINE_CHECKPOINT=$baseline_checkpoint" \
+  "RARE_FAILURE_CANDIDATE_CHECKPOINT=$candidate_checkpoint" \
+  "RARE_FAILURE_OUTPUT_DIRECTORY=$output_directory" \
   /usr/bin/sbcl \
     --dynamic-space-size 4096 \
     --non-interactive \
     --eval '(require :asdf)' \
     --eval '(asdf:load-system :cl-tpg)' \
-    --eval '(cl-tpg::run-phase5c-causal-confirmation-from-environment)'
+    --eval '(cl-tpg::run-rare-failure-diagnosis-from-environment)'

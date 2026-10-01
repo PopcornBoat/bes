@@ -1,16 +1,16 @@
-;;; Focused non-simulator checks for Phase-5D-2 teacher-directed repair.
+;;; Focused non-simulator checks for teacher-directed repair teacher-directed repair.
 ;;; Load :CL-TPG before loading this file.
 
 (in-package :cl-user)
 
-(defvar *phase5d-directed-checks* 0)
+(defvar *teacher-directed-checks* 0)
 
-(defun check-phase5d-directed (condition description)
-  (incf *phase5d-directed-checks*)
+(defun check-teacher-directed (condition description)
+  (incf *teacher-directed-checks*)
   (unless condition
-    (error "Phase-5D-2 directed repair check failed: ~A" description)))
+    (error "teacher-directed repair directed repair check failed: ~A" description)))
 
-(defun phase5d-test-bid-program (value)
+(defun teacher-directed-test-bid-program (value)
   (cl-tpg::make-program
    :instructions
    (make-array
@@ -22,9 +22,9 @@
       :src1-type :const :src1-val (coerce value 'double-float)
       :src2-type :const :src2-val 0.0d0)))))
 
-(defun phase5d-test-terminal (bid pair)
+(defun teacher-directed-test-terminal (bid pair)
   (cl-tpg::make-learner
-   :program (phase5d-test-bid-program bid)
+   :program (teacher-directed-test-bid-program bid)
    :action
    (cl-tpg::make-action
     :type :atomic
@@ -33,32 +33,32 @@
      :target (first pair) :response (second pair)))))
 
 (let ((cl-tpg::*current-search-mode* :official-guided)
-      (cl-tpg::*phase5d-directed-repair-enabled* t)
-      (cl-tpg::*phase4b-disagreement-audit-enabled* t)
-      (cl-tpg::*phase4b-routing-repair-enabled* t)
-      (cl-tpg::*phase4-selection-enabled* t)
+      (cl-tpg::*teacher-directed-repair-enabled* t)
+      (cl-tpg::*targeted-disagreement-audit-enabled* t)
+      (cl-tpg::*targeted-routing-repair-enabled* t)
+      (cl-tpg::*grouped-selection-enabled* t)
       (cl-tpg::*semantic-locality-control-enabled* t)
       (cl-tpg::*behavioral-locality-enabled* t)
       (cl-tpg::*terminal-action-format* :target-response-36))
-  (check-phase5d-directed
-   (cl-tpg::phase5d-directed-repair-active-p)
+  (check-teacher-directed
+   (cl-tpg::teacher-directed-repair-active-p)
    "the directed operator activates only under the frozen full contract"))
 
 ;; A synthesized gate adds a small margin on its exact state and suppresses
 ;; the copied bidder when the selected feature differs.
-(let* ((source (phase5d-test-bid-program 10.0d0))
+(let* ((source (teacher-directed-test-bid-program 10.0d0))
        (feature '(:index 0 :value 1.0d0 :collision-rate 0.0d0))
-       (program (cl-tpg::phase5d-gated-bid-program source (list feature)))
+       (program (cl-tpg::teacher-directed-gated-bid-program source (list feature)))
        (matching
          (make-array 2 :element-type 'double-float
                        :initial-contents '(1.0d0 0.0d0)))
        (other
          (make-array 2 :element-type 'double-float
                        :initial-contents '(0.0d0 0.0d0))))
-  (check-phase5d-directed
+  (check-teacher-directed
    (= (aref (cl-tpg::execute-program program matching) 0) 11.0d0)
    "an exact gate match receives only the configured positive margin")
-  (check-phase5d-directed
+  (check-teacher-directed
    (< (aref (cl-tpg::execute-program program other) 0) 0.0d0)
    "a feature mismatch suppresses the correction bidder"))
 
@@ -74,10 +74,10 @@
        (wrong-pair '(3 0))
        (parent
          (cl-tpg::%make-team
-          :id "phase5d-parent"
+          :id "teacher-directed-parent"
           :learners
-          (list (phase5d-test-terminal 10.0d0 wrong-pair)
-                (phase5d-test-terminal 1.0d0 teacher-pair))))
+          (list (teacher-directed-test-terminal 10.0d0 wrong-pair)
+                (teacher-directed-test-terminal 1.0d0 teacher-pair))))
        (issue
          '(:case :case-a-routing
            :phase :steps-10-29
@@ -104,10 +104,10 @@
        (cl-tpg::*factored-actions-enabled* t)
        (cl-tpg::*terminal-action-format* :target-response-36)
        (cl-tpg::*current-search-mode* :official-guided)
-       (cl-tpg::*phase5d-directed-repair-enabled* t)
-       (cl-tpg::*phase4b-disagreement-audit-enabled* t)
-       (cl-tpg::*phase4b-routing-repair-enabled* t)
-       (cl-tpg::*phase4-selection-enabled* t)
+       (cl-tpg::*teacher-directed-repair-enabled* t)
+       (cl-tpg::*targeted-disagreement-audit-enabled* t)
+       (cl-tpg::*targeted-routing-repair-enabled* t)
+       (cl-tpg::*grouped-selection-enabled* t)
        (cl-tpg::*semantic-locality-control-enabled* t)
        (cl-tpg::*behavioral-locality-enabled* t)
        (cl-tpg::*behavioral-probe-archive* (list probe))
@@ -123,27 +123,27 @@
        (cl-tpg::*behavioral-locality-sampling-candidates* nil)
        (cl-tpg::*semantic-locality-control-generation-records* nil))
   (multiple-value-bind (child locality attempts source-id)
-      (cl-tpg::phase5d-try-parent-issue parent issue contexts)
+      (cl-tpg::teacher-directed-try-parent-issue parent issue contexts)
     (declare (ignore attempts source-id))
-    (check-phase5d-directed child
+    (check-teacher-directed child
                             "a valid directed correction child is built")
-    (check-phase5d-directed
+    (check-teacher-directed
      (equal
       (first (cl-tpg::behavioral-ranking-pairs child target-observation))
       teacher-pair)
      "the teacher terminal wins on the diagnosed target rows")
-    (check-phase5d-directed
+    (check-teacher-directed
      (equal
       (first (cl-tpg::behavioral-ranking-pairs child other-observation))
       wrong-pair)
      "the correction remains suppressed on the collateral probe")
-    (check-phase5d-directed
+    (check-teacher-directed
      (and (eq (getf locality :control-stage)
-              :phase5d-directed-repair)
+              :teacher-directed-repair)
           (equal (mapcar (lambda (entry) (getf entry :index))
-                         (getf locality :phase5d-gate))
+                         (getf locality :teacher-directed-gate))
                  '(0)))
      "accepted lineage records the directed gate and control stage")))
 
-(format t "Phase-5D-2 directed repair checks passed (~D checks).~%"
-        *phase5d-directed-checks*)
+(format t "teacher-directed repair directed repair checks passed (~D checks).~%"
+        *teacher-directed-checks*)
