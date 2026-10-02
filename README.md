@@ -179,6 +179,21 @@ scripts/bes-test tests/controller.lisp tests/compiled-bline-heuristic.lisp
 scripts/bes-test --core
 ```
 
+Inspect a checkpoint's effective bid-producing instructions without modifying
+the graph:
+
+```bash
+scripts/bes-effective-code CHECKPOINT [REPORT.txt] [OUTPUT-REGISTERS]
+```
+
+`OUTPUT-REGISTERS` is a comma-separated list of internal zero-based register
+indices and defaults to the bid register (`0`). That default is correct for the
+maintained stateless Semantic-36 policy, whose terminal stores target and
+response directly. Legacy register-decoded policies should include every
+register that contributes to their output, for example `0,1,2`. The analyzer
+reports the exact backward slice but does not remove instructions or alter the
+checkpoint.
+
 See [DESIGN.md](DESIGN.md), [EXPERIMENTS.md](EXPERIMENTS.md),
 [CONTRIBUTING.md](CONTRIBUTING.md), and
 [docs/wsl-workflow.md](docs/wsl-workflow.md) for the maintained interfaces.

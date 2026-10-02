@@ -16,6 +16,7 @@
 	       (:file "heuristic")
 	       (:file "learner")
 	       (:file "team")
+	       (:file "effective-code")
 		   (:file "checkpoint")
 		   (:file "validation")
 	       (:file "mutation")

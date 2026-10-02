@@ -26,6 +26,9 @@
                      :cage2-controller-decision-option
                      :cage2-controller-decision-fallback-p
                      :cage2-bline-heuristic-ranking
+                     :analyze-program-effective-code
+                     :analyze-team-effective-code
+                     :write-effective-code-report
                      :+global-target+
                      :+num-semantic-targets+
                      :+cage2-evaluation-seed+))

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 1 || $# -gt 3 ]]; then
+  echo "Usage: $0 CHECKPOINT [REPORT.txt] [OUTPUT-REGISTERS]" >&2
+  exit 2
+fi
+
+repo=/home/hardison/bes
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+quicklisp_setup=/home/hardison/quicklisp/setup.lisp
+
+cd "$repo"
+[[ -f "$quicklisp_setup" ]] || {
+  echo "Quicklisp setup is missing: $quicklisp_setup" >&2
+  exit 1
+}
+env \
+  "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+  /usr/bin/sbcl \
+    --load "$quicklisp_setup" \
+    --script scripts/analyze-effective-code.lisp "$@"

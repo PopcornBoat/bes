@@ -10,6 +10,7 @@ if [[ "${1:-}" == --core ]]; then
   shift
   tests=(
     tests/mutation.lisp
+    tests/effective-code.lisp
     tests/behavioral-locality.lisp
     tests/official-guided.lisp
     tests/official-return-credit.lisp
