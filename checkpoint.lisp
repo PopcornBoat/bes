@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 23
-  "Checkpoint version recording the active CAGE2 Controller protocol.")
+(defconstant +best-team-checkpoint-version+ 24
+  "Checkpoint version recording the instruction-set creation profile.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -79,11 +79,12 @@ A configuration keeps overwriting its own immediate-best file, while agent,
 observation/action shape, mode, and Hamming variants can coexist in one
 checkpoint directory."
   (format nil
-          "~A-~D-~D-~A-order-~A-teacher-~A-opening-~A-hamming-~A-memory-~A.lisp"
+          "~A-~D-~D-~A-operators-~A-order-~A-teacher-~A-opening-~A-hamming-~A-memory-~A.lisp"
           (checkpoint-agent-type)
           *num-observations*
           *num-actions*
           (checkpoint-training-mode)
+          (string-downcase (symbol-name *instruction-set-profile*))
           (string-downcase (symbol-name *decoy-order-mode*))
           (string-downcase (symbol-name *teacher-backend*))
           (string-downcase (symbol-name *cage2-opening-mode*))
@@ -103,8 +104,13 @@ checkpoint directory."
                            hamming-space-enabled hamming-dataset-fingerprint
                            num-observations decoy-order-mode cage2-opening-mode
                            recurrent-policy-enabled teacher-backend
+                           (instruction-set-profile
+                             *instruction-set-profile*)
                            (terminal-action-format *terminal-action-format*))
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
+  (unless (valid-instruction-set-profile-p instruction-set-profile)
+    (error "Cannot checkpoint unsupported instruction-set profile: ~S."
+           instruction-set-profile))
   `(:checkpoint-version ,+best-team-checkpoint-version+
     :fitness ,fitness
     :generation ,generation
@@ -121,6 +127,7 @@ checkpoint directory."
     :online-reference-episodes ,online-reference-episodes
     :mixed-training-lineage ,mixed-training-lineage
     :num-observations ,num-observations
+    :instruction-set-profile ,instruction-set-profile
     :terminal-action-format ,terminal-action-format
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode
@@ -183,6 +190,8 @@ checkpoint directory."
                                 num-observations decoy-order-mode
                                 cage2-opening-mode
                                 recurrent-policy-enabled teacher-backend
+                                (instruction-set-profile
+                                  *instruction-set-profile*)
                                 (terminal-action-format
                                   *terminal-action-format*))
   "Write TEAM, FITNESS, and provenance metadata to PATH."
@@ -211,6 +220,7 @@ checkpoint directory."
            :online-reference-episodes online-reference-episodes
            :mixed-training-lineage mixed-training-lineage
            :num-observations num-observations
+           :instruction-set-profile instruction-set-profile
            :terminal-action-format terminal-action-format
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
@@ -243,6 +253,7 @@ checkpoint directory."
            +cage2-online-reference-episodes+)
     :mixed-training-lineage *mixed-training-lineage*
     :num-observations *num-observations*
+    :instruction-set-profile *instruction-set-profile*
     :terminal-action-format *terminal-action-format*
     :decoy-order-mode *decoy-order-mode*
     :cage2-opening-mode *cage2-opening-mode*
@@ -335,6 +346,7 @@ return NIL for FITNESS and METADATA."
                            num-observations decoy-order-mode
                            cage2-opening-mode
                            recurrent-policy-enabled teacher-backend
+                           instruction-set-profile
                            terminal-action-format)
   "Add fitness metadata to a legacy best-team checkpoint.
 
@@ -359,6 +371,8 @@ preserving the original legacy file."
      :online-reference-episodes online-reference-episodes
      :mixed-training-lineage mixed-training-lineage
      :num-observations num-observations
+     :instruction-set-profile
+       (or instruction-set-profile *instruction-set-profile*)
      :terminal-action-format
        (or terminal-action-format *terminal-action-format*)
      :decoy-order-mode decoy-order-mode

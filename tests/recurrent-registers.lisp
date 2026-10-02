@@ -90,7 +90,7 @@
     (assert-recurrent-register-test
      (string=
       (best-team-checkpoint-filename)
-      "bline-62-11-online-order-fixed-teacher-model-opening-fixed-hamming-off-memory-recurrent.lisp")
+      "bline-62-11-online-operators-full-order-fixed-teacher-model-opening-fixed-hamming-off-memory-recurrent.lisp")
      "Recurrent checkpoint filename does not identify its memory mode."))
 
   (format t "Recurrent register checks passed.~%"))

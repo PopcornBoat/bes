@@ -55,12 +55,12 @@
       (cl-tpg::*hamming-space-enabled* nil))
   (check-teacher-forcing
    (string= (cl-tpg::best-team-checkpoint-filename)
-            "bline-62-11-teacher-forcing-dagger-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp")
+            "bline-62-11-teacher-forcing-dagger-operators-full-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp")
    "checkpoint name distinguishes DAgger teacher forcing")
   (let ((cl-tpg::*teacher-forcing-rollout-mode* :teacher))
     (check-teacher-forcing
      (string= (cl-tpg::best-team-checkpoint-filename)
-              "bline-62-11-teacher-forcing-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp")
+              "bline-62-11-teacher-forcing-operators-full-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp")
      "pure teacher rollout retains its explicit checkpoint name")))
 
 (let ((cl-tpg::*recurrent-policy-enabled* t))
@@ -86,7 +86,7 @@
       (cl-tpg::*hamming-space-enabled* nil))
   (check-teacher-forcing
    (string= (cl-tpg::best-team-checkpoint-filename)
-            "bline-62-11-mix-order-fixed-teacher-model-opening-fixed-hamming-off-memory-stateless.lisp")
+            "bline-62-11-mix-operators-full-order-fixed-teacher-model-opening-fixed-hamming-off-memory-stateless.lisp")
    "online continuation of an offline lineage uses the mix checkpoint name"))
 
 (let ((cl-tpg::*configured-online-fitness-episodes* 5))

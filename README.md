@@ -194,6 +194,18 @@ register that contributes to their output, for example `0,1,2`. The analyzer
 reports the exact backward slice but does not remove instructions or alter the
 checkpoint.
 
+The search menu exposes two instruction-creation profiles:
+
+- `full`: the historical 11-opcode set;
+- `reduced`: `ADD`, `SUB`, `MUL`, and `DIV` only.
+
+The reduced profile is an ablation based on the operators sufficient to encode
+the compiled B-line heuristic. It restricts fresh programs and newly added
+instructions; it never rewrites instructions already present in a warm-start
+checkpoint. Checkpoints record the profile, include it in their filename, and
+discard a stored fitness as non-comparable when resumed under a different
+profile. Execution remains able to load and run every historical opcode.
+
 See [DESIGN.md](DESIGN.md), [EXPERIMENTS.md](EXPERIMENTS.md),
 [CONTRIBUTING.md](CONTRIBUTING.md), and
 [docs/wsl-workflow.md](docs/wsl-workflow.md) for the maintained interfaces.

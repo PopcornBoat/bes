@@ -232,7 +232,7 @@
   (check-official-guided
    (string=
     (cl-tpg::best-team-checkpoint-filename)
-    "bline-62-11-official-guided-dagger-order-fixed-teacher-model-opening-fixed-hamming-off-memory-stateless.lisp")
+    "bline-62-11-official-guided-dagger-operators-full-order-fixed-teacher-model-opening-fixed-hamming-off-memory-stateless.lisp")
    "official-guided checkpoints have an unambiguous experiment name"))
 
 (let ((cl-tpg::*current-search-mode* :official-guided)
@@ -248,7 +248,7 @@
   (check-official-guided
    (string=
     (cl-tpg::best-team-checkpoint-filename)
-    "bline-62-36-official-guided-locality-control-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp")
+    "bline-62-36-official-guided-locality-control-operators-full-order-fixed-teacher-heuristic-opening-fixed-hamming-off-memory-stateless.lisp")
    "semantic-locality checkpoints cannot overwrite official-guided or behavioral-locality incumbents"))
 
 (let ((cl-tpg::*checkpoint-directory* "/tmp/official-guided-test/"))

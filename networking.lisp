@@ -396,7 +396,8 @@ return their fixed configured addresses."
                                     (cage2-opening-mode :fixed)
                                     (recurrent-policy-enabled nil)
                                     (teacher-forcing-rollout-mode :dagger)
-                                    (teacher-backend :model))
+                                    (teacher-backend :model)
+                                    (instruction-set-profile :full))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -462,6 +463,11 @@ return their fixed configured addresses."
            teacher-backend))
   (setf *teacher-backend* teacher-backend)
 
+  (unless (valid-instruction-set-profile-p instruction-set-profile)
+    (error "Instruction-set profile must be :FULL or :REDUCED, got ~S."
+           instruction-set-profile))
+  (setf *instruction-set-profile* instruction-set-profile)
+
   (setf *checkpoint-directory* checkpoint-directory))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
@@ -477,7 +483,8 @@ return their fixed configured addresses."
                                   decoy-order-mode cage2-opening-mode
                                   recurrent-policy-enabled
                                   teacher-forcing-rollout-mode
-                                  teacher-backend)
+                                  teacher-backend
+                                  instruction-set-profile)
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -542,6 +549,7 @@ return their fixed configured addresses."
        (valid-teacher-forcing-rollout-mode-p
         teacher-forcing-rollout-mode)
        (valid-teacher-backend-p teacher-backend)
+       (valid-instruction-set-profile-p instruction-set-profile)
        (or (not (and (member mode '(:teacher-forcing :official-guided)
                                     :test #'eq)
                      (eq teacher-backend :heuristic)))
@@ -615,6 +623,8 @@ return their fixed configured addresses."
           (getf msg :teacher-forcing-rollout-mode :dagger))
         (teacher-backend
           (getf msg :teacher-backend :model))
+        (instruction-set-profile
+          (getf msg :instruction-set-profile :full))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -627,12 +637,13 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
              num-observations
              num-actions
+             instruction-set-profile
              decoy-order-mode
              cage2-opening-mode
              (if recurrent-policy-enabled :recurrent :stateless)
@@ -697,7 +708,8 @@ return their fixed configured addresses."
          cage2-opening-mode
          recurrent-policy-enabled
          teacher-forcing-rollout-mode
-         teacher-backend)
+         teacher-backend
+         instruction-set-profile)
 
         (progn
           (unless (begin-search-operation)
@@ -733,7 +745,8 @@ return their fixed configured addresses."
            :cage2-opening-mode cage2-opening-mode
            :recurrent-policy-enabled recurrent-policy-enabled
            :teacher-forcing-rollout-mode teacher-forcing-rollout-mode
-           :teacher-backend teacher-backend)
+           :teacher-backend teacher-backend
+           :instruction-set-profile instruction-set-profile)
 
           (push
            (bt:make-thread
@@ -826,6 +839,8 @@ return their fixed configured addresses."
           (getf msg :teacher-forcing-rollout-mode :dagger))
         (teacher-backend
           (getf msg :teacher-backend :model))
+        (instruction-set-profile
+          (getf msg :instruction-set-profile :full))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -879,7 +894,8 @@ return their fixed configured addresses."
          cage2-opening-mode
          recurrent-policy-enabled
          teacher-forcing-rollout-mode
-         teacher-backend)
+         teacher-backend
+         instruction-set-profile)
 
         (progn
           (unless (begin-search-operation)
@@ -915,7 +931,8 @@ return their fixed configured addresses."
            :cage2-opening-mode cage2-opening-mode
            :recurrent-policy-enabled recurrent-policy-enabled
            :teacher-forcing-rollout-mode teacher-forcing-rollout-mode
-           :teacher-backend teacher-backend)
+           :teacher-backend teacher-backend
+           :instruction-set-profile instruction-set-profile)
 
           (push
            (bt:make-thread

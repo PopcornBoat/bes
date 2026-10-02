@@ -204,6 +204,11 @@ selected yet."
         (num-actions
          (string-to-number
           (transient-arg-value "*num-actions=" args)))
+        (instruction-set-profile
+         (pcase (transient-arg-value "--instruction-set=" args)
+           ("full" :full)
+           ("reduced" :reduced)
+           (other (error "Invalid instruction-set profile: %S" other))))
         (decoy-order-mode
          (pcase (transient-arg-value "--decoy-order=" args)
            ("fixed" :fixed)
@@ -294,6 +299,7 @@ selected yet."
       :dataset-name :none
       :num-observations ,num-observations
       :num-actions ,num-actions
+      :instruction-set-profile ,instruction-set-profile
       :decoy-order-mode ,decoy-order-mode
       :cage2-opening-mode ,cage2-opening-mode
       :teacher-forcing-rollout-mode ,teacher-forcing-rollout-mode
@@ -435,6 +441,7 @@ selected yet."
             "--opening=fixed"
             "--teacher-rollout=dagger"
             "--teacher-backend=heuristic"
+            "--instruction-set=full"
             "--mode=online")
   ["Island"
     ("-I" "Island" "--island="
@@ -454,6 +461,8 @@ selected yet."
   ["Key Settings"
    ("-Z" "Number of Observations" "*num-observations=")
    ("-X" "Number of Actions" "*num-actions=")
+   ("-U" "Instruction Set" "--instruction-set="
+    :choices ("full" "reduced"))
    ("-O" "Decoy Order" "--decoy-order="
     :choices ("fixed" "evolved"))
    ("-Q" "Episode Opening" "--opening="
@@ -566,6 +575,17 @@ selected yet."
            (read-string
             "Number of actions: "
             "11")))
+
+         (instruction-set-profile
+          (intern
+           (concat
+            ":"
+            (completing-read
+             "Instruction set: "
+             '("full" "reduced")
+             nil
+             t
+             "full"))))
 
          (decoy-order-mode
           (intern
@@ -751,6 +771,7 @@ selected yet."
 
             :num-observations ,num-observations
             :num-actions ,num-actions
+            :instruction-set-profile ,instruction-set-profile
             :decoy-order-mode ,decoy-order-mode
             :cage2-opening-mode ,cage2-opening-mode
             :teacher-forcing-rollout-mode ,teacher-forcing-rollout-mode

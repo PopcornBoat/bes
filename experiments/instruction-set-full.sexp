@@ -1,8 +1,7 @@
-(:type :resume-search
+(:type :start-search
  :mode :official-guided
  :gym-environment-name "Cage2-b_line-100-v0"
  :dataset-name :none
- :best-team-path "/home/hardison/checkpoints/semantic36/mainline/bline-62-36-evolved-mainline.lisp"
  :num-observations 62
  :num-actions 36
  :instruction-set-profile :full
@@ -30,7 +29,7 @@
  :migration-interval 50
  :batch-size 1000
  :online-fitness-episodes 5
- :checkpoint-directory "/home/hardison/checkpoints/semantic36/official-guided-mainline/"
+ :checkpoint-directory "/home/hardison/checkpoints/semantic36/instruction-set-full/"
  :hamming-space-enabled :disabled
  :hamming-dataset-name :none
  :seed 153)

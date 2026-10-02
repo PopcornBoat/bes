@@ -220,6 +220,8 @@ programs, or changes the graph. The returned value is the full analysis plist."
       (format stream "generation: ~S~%" (getf metadata :generation))
       (format stream "terminal action format: ~S~%"
               (getf metadata :terminal-action-format))
+      (format stream "instruction set profile: ~S~%"
+              (or (getf metadata :instruction-set-profile) :full))
       (format stream "recurrent policy: ~S~%"
               (getf metadata :recurrent-policy-enabled)))
     (format stream "output register indices: ~S~%"

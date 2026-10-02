@@ -3256,6 +3256,9 @@ the same train/reference file fingerprint."
                 (getf metadata :hamming-dataset-fingerprint))
               (saved-num-observations
                 (getf metadata :num-observations))
+              (saved-instruction-set-profile
+                ;; Checkpoints before v24 used the complete historical set.
+                (or (getf metadata :instruction-set-profile) :full))
               (saved-terminal-action-format
                 (or (getf metadata :terminal-action-format) :factored))
               (saved-decoy-order-mode
@@ -3273,6 +3276,8 @@ the same train/reference file fingerprint."
                    (equal saved-environment gym-environment-name))
                (or (null saved-num-observations)
                    (= saved-num-observations *num-observations*))
+               (eq saved-instruction-set-profile
+                   *instruction-set-profile*)
                (eq saved-terminal-action-format *terminal-action-format*)
                (or (null saved-decoy-order-mode)
                    (eq saved-decoy-order-mode *decoy-order-mode*))

@@ -10,6 +10,33 @@
 (defconstant +bid-register+ 0
   "Register used as a learner's bid during team execution.")
 
+(defparameter +full-instruction-opcodes+
+  '(:add :sub :mul :div :max :exp :log :sin :cos :tan :mod)
+  "Historical BES instruction set, retained as the default profile.")
+
+(defparameter +reduced-instruction-opcodes+
+  '(:add :sub :mul :div)
+  "Arithmetic instruction set used by the reduced-operator experiment.
+
+These four operators are sufficient to express the compiled B-line heuristic.
+The profile changes instruction creation only; old checkpoint instructions
+remain executable and are never rewritten when a checkpoint is loaded.")
+
+(defparameter *instruction-set-profile* :full
+  "Instruction creation profile. :FULL preserves the historical opcode set;
+:REDUCED samples only ADD, SUB, MUL, and DIV.")
+
+(defun valid-instruction-set-profile-p (profile)
+  "Return true for a supported instruction creation profile."
+  (member profile '(:full :reduced) :test #'eq))
+
+(defun active-instruction-opcodes (&optional (profile *instruction-set-profile*))
+  "Return a fresh list of opcodes permitted for newly created instructions."
+  (copy-list
+   (ecase profile
+     (:full +full-instruction-opcodes+)
+     (:reduced +reduced-instruction-opcodes+))))
+
 (defconstant +response-register+ 1
   "Register on the final terminal learner used to decode response type.")
 

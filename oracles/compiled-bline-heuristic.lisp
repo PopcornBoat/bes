@@ -205,6 +205,7 @@
          (*num-actions* +num-semantic-36-actions+)
          (*factored-actions-enabled* t)
          (*terminal-action-format* :target-response-36)
+         (*instruction-set-profile* :reduced)
          (*decoy-order-mode* :fixed)
          (*cage2-opening-mode* :fixed)
          (*teacher-backend* :heuristic)
@@ -225,6 +226,7 @@
      :hamming-space-enabled nil
      :hamming-dataset-fingerprint nil
      :num-observations +cage2-scan-observation-size+
+     :instruction-set-profile :reduced
      :decoy-order-mode :fixed
      :cage2-opening-mode :fixed
      :recurrent-policy-enabled nil

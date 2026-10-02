@@ -11,6 +11,7 @@ if [[ "${1:-}" == --core ]]; then
   tests=(
     tests/mutation.lisp
     tests/effective-code.lisp
+    tests/instruction-set.lisp
     tests/behavioral-locality.lisp
     tests/official-guided.lisp
     tests/official-return-credit.lisp

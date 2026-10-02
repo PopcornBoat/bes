@@ -49,7 +49,7 @@
             (:constructor make-instruction
              (&aux
               ;; 1. Generate the opcode and arity
-              (op (random-choice '(:ADD :SUB :MUL :DIV :MAX :EXP :LOG :SIN :COS :TAN :MOD)))
+              (op (random-choice (active-instruction-opcodes)))
               (arity (opcode-arity op))
               ;; 2. Generate destination index directly
               (dest (truncate (nth-value 1 (decode-symbol (random-register)))))

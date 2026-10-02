@@ -206,7 +206,19 @@ CAGE3 MODE:
           (unless (valid-terminal-action-format-p saved-format)
             (error "Unsupported checkpoint terminal action format: ~S."
                    saved-format))
-          (setf *terminal-action-format* saved-format)))
+          (setf *terminal-action-format* saved-format))
+        (let ((saved-profile
+                (or (getf *loaded-checkpoint-metadata*
+                          :instruction-set-profile)
+                    :full)))
+          (unless (valid-instruction-set-profile-p saved-profile)
+            (error "Unsupported checkpoint instruction-set profile: ~S."
+                   saved-profile))
+          (setf *instruction-set-profile* saved-profile)
+          (emit-message
+           (format nil
+                   "Validation checkpoint instruction-set profile=~A; serialized historical opcodes remain executable."
+                   saved-profile))))
       (when cage2-p
         (ensure-team-observation-compatible team *num-observations*))
       (emit-message
