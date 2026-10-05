@@ -397,7 +397,10 @@ return their fixed configured addresses."
                                     (recurrent-policy-enabled nil)
                                     (teacher-forcing-rollout-mode :dagger)
                                     (teacher-backend :model)
-                                    (instruction-set-profile :full))
+                                    (instruction-set-profile :full)
+                                    (instruction-mutation-mode :legacy)
+                                    (effective-aware-mutation-enabled nil)
+                                    (compression-reseed-enabled nil))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -468,6 +471,20 @@ return their fixed configured addresses."
            instruction-set-profile))
   (setf *instruction-set-profile* instruction-set-profile)
 
+  (unless (valid-instruction-mutation-mode-p instruction-mutation-mode)
+    (error "Instruction mutation mode must be :LEGACY or :FIELD-LOCAL, got ~S."
+           instruction-mutation-mode))
+  (setf *instruction-mutation-mode* instruction-mutation-mode
+        *effective-aware-mutation-enabled*
+          (not (null effective-aware-mutation-enabled))
+        *compression-reseed-enabled*
+          (not (null compression-reseed-enabled)))
+
+  (when (and *compression-reseed-enabled*
+             (or (not (eq *instruction-mutation-mode* :field-local))
+                 (not *effective-aware-mutation-enabled*)))
+    (error "Compression/reseed requires FIELD-LOCAL and effective-aware mutation."))
+
   (setf *checkpoint-directory* checkpoint-directory))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
@@ -484,7 +501,11 @@ return their fixed configured addresses."
                                   recurrent-policy-enabled
                                   teacher-forcing-rollout-mode
                                   teacher-backend
-                                  instruction-set-profile)
+                                  instruction-set-profile
+                                  &optional
+                                  (instruction-mutation-mode :legacy)
+                                  (effective-aware-mutation-enabled nil)
+                                  (compression-reseed-enabled nil))
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -550,6 +571,12 @@ return their fixed configured addresses."
         teacher-forcing-rollout-mode)
        (valid-teacher-backend-p teacher-backend)
        (valid-instruction-set-profile-p instruction-set-profile)
+       (valid-instruction-mutation-mode-p instruction-mutation-mode)
+       (or (not compression-reseed-enabled)
+           (and (eq mode :official-guided)
+                (eq instruction-mutation-mode :field-local)
+                effective-aware-mutation-enabled
+                (not recurrent-policy-enabled)))
        (or (not (and (member mode '(:teacher-forcing :official-guided)
                                     :test #'eq)
                      (eq teacher-backend :heuristic)))
@@ -625,6 +652,14 @@ return their fixed configured addresses."
           (getf msg :teacher-backend :model))
         (instruction-set-profile
           (getf msg :instruction-set-profile :full))
+        (instruction-mutation-mode
+          (getf msg :instruction-mutation-mode :legacy))
+        (effective-aware-mutation-enabled
+          (eq (getf msg :effective-aware-mutation-enabled :disabled)
+              :enabled))
+        (compression-reseed-enabled
+          (eq (getf msg :compression-reseed-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -637,13 +672,16 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A instruction-mutation=~A effective-aware=~A compression-reseed=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
              num-observations
              num-actions
              instruction-set-profile
+             instruction-mutation-mode
+             effective-aware-mutation-enabled
+             compression-reseed-enabled
              decoy-order-mode
              cage2-opening-mode
              (if recurrent-policy-enabled :recurrent :stateless)
@@ -709,7 +747,10 @@ return their fixed configured addresses."
          recurrent-policy-enabled
          teacher-forcing-rollout-mode
          teacher-backend
-         instruction-set-profile)
+         instruction-set-profile
+         instruction-mutation-mode
+         effective-aware-mutation-enabled
+         compression-reseed-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -746,7 +787,11 @@ return their fixed configured addresses."
            :recurrent-policy-enabled recurrent-policy-enabled
            :teacher-forcing-rollout-mode teacher-forcing-rollout-mode
            :teacher-backend teacher-backend
-           :instruction-set-profile instruction-set-profile)
+           :instruction-set-profile instruction-set-profile
+           :instruction-mutation-mode instruction-mutation-mode
+           :effective-aware-mutation-enabled
+             effective-aware-mutation-enabled
+           :compression-reseed-enabled compression-reseed-enabled)
 
           (push
            (bt:make-thread
@@ -841,6 +886,14 @@ return their fixed configured addresses."
           (getf msg :teacher-backend :model))
         (instruction-set-profile
           (getf msg :instruction-set-profile :full))
+        (instruction-mutation-mode
+          (getf msg :instruction-mutation-mode :legacy))
+        (effective-aware-mutation-enabled
+          (eq (getf msg :effective-aware-mutation-enabled :disabled)
+              :enabled))
+        (compression-reseed-enabled
+          (eq (getf msg :compression-reseed-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -895,7 +948,10 @@ return their fixed configured addresses."
          recurrent-policy-enabled
          teacher-forcing-rollout-mode
          teacher-backend
-         instruction-set-profile)
+         instruction-set-profile
+         instruction-mutation-mode
+         effective-aware-mutation-enabled
+         compression-reseed-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -932,7 +988,11 @@ return their fixed configured addresses."
            :recurrent-policy-enabled recurrent-policy-enabled
            :teacher-forcing-rollout-mode teacher-forcing-rollout-mode
            :teacher-backend teacher-backend
-           :instruction-set-profile instruction-set-profile)
+           :instruction-set-profile instruction-set-profile
+           :instruction-mutation-mode instruction-mutation-mode
+           :effective-aware-mutation-enabled
+             effective-aware-mutation-enabled
+           :compression-reseed-enabled compression-reseed-enabled)
 
           (push
            (bt:make-thread

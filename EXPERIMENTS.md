@@ -70,6 +70,64 @@ official paired promotion outcomes, and independent 30/50/100-step validation.
 The reduced treatment succeeds only if it preserves or improves official
 return—not merely if it produces smaller or faster programs.
 
+## Effective-local mutation with compression/reseed
+
+The checked-in warm-start request is:
+
+```text
+experiments/effective-local-compression.sexp
+```
+
+It starts from the frozen reduced-operator checkpoint whose independent full
+validation is `-34.0480`. Its instruction mutation contract is:
+
+```text
+95% field edit:
+  opcode within ADD/SUB/MUL/DIV
+  destination register
+  source type
+  source index
+  constant perturbation
+
+5% whole-instruction replacement
+
+instruction selection:
+  80% from the effective R0 backward slice
+  20% from the complete program
+```
+
+In `:FIELD-LOCAL` mode, the legacy instruction add/delete/swap probabilities
+are retained in requests for format compatibility but are not applied. The
+ordinary learner add/delete, terminal mutation, team-edge mutation, learner
+action swap, and graph behavior remain active.
+
+Compression/reseed uses protocol `COMPRESSION-RESEED-V1` with fixed gates:
+
+```text
+minimum generation:        2000
+eligibility check:         every 250 generations
+minimum intron ratio:      0.95
+incumbent plateau:         400 generations
+event cooldown:            1000 generations
+maximum injected roots:    10% of population
+```
+
+Only a serialize/deserialize deep copy of the protected incumbent is pruned.
+The compact graph is injected only after exact Top-k ranking equality on the
+current versioned probe archive. Its variants pass through the same native
+mutation and semantic-locality control as other offspring. No event overwrites
+the historical checkpoint or prunes the existing population in place.
+
+Run with:
+
+```bash
+scripts/bes-runtime start
+scripts/bes-search submit experiments/effective-local-compression.sexp
+```
+
+Monitor `compression-and-reseed` telemetry, instruction counts before/after,
+probe count, event generation, subsequent diversity, and official promotions.
+
 ## Evidence to monitor
 
 Do not judge a run from mixed return or imitation fitness alone. Record:

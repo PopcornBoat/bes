@@ -48,7 +48,10 @@
    (eq (getf request :recurrent-policy-enabled) :enabled)
    (getf request :teacher-forcing-rollout-mode)
    (getf request :teacher-backend)
-   (getf request :instruction-set-profile)))
+   (getf request :instruction-set-profile)
+   (getf request :instruction-mutation-mode :legacy)
+   (eq (getf request :effective-aware-mutation-enabled :disabled) :enabled)
+   (eq (getf request :compression-reseed-enabled :disabled) :enabled)))
 
 (check-instruction-set
  (equal (cl-tpg::active-instruction-opcodes :full)
@@ -82,6 +85,17 @@
   (check-instruction-set
    (not (instruction-set-test-valid-request-p reduced))
    "server validation rejects an unknown profile"))
+
+(let ((request
+        (instruction-set-test-read-request
+         "experiments/effective-local-compression.sexp")))
+  (check-instruction-set
+   (instruction-set-test-valid-request-p request)
+   "the field-local/effective/compression request passes server validation")
+  (setf (getf request :effective-aware-mutation-enabled) :disabled)
+  (check-instruction-set
+   (not (instruction-set-test-valid-request-p request))
+   "compression is rejected without effective-aware selection"))
 
 ;; Fresh instructions and instruction additions obey the selected profile.
 (let ((cl-tpg::*instruction-set-profile* :reduced)
@@ -156,6 +170,9 @@
 
 ;; Checkpoint provenance and filenames isolate the ablation conditions.
 (let* ((cl-tpg::*instruction-set-profile* :reduced)
+       (cl-tpg::*instruction-mutation-mode* :field-local)
+       (cl-tpg::*effective-aware-mutation-enabled* t)
+       (cl-tpg::*compression-reseed-enabled* t)
        (cl-tpg::*current-search-mode* :online)
        (cl-tpg::*current-gym-environment-name* "Cage2-b_line-100-v0")
        (cl-tpg::*num-observations* 62)
@@ -170,6 +187,13 @@
   (check-instruction-set
    (eq (getf data :instruction-set-profile) :reduced)
    "checkpoint metadata records the active profile")
+  (check-instruction-set
+   (and (eq (getf data :instruction-mutation-mode) :field-local)
+        (getf data :effective-aware-mutation-enabled)
+        (getf data :compression-reseed-enabled)
+        (eq (getf data :compression-reseed-protocol)
+            cl-tpg::+compression-reseed-protocol+))
+   "checkpoint metadata records local/effective/compression provenance")
   (check-instruction-set
    (search "operators-reduced"
            (cl-tpg::best-team-checkpoint-filename))

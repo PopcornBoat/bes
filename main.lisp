@@ -3069,6 +3069,15 @@ through serialization/deserialization and save it to disk."
   (setf *targeted-specialist-composition-generation-records* nil)
   (setf *targeted-combined-repair-generation-records* nil)
   (setf *teacher-directed-repair-generation-records* nil)
+  ;; A guarded compression event installs one behavior-equivalent, independent
+  ;; incumbent clone. Its variants still use the ordinary mutation/locality
+  ;; path; the protected historical best is never inserted or modified.
+  (multiple-value-bind (compressed-parent variant-count)
+      (maybe-install-compression-reseed-parent)
+    (when compressed-parent
+      (loop repeat variant-count
+            while (< (length (root-teams)) *population-size*)
+            do (reproduce-native-child compressed-parent))))
   (loop while (< (length (root-teams)) *population-size*)
         do (let* ((parents (root-teams))
                   (directed-p (teacher-directed-repair-active-p))
@@ -3201,6 +3210,8 @@ through serialization/deserialization and save it to disk."
                  (eq *teacher-forcing-rollout-mode* :dagger))
         (install-teacher-dagger-behavior-team
          (first (root-teams)) nil 0))
+
+      (reset-compression-reseed-state)
 
       (loop while *running*
             do (evolve)
@@ -3607,6 +3618,11 @@ normal evolution."
               (initialize-best-from-current-population
                loaded-best-team
                comparable-fitness))))
+
+      ;; Warm start intentionally reconstructs a fresh population. Compression
+      ;; counters are therefore run-local even though prior event provenance is
+      ;; retained in the loaded checkpoint metadata.
+      (reset-compression-reseed-state)
 
       ;; Continue normal BES/TPG evolution.
       (loop while *running*

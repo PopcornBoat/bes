@@ -35,4 +35,5 @@
 	       (:file "near-miss-lineages")
 	       (:file "targeted-repair")
 	       (:file "teacher-directed-repair")
+	       (:file "compression-reseed")
 	       (:file "main")))

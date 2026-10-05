@@ -37,6 +37,15 @@ allowing permanent positive bloat pressure."
   "Returns T with *p-mut-constant-sign* likelihood."
   (coin-flip *p-mut-constant-sign*))
 
+(defun perturbed-constant-value (value)
+  "Return VALUE plus bounded Gaussian mutation noise and optional sign flip."
+  (let* ((u1 (max 1.0d-12 (random 1.0d0)))
+         (u2 (random 1.0d0))
+         (z (* (sqrt (* -2.0d0 (log u1)))
+               (cos (* 2.0d0 pi u2))))
+         (result (+ (coerce value 'double-float) (* 0.1d0 z))))
+    (if (mutate-constant-sign-p) (- result) result)))
+
 (defun mutate-program-p ()
   "Returns T with *p-mut* likelihood."
   (coin-flip *p-mut*))
@@ -77,13 +86,7 @@ allowing permanent positive bloat pressure."
 
 (defun mutate-constant (program)
   "Mutate a random constant in a program."
-  (flet ((add-noise (c)
-	   (let* ((u1 (max 1e-12 (random 1.0)))
-		  (u2 (random 1.0))
-		  (z (* (sqrt (* -2.0 (log u1)))
-			(cos (* 2.0 pi u2)))))
-	     (+ c (* 0.1 z)))))
-    (let* ((instructions (program-instructions program))
+  (let* ((instructions (program-instructions program))
 	   (instructions-with-constants
 	     (remove-if-not #'instruction-has-constant-p instructions)))
 	;; REMOVE-IF-NOT preserves the vector type.  An empty result is therefore
@@ -99,56 +102,239 @@ allowing permanent positive bloat pressure."
 	  (case (random-choice slots)
 	    (:src1
 	     (setf (instruction-src1-val instr)
-		   (add-noise (instruction-src1-val instr)))
-	     (when (mutate-constant-sign-p)
-	       (setf (instruction-src1-val instr)
-		     (- (instruction-src1-val instr)))))
+		   (perturbed-constant-value
+                    (instruction-src1-val instr))))
 
 	    (:src2
 	     (setf (instruction-src2-val instr)
-		   (add-noise (instruction-src2-val instr)))
-	     (when (mutate-constant-sign-p)
-	       (setf (instruction-src2-val instr)
-		     (- (instruction-src2-val instr))))))))
+		   (perturbed-constant-value
+                    (instruction-src2-val instr)))))))
 
-      program)))
+      program))
+
+(defun instruction-source-slots (instruction)
+  "Return the source slots that participate in INSTRUCTION execution."
+  (if (= (instruction-arity instruction) 1)
+      '(:src1)
+      '(:src1 :src2)))
+
+(defun instruction-source-type-at (instruction slot)
+  (ecase slot
+    (:src1 (instruction-src1-type instruction))
+    (:src2 (instruction-src2-type instruction))))
+
+(defun instruction-source-value-at (instruction slot)
+  (ecase slot
+    (:src1 (instruction-src1-val instruction))
+    (:src2 (instruction-src2-val instruction))))
+
+(defun set-instruction-source (instruction slot type value)
+  "Set one source SLOT to a validated TYPE and double-float VALUE."
+  (let ((value (coerce value 'double-float)))
+    (ecase slot
+      (:src1
+       (setf (instruction-src1-type instruction) type
+             (instruction-src1-val instruction) value))
+      (:src2
+       (setf (instruction-src2-type instruction) type
+             (instruction-src2-val instruction) value))))
+  instruction)
+
+(defun random-source-value (type)
+  "Return a valid encoded value for one instruction source TYPE."
+  (ecase type
+    (:reg (coerce (random +num-registers+) 'double-float))
+    (:obs (coerce (random *num-observations*) 'double-float))
+    (:const (coerce (random-constant) 'double-float))))
+
+(defun random-different-integer (current count)
+  "Return an integer below COUNT distinct from CURRENT when possible."
+  (if (<= count 1)
+      current
+      (let ((candidate (random (1- count))))
+        (if (>= candidate current) (1+ candidate) candidate))))
+
+(defun field-local-instruction-index (program)
+  "Choose one program index, preferring the current R0 backward slice."
+  (let* ((instructions (program-instructions program))
+         (count (length instructions)))
+    (when (plusp count)
+      (if (and *effective-aware-mutation-enabled*
+               (coin-flip *effective-instruction-selection-probability*))
+          (let ((effective
+                  (getf (analyze-program-effective-code program)
+                        :effective-indices)))
+            (if effective
+                (random-choice effective)
+                (random count)))
+          (random count)))))
+
+(defun mutate-instruction-opcode (instruction)
+  "Change INSTRUCTION's opcode within the active creation profile."
+  (let* ((old-op (instruction-op instruction))
+         (choices (remove old-op (active-instruction-opcodes) :test #'eq)))
+    (when choices
+      (let* ((new-op (random-choice choices))
+             (old-arity (instruction-arity instruction))
+             (new-arity (opcode-arity new-op)))
+        (setf (instruction-op instruction) new-op
+              (instruction-arity instruction) new-arity)
+        (cond
+          ((and (= old-arity 1) (= new-arity 2))
+           (multiple-value-bind (type value)
+               (decode-symbol (random-argument-or-constant))
+             (set-instruction-source instruction :src2 type value)))
+          ((= new-arity 1)
+           (set-instruction-source instruction :src2 :const 0.0d0)))
+        t))))
+
+(defun mutate-instruction-destination (instruction)
+  "Change INSTRUCTION's destination register."
+  (let ((old (instruction-dest instruction)))
+    (setf (instruction-dest instruction)
+          (random-different-integer old +num-registers+))
+    (/= old (instruction-dest instruction))))
+
+(defun mutate-instruction-source-type (instruction)
+  "Change one source between register, observation, and constant addressing."
+  (let* ((slot (random-choice (instruction-source-slots instruction)))
+         (old-type (instruction-source-type-at instruction slot))
+         (new-type
+           (random-choice (remove old-type '(:reg :obs :const) :test #'eq))))
+    (set-instruction-source
+     instruction slot new-type (random-source-value new-type))
+    t))
+
+(defun mutate-instruction-source-index (instruction)
+  "Change one register/observation source index without changing its type."
+  (let ((slots
+          (remove-if-not
+           (lambda (slot)
+             (member (instruction-source-type-at instruction slot)
+                     '(:reg :obs) :test #'eq))
+           (instruction-source-slots instruction))))
+    (when slots
+      (let* ((slot (random-choice slots))
+             (type (instruction-source-type-at instruction slot))
+             (old (truncate (instruction-source-value-at instruction slot)))
+             (count (if (eq type :reg)
+                        +num-registers+
+                        *num-observations*)))
+        (set-instruction-source
+         instruction slot type (random-different-integer old count))
+        (/= old (truncate (instruction-source-value-at instruction slot)))))))
+
+(defun mutate-instruction-constant (instruction)
+  "Perturb one constant source in INSTRUCTION when one exists."
+  (let ((slots
+          (remove-if-not
+           (lambda (slot)
+             (eq (instruction-source-type-at instruction slot) :const))
+           (instruction-source-slots instruction))))
+    (when slots
+      (let* ((slot (random-choice slots))
+             (old (instruction-source-value-at instruction slot)))
+        (set-instruction-source
+         instruction slot :const (perturbed-constant-value old))
+        (/= old (instruction-source-value-at instruction slot))))))
+
+(defun field-local-mutation-kinds (instruction)
+  "Return field-level edits currently applicable to INSTRUCTION."
+  (let ((kinds '(:opcode :destination :source-type)))
+    (when (some (lambda (slot)
+                  (member (instruction-source-type-at instruction slot)
+                          '(:reg :obs) :test #'eq))
+                (instruction-source-slots instruction))
+      (push :source-index kinds))
+    (when (some (lambda (slot)
+                  (eq (instruction-source-type-at instruction slot) :const))
+                (instruction-source-slots instruction))
+      (push :constant kinds))
+    kinds))
+
+(defun mutate-program-field-local (program)
+  "Apply one local instruction edit or a low-probability full replacement."
+  (let* ((instructions (program-instructions program))
+         (count (length instructions)))
+    (cond
+      ((zerop count)
+       (vector-push-extend (make-instruction) instructions)
+       (note-mutation-event :whole-instruction-replacement))
+      (t
+       (let ((index (field-local-instruction-index program)))
+         (if (coin-flip *whole-instruction-replacement-probability*)
+             (progn
+               (setf (aref instructions index) (make-instruction))
+               (note-mutation-event :whole-instruction-replacement))
+             (let* ((instruction (aref instructions index))
+                    (kind (random-choice
+                           (field-local-mutation-kinds instruction)))
+                    (changed-p
+                      (ecase kind
+                        (:opcode
+                         (mutate-instruction-opcode instruction))
+                        (:destination
+                         (mutate-instruction-destination instruction))
+                        (:source-type
+                         (mutate-instruction-source-type instruction))
+                        (:source-index
+                         (mutate-instruction-source-index instruction))
+                        (:constant
+                         (mutate-instruction-constant instruction)))))
+               (when changed-p
+                 (note-mutation-event
+                  (ecase kind
+                    (:opcode :instruction-opcode-mutation)
+                    (:destination :instruction-destination-mutation)
+                    (:source-type :instruction-source-type-mutation)
+                    (:source-index :instruction-source-index-mutation)
+                    (:constant :constant-mutation))))))))))
+  (note-mutation-event :field-local-instruction-mutation)
+  (note-mutation-event :program-mutation)
+  program)
+
+(defun mutate-program-legacy (program)
+  "Apply the historical independent structural/constant mutation operators."
+  (let ((changed-p nil))
+    (when (add-instruction-p
+           (length (program-instructions program)))
+      (let ((before (length (program-instructions program))))
+        (add-instruction program)
+        (when (> (length (program-instructions program)) before)
+          (setf changed-p t)
+          (note-mutation-event :instruction-add))))
+    (when (delete-instruction-p)
+      (let ((before (length (program-instructions program))))
+        (delete-instruction program)
+        (when (< (length (program-instructions program)) before)
+          (setf changed-p t)
+          (note-mutation-event :instruction-delete))))
+    (when (swap-instructions-p)
+      (let ((before (copy-seq (program-instructions program))))
+        (swap-instructions program)
+        (unless (and (= (length before)
+                        (length (program-instructions program)))
+                     (loop for prior across before
+                           for current across (program-instructions program)
+                           always (eq prior current)))
+          (setf changed-p t)
+          (note-mutation-event :instruction-swap))))
+    (when (mutate-constant-p)
+      (let ((before (pprint-program program)))
+        (mutate-constant program)
+        (unless (equal before (pprint-program program))
+          (setf changed-p t)
+          (note-mutation-event :constant-mutation))))
+    (when changed-p
+      (note-mutation-event :program-mutation)))
+  program)
 
 (defun mutate-program (program)
-  "Mutate a program by adding/deleting/swapping instructions
-   or mutating constants with likelihood *p-mut*."
+  "Mutate PROGRAM under the configured instruction-level policy."
   (when (mutate-program-p)
-    (let ((changed-p nil))
-      (when (add-instruction-p
-             (length (program-instructions program)))
-        (let ((before (length (program-instructions program))))
-          (add-instruction program)
-          (when (> (length (program-instructions program)) before)
-            (setf changed-p t)
-            (note-mutation-event :instruction-add))))
-      (when (delete-instruction-p)
-        (let ((before (length (program-instructions program))))
-          (delete-instruction program)
-          (when (< (length (program-instructions program)) before)
-            (setf changed-p t)
-            (note-mutation-event :instruction-delete))))
-      (when (swap-instructions-p)
-        (let ((before (copy-seq (program-instructions program))))
-          (swap-instructions program)
-          (unless (and (= (length before)
-                          (length (program-instructions program)))
-                       (loop for prior across before
-                             for current across (program-instructions program)
-                             always (eq prior current)))
-            (setf changed-p t)
-            (note-mutation-event :instruction-swap))))
-      (when (mutate-constant-p)
-        (let ((before (pprint-program program)))
-          (mutate-constant program)
-          (unless (equal before (pprint-program program))
-            (setf changed-p t)
-            (note-mutation-event :constant-mutation))))
-      (when changed-p
-        (note-mutation-event :program-mutation))))
+    (ecase *instruction-mutation-mode*
+      (:legacy (mutate-program-legacy program))
+      (:field-local (mutate-program-field-local program))))
   program)
   					; team mutations
 

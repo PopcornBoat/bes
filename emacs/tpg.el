@@ -209,6 +209,21 @@ selected yet."
            ("full" :full)
            ("reduced" :reduced)
            (other (error "Invalid instruction-set profile: %S" other))))
+        (instruction-mutation-mode
+         (pcase (transient-arg-value "--instruction-mutation=" args)
+           ("legacy" :legacy)
+           ("field-local" :field-local)
+           (other (error "Invalid instruction mutation mode: %S" other))))
+        (effective-aware-mutation-enabled
+         (pcase (transient-arg-value "--effective-aware=" args)
+           ("on" :enabled)
+           ("off" :disabled)
+           (other (error "Invalid effective-aware setting: %S" other))))
+        (compression-reseed-enabled
+         (pcase (transient-arg-value "--compression-reseed=" args)
+           ("on" :enabled)
+           ("off" :disabled)
+           (other (error "Invalid compression/reseed setting: %S" other))))
         (decoy-order-mode
          (pcase (transient-arg-value "--decoy-order=" args)
            ("fixed" :fixed)
@@ -300,6 +315,9 @@ selected yet."
       :num-observations ,num-observations
       :num-actions ,num-actions
       :instruction-set-profile ,instruction-set-profile
+      :instruction-mutation-mode ,instruction-mutation-mode
+      :effective-aware-mutation-enabled ,effective-aware-mutation-enabled
+      :compression-reseed-enabled ,compression-reseed-enabled
       :decoy-order-mode ,decoy-order-mode
       :cage2-opening-mode ,cage2-opening-mode
       :teacher-forcing-rollout-mode ,teacher-forcing-rollout-mode
@@ -442,6 +460,9 @@ selected yet."
             "--teacher-rollout=dagger"
             "--teacher-backend=heuristic"
             "--instruction-set=full"
+            "--instruction-mutation=legacy"
+            "--effective-aware=off"
+            "--compression-reseed=off"
             "--mode=online")
   ["Island"
     ("-I" "Island" "--island="
@@ -463,6 +484,12 @@ selected yet."
    ("-X" "Number of Actions" "*num-actions=")
    ("-U" "Instruction Set" "--instruction-set="
     :choices ("full" "reduced"))
+   ("-J" "Instruction Mutation" "--instruction-mutation="
+    :choices ("legacy" "field-local"))
+   ("-E" "Effective-aware Mutation" "--effective-aware="
+    :choices ("off" "on"))
+   ("-K" "Compression/Reseed" "--compression-reseed="
+    :choices ("off" "on"))
    ("-O" "Decoy Order" "--decoy-order="
     :choices ("fixed" "evolved"))
    ("-Q" "Episode Opening" "--opening="
@@ -586,6 +613,31 @@ selected yet."
              nil
              t
              "full"))))
+
+         (instruction-mutation-mode
+          (intern
+           (concat
+            ":"
+            (completing-read
+             "Instruction mutation: "
+             '("legacy" "field-local")
+             nil
+             t
+             "legacy"))))
+
+         (effective-aware-mutation-enabled
+          (string=
+           (completing-read
+            "Effective-aware instruction selection: "
+            '("off" "on") nil t "off")
+           "on"))
+
+         (compression-reseed-enabled
+          (string=
+           (completing-read
+            "Compression/reseed events: "
+            '("off" "on") nil t "off")
+           "on"))
 
          (decoy-order-mode
           (intern
@@ -772,6 +824,11 @@ selected yet."
             :num-observations ,num-observations
             :num-actions ,num-actions
             :instruction-set-profile ,instruction-set-profile
+            :instruction-mutation-mode ,instruction-mutation-mode
+            :effective-aware-mutation-enabled
+            ,(if effective-aware-mutation-enabled :enabled :disabled)
+            :compression-reseed-enabled
+            ,(if compression-reseed-enabled :enabled :disabled)
             :decoy-order-mode ,decoy-order-mode
             :cage2-opening-mode ,cage2-opening-mode
             :teacher-forcing-rollout-mode ,teacher-forcing-rollout-mode

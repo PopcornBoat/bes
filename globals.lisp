@@ -26,6 +26,59 @@ remain executable and are never rewritten when a checkpoint is loaded.")
   "Instruction creation profile. :FULL preserves the historical opcode set;
 :REDUCED samples only ADD, SUB, MUL, and DIV.")
 
+(defparameter *instruction-mutation-mode* :legacy
+  "Instruction-level mutation policy.
+
+:LEGACY preserves add/delete/swap/constant mutation. :FIELD-LOCAL changes one
+field of one instruction, with a small whole-instruction replacement escape
+probability. Learner, terminal, edge, and graph mutation remain unchanged.")
+
+(defun valid-instruction-mutation-mode-p (mode)
+  "Return true for a supported instruction-level mutation policy."
+  (member mode '(:legacy :field-local) :test #'eq))
+
+(defparameter *effective-aware-mutation-enabled* nil
+  "When true, instruction mutation preferentially targets the R0 backward slice.")
+
+(defparameter *effective-instruction-selection-probability* 0.8d0
+  "Probability that field-local mutation selects an effective instruction.
+
+The complementary probability samples the complete program, preserving an
+explicit route for inactive code to reconnect to the bid computation.")
+
+(defparameter *whole-instruction-replacement-probability* 0.05d0
+  "Escape probability for field-local whole-instruction replacement.")
+
+(defconstant +compression-reseed-protocol+ :compression-reseed-v1
+  "Versioned stateless R0 intron-compression and population-reseed protocol.")
+
+(defparameter *compression-reseed-enabled* nil
+  "When true, permit guarded compression-and-reseed events during evolution.")
+
+(defparameter *compression-reseed-min-generation* 2000
+  "Earliest generation at which compression may be considered.")
+
+(defparameter *compression-reseed-check-interval* 250
+  "Generation interval between inexpensive compression eligibility checks.")
+
+(defparameter *compression-reseed-min-intron-ratio* 0.95d0
+  "Minimum protected-incumbent intron ratio required for compression.")
+
+(defparameter *compression-reseed-plateau-generations* 400
+  "Minimum generations without an official incumbent change before compression.")
+
+(defparameter *compression-reseed-cooldown-generations* 1000
+  "Minimum generation distance between compression events.")
+
+(defparameter *compression-reseed-population-fraction* 0.10d0
+  "Maximum root-population fraction injected by one compression event.")
+
+(defvar *compression-reseed-last-event-generation* nil)
+(defvar *compression-reseed-last-improvement-generation* 1)
+(defvar *compression-reseed-last-incumbent-version* 0)
+(defvar *compression-reseed-event-count* 0)
+(defvar *compression-reseed-last-record* nil)
+
 (defun valid-instruction-set-profile-p (profile)
   "Return true for a supported instruction creation profile."
   (member profile '(:full :reduced) :test #'eq))

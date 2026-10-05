@@ -48,6 +48,7 @@ at each 30-, 50-, and 100-step horizon.
 |---|---:|---:|---:|---:|
 | Evolved checkpoint with legacy Decoy scheduling | -4.9053 | -10.2822 | -26.6667 | -41.8542 |
 | Same evolved checkpoint with Controller v2 | -4.7461 | -8.9800 | -19.5357 | **-33.2618** |
+| Reduced-operator fresh evolution (gen 1353 checkpoint) | -4.7403 | -8.8295 | -20.4782 | **-34.0480** |
 | Compiled heuristic TPG with Controller v2 | -4.4561 | -8.0130 | -16.4807 | **-28.9498** |
 
 The validated deterministic graph is versioned at
@@ -151,6 +152,26 @@ heuristic result at `-28.9498`. Re-evaluating the evolved checkpoint under the
 same controller improved it from `-41.8542` to `-33.2618`. This established
 controller/action resolution as a major source of the previous gap and left a
 small, measurable TPG scheduling gap for future work.
+
+### Effective-local mutation and guarded compression
+
+The next maintained treatment starts from the independently validated reduced
+checkpoint and uses `experiments/effective-local-compression.sexp`. Program
+mutation changes one opcode, destination, source type, source index, or
+constant at a time; whole-instruction replacement remains a 5% escape path.
+Eighty percent of instruction selections target the current R0 backward slice
+and twenty percent retain unrestricted exploration. Learner, terminal, edge,
+and graph mutation are unchanged.
+
+Guarded compression is not periodic global pruning. At or after generation
+2000, every 250 generations it may deep-copy the protected incumbent only when
+its intron ratio is at least 95%, the incumbent has not changed for at least
+400 generations, and the previous event is at least 1000 generations old. The
+compact copy must preserve every Top-k semantic ranking in the behavioral
+probe archive. One verified compact root and local variants occupying at most
+10% of the population are then injected; the historical best and its disk
+checkpoint are never modified by this mechanism. R0-only compression is
+disabled for recurrent policies.
 
 ## Running the system
 
