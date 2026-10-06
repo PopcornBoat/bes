@@ -55,11 +55,18 @@ explicit route for inactive code to reconnect to the bid computation.")
 (defparameter *compression-reseed-enabled* nil
   "When true, permit guarded compression-and-reseed events during evolution.")
 
-(defparameter *compression-reseed-min-generation* 2000
+(defparameter *compression-reseed-force-next-event* nil
+  "When true, bypass only scheduling gates for the next safe compression attempt.
+
+The one-shot request is consumed when graph analysis begins. Intron-ratio,
+stateless execution, deep-copy, archive-equivalence, and population-capacity
+checks remain mandatory.")
+
+(defparameter *compression-reseed-min-generation* 1000
   "Earliest generation at which compression may be considered.")
 
-(defparameter *compression-reseed-check-interval* 250
-  "Generation interval between inexpensive compression eligibility checks.")
+(defparameter *compression-reseed-check-interval* 1000
+  "Generation interval between scheduled compression attempts.")
 
 (defparameter *compression-reseed-min-intron-ratio* 0.95d0
   "Minimum protected-incumbent intron ratio required for compression.")

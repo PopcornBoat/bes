@@ -13,6 +13,7 @@
   "Return serialization-safe compression provenance for checkpoint metadata."
   (list :protocol +compression-reseed-protocol+
         :enabled (not (null *compression-reseed-enabled*))
+        :force-next-event (not (null *compression-reseed-force-next-event*))
         :event-count *compression-reseed-event-count*
         :last-event-generation *compression-reseed-last-event-generation*
         :last-improvement-generation
@@ -112,15 +113,22 @@ checkpoint graph is shared with the compact program."
 (defun compression-reseed-cheap-eligible-p ()
   "Apply generation, plateau, cooldown, and archive gates before graph analysis."
   (and (compression-reseed-active-p)
-       (>= *generation* *compression-reseed-min-generation*)
-       (zerop (mod *generation* *compression-reseed-check-interval*))
-       (>= (- *generation*
-              *compression-reseed-last-improvement-generation*)
-           *compression-reseed-plateau-generations*)
-       (or (null *compression-reseed-last-event-generation*)
-           (>= (- *generation* *compression-reseed-last-event-generation*)
-               *compression-reseed-cooldown-generations*))
-       *behavioral-probe-archive*))
+       *behavioral-probe-archive*
+       (or *compression-reseed-force-next-event*
+           (let* ((last-event *compression-reseed-last-event-generation*)
+                  (anchor (or last-event 0))
+                  (event-age (- *generation* anchor)))
+             (and
+              (>= *generation* *compression-reseed-min-generation*)
+              (plusp event-age)
+              (zerop (mod event-age
+                          *compression-reseed-check-interval*))
+              (>= (- *generation*
+                     *compression-reseed-last-improvement-generation*)
+                  *compression-reseed-plateau-generations*)
+              (or (null last-event)
+                  (>= event-age
+                      *compression-reseed-cooldown-generations*)))))))
 
 (defun compression-reseed-injection-size ()
   "Return the bounded number of roots this event may add."
@@ -141,6 +149,15 @@ and locality-control path."
   (compression-track-incumbent-change)
   (unless (compression-reseed-cheap-eligible-p)
     (return-from maybe-install-compression-reseed-parent (values nil 0)))
+  ;; A manual request bypasses only the scheduling gates and is consumed once.
+  ;; All graph-safety and behavior-equivalence checks below remain mandatory.
+  (let ((forced-p *compression-reseed-force-next-event*))
+    (setf *compression-reseed-force-next-event* nil)
+    (when forced-p
+      (emit-message
+       (format nil
+               "Generation ~D forced compression attempt started; safety gates remain enabled."
+               *generation*))))
   (let* ((analysis (analyze-team-effective-code *best-team*))
          (instructions (getf analysis :instruction-count))
          (introns (getf analysis :intron-count))

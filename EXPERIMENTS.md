@@ -104,8 +104,8 @@ action swap, and graph behavior remain active.
 Compression/reseed uses protocol `COMPRESSION-RESEED-V1` with fixed gates:
 
 ```text
-minimum generation:        2000
-eligibility check:         every 250 generations
+minimum generation:        1000
+scheduled interval:        every 1000 generations
 minimum intron ratio:      0.95
 incumbent plateau:         400 generations
 event cooldown:            1000 generations
@@ -117,6 +117,18 @@ The compact graph is injected only after exact Top-k ranking equality on the
 current versioned probe archive. Its variants pass through the same native
 mutation and semantic-locality control as other offspring. No event overwrites
 the historical checkpoint or prunes the existing population in place.
+
+For a controlled one-shot attempt after a measured plateau, submit:
+
+```text
+experiments/forced-effective-local-compression.sexp
+```
+
+Its `:compression-reseed-force-next-event :enabled` flag bypasses only the
+schedule and is consumed when analysis starts. It cannot bypass the 95% intron
+threshold, stateless-only rule, deep serialization copy, exact probe-ranking
+equivalence, or bounded population injection. Subsequent events return to the
+1000-generation schedule relative to the last successful event.
 
 Run with:
 

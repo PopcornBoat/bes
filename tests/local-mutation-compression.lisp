@@ -33,6 +33,12 @@
       (not (cl-tpg::valid-instruction-mutation-mode-p :unknown)))
  "only versioned instruction mutation modes are accepted")
 
+(check-local-compression
+ (and (= cl-tpg::*compression-reseed-min-generation* 1000)
+      (= cl-tpg::*compression-reseed-check-interval* 1000)
+      (= cl-tpg::*compression-reseed-cooldown-generations* 1000))
+ "scheduled compression uses the versioned 1000-generation cadence")
+
 (let* ((cl-tpg::*instruction-set-profile* :reduced)
        (instruction
          (local-test-instruction 0 :add :obs 0 :const 1)))
@@ -131,12 +137,13 @@
        (cl-tpg::*num-observations* 3)
        (cl-tpg::*num-actions* 36)
        (cl-tpg::*population-size* 10)
-       (cl-tpg::*generation* 2000)
+       (cl-tpg::*generation* 10)
        (cl-tpg::*official-guided-incumbent-version* 4)
        (cl-tpg::*compression-reseed-last-incumbent-version* 4)
        (cl-tpg::*compression-reseed-last-improvement-generation* 1)
        (cl-tpg::*compression-reseed-last-event-generation* nil)
        (cl-tpg::*compression-reseed-event-count* 0)
+       (cl-tpg::*compression-reseed-force-next-event* t)
        (instructions
          (append
           (loop repeat 19
@@ -174,8 +181,9 @@
                 (first (cl-tpg::team-learners compressed)))))
              1)
           (equal protected-before (cl-tpg::serialize-team best))
+          (not cl-tpg::*compression-reseed-force-next-event*)
           (= cl-tpg::*compression-reseed-event-count* 1))
-     "compression injects an independent compact root and protects BEST-TEAM")))
+     "forced compression bypasses scheduling once, injects an independent compact root, and protects BEST-TEAM")))
 
 (format t "~D local-mutation/compression checks passed.~%"
         *local-compression-checks*)

@@ -164,7 +164,7 @@ and twenty percent retain unrestricted exploration. Learner, terminal, edge,
 and graph mutation are unchanged.
 
 Guarded compression is not periodic global pruning. At or after generation
-2000, every 250 generations it may deep-copy the protected incumbent only when
+1000, every 1000 generations it may deep-copy the protected incumbent only when
 its intron ratio is at least 95%, the incumbent has not changed for at least
 400 generations, and the previous event is at least 1000 generations old. The
 compact copy must preserve every Top-k semantic ranking in the behavioral
@@ -172,6 +172,11 @@ probe archive. One verified compact root and local variants occupying at most
 10% of the population are then injected; the historical best and its disk
 checkpoint are never modified by this mechanism. R0-only compression is
 disabled for recurrent policies.
+
+A one-shot `:compression-reseed-force-next-event :enabled` request bypasses
+only the generation, plateau, and cooldown schedule. It is consumed when graph
+analysis begins; the intron threshold, stateless-only rule, independent deep
+copy, exact probe-ranking equivalence, and capacity checks remain mandatory.
 
 ## Running the system
 
