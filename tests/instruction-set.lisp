@@ -53,7 +53,9 @@
    (eq (getf request :effective-aware-mutation-enabled :disabled) :enabled)
    (eq (getf request :compression-reseed-enabled :disabled) :enabled)
    (eq (getf request :compression-reseed-force-next-event :disabled) :enabled)
-   (getf request :read-only-register-profile :disabled)))
+   (getf request :read-only-register-profile :disabled)
+   (eq (getf request :categorical-predicate-mutation-enabled :disabled)
+       :enabled)))
 
 (check-instruction-set
  (equal (cl-tpg::active-instruction-opcodes :full)

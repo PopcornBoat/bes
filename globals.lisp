@@ -90,6 +90,16 @@ explicit route for inactive code to reconnect to the bid computation.")
 (defparameter *whole-instruction-replacement-probability* 0.05d0
   "Escape probability for field-local whole-instruction replacement.")
 
+(defparameter *categorical-predicate-mutation-enabled* nil
+  "When true, field-local mutation may atomically form EQ(OBS-i, ROR-c).
+
+The destination register is preserved, so this operator repairs predicate
+reachability without directly choosing a policy action or bypassing TPG
+selection, behavioral-locality control, or official promotion.")
+
+(defparameter *categorical-predicate-mutation-probability* 0.10d0
+  "Probability of a complete categorical predicate edit per field mutation.")
+
 (defconstant +compression-reseed-protocol+ :compression-reseed-v1
   "Versioned stateless R0 intron-compression and population-reseed protocol.")
 

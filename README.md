@@ -199,6 +199,15 @@ Checkpoints record both the ROR profile and the exact value bank. ROR runs use
 their own filename component and checkpoint directory. The Python bridge and
 Semantic-36 Controller contract are unchanged.
 
+When `:categorical-predicate-mutation-enabled :enabled` is selected with the
+`reduced-eq` instruction profile, 10% of field-local instruction mutations
+atomically form `EQ(OBS-i, ROR-c)`. The edit preserves the selected
+instruction's destination register while choosing the observation and category
+stochastically. This crosses the multi-field predicate-construction valley
+without choosing an action or bypassing normal TPG selection and official
+promotion. The operator is disabled by default and recorded in checkpoint
+metadata and filenames.
+
 ## Running the system
 
 The canonical checkout is `/home/hardison/bes` in WSL Ubuntu. The Python bridge
@@ -213,6 +222,8 @@ scripts/bes-search submit experiments/official-guided-semantic36.sexp
 scripts/bes-search submit experiments/read-only-registers.sexp
 # Exact categorical predicates over observations/ROR values:
 scripts/bes-search submit experiments/categorical-equality.sexp
+# Atomically form complete EQ(OBS-i, ROR-c) predicates during mutation:
+scripts/bes-search submit experiments/categorical-predicate-mutation.sexp
 ```
 
 Monitor or stop a search with:

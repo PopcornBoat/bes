@@ -13,6 +13,7 @@ if [[ "${1:-}" == --core ]]; then
     tests/effective-code.lisp
     tests/instruction-set.lisp
     tests/read-only-registers.lisp
+    tests/categorical-predicate-mutation.lisp
     tests/local-mutation-compression.lisp
     tests/behavioral-locality.lisp
     tests/official-guided.lisp

@@ -220,6 +220,11 @@ selected yet."
            ("legacy" :legacy)
            ("field-local" :field-local)
            (other (error "Invalid instruction mutation mode: %S" other))))
+        (categorical-predicate-mutation-enabled
+         (pcase (transient-arg-value "--categorical-predicate=" args)
+           ("on" :enabled)
+           ("off" :disabled)
+           (other (error "Invalid categorical-predicate setting: %S" other))))
         (effective-aware-mutation-enabled
          (pcase (transient-arg-value "--effective-aware=" args)
            ("on" :enabled)
@@ -323,6 +328,8 @@ selected yet."
       :instruction-set-profile ,instruction-set-profile
       :read-only-register-profile ,read-only-register-profile
       :instruction-mutation-mode ,instruction-mutation-mode
+      :categorical-predicate-mutation-enabled
+      ,categorical-predicate-mutation-enabled
       :effective-aware-mutation-enabled ,effective-aware-mutation-enabled
       :compression-reseed-enabled ,compression-reseed-enabled
       :decoy-order-mode ,decoy-order-mode
@@ -469,6 +476,7 @@ selected yet."
             "--instruction-set=full"
             "--read-only-registers=off"
             "--instruction-mutation=legacy"
+            "--categorical-predicate=off"
             "--effective-aware=off"
             "--compression-reseed=off"
             "--mode=online")
@@ -496,6 +504,8 @@ selected yet."
     :choices ("off" "cage2-categorical-v1"))
    ("-J" "Instruction Mutation" "--instruction-mutation="
     :choices ("legacy" "field-local"))
+   ("-Y" "Categorical Predicate" "--categorical-predicate="
+    :choices ("off" "on"))
    ("-E" "Effective-aware Mutation" "--effective-aware="
     :choices ("off" "on"))
    ("-K" "Compression/Reseed" "--compression-reseed="
@@ -645,6 +655,13 @@ selected yet."
              nil
              t
              "legacy"))))
+
+         (categorical-predicate-mutation-enabled
+          (string=
+           (completing-read
+            "Atomic categorical-predicate mutation: "
+            '("off" "on") nil t "off")
+           "on"))
 
          (effective-aware-mutation-enabled
           (string=
@@ -847,6 +864,8 @@ selected yet."
             :instruction-set-profile ,instruction-set-profile
             :read-only-register-profile ,read-only-register-profile
             :instruction-mutation-mode ,instruction-mutation-mode
+            :categorical-predicate-mutation-enabled
+            ,(if categorical-predicate-mutation-enabled :enabled :disabled)
             :effective-aware-mutation-enabled
             ,(if effective-aware-mutation-enabled :enabled :disabled)
             :compression-reseed-enabled

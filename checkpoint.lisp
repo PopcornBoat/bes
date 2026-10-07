@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 26
-  "Checkpoint version recording read-only-register policy provenance.")
+(defconstant +best-team-checkpoint-version+ 27
+  "Checkpoint version recording categorical-predicate mutation provenance.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -79,7 +79,7 @@ A configuration keeps overwriting its own immediate-best file, while agent,
 observation/action shape, mode, and Hamming variants can coexist in one
 checkpoint directory."
   (format nil
-          "~A-~D-~D-~A-operators-~A~A~A-order-~A-teacher-~A-opening-~A-hamming-~A-memory-~A.lisp"
+          "~A-~D-~D-~A-operators-~A~A~A~A-order-~A-teacher-~A-opening-~A-hamming-~A-memory-~A.lisp"
           (checkpoint-agent-type)
           *num-observations*
           *num-actions*
@@ -100,6 +100,9 @@ checkpoint directory."
                        (symbol-name *instruction-mutation-mode*))
                       (if *effective-aware-mutation-enabled* "on" "off")
                       (if *compression-reseed-enabled* "on" "off")))
+          (if *categorical-predicate-mutation-enabled*
+              "-categorical-predicate-on"
+              "")
           (string-downcase (symbol-name *decoy-order-mode*))
           (string-downcase (symbol-name *teacher-backend*))
           (string-downcase (symbol-name *cage2-opening-mode*))
@@ -129,6 +132,8 @@ checkpoint directory."
                              *effective-aware-mutation-enabled*)
                            (compression-reseed-enabled
                              *compression-reseed-enabled*)
+                           (categorical-predicate-mutation-enabled
+                             *categorical-predicate-mutation-enabled*)
                            (terminal-action-format *terminal-action-format*))
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   (unless (valid-instruction-set-profile-p instruction-set-profile)
@@ -173,6 +178,11 @@ checkpoint directory."
       ,(and compression-reseed-enabled
             (fboundp 'compression-reseed-state-copy)
             (compression-reseed-state-copy))
+    :categorical-predicate-mutation-enabled
+      ,(not (null categorical-predicate-mutation-enabled))
+    :categorical-predicate-mutation-probability
+      ,(and categorical-predicate-mutation-enabled
+            *categorical-predicate-mutation-probability*)
     :terminal-action-format ,terminal-action-format
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode
@@ -245,6 +255,8 @@ checkpoint directory."
                                   *effective-aware-mutation-enabled*)
                                 (compression-reseed-enabled
                                   *compression-reseed-enabled*)
+                                (categorical-predicate-mutation-enabled
+                                  *categorical-predicate-mutation-enabled*)
                                 (terminal-action-format
                                   *terminal-action-format*))
   "Write TEAM, FITNESS, and provenance metadata to PATH."
@@ -279,6 +291,8 @@ checkpoint directory."
            :effective-aware-mutation-enabled
              effective-aware-mutation-enabled
            :compression-reseed-enabled compression-reseed-enabled
+           :categorical-predicate-mutation-enabled
+             categorical-predicate-mutation-enabled
            :terminal-action-format terminal-action-format
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
@@ -316,6 +330,8 @@ checkpoint directory."
     :instruction-mutation-mode *instruction-mutation-mode*
     :effective-aware-mutation-enabled *effective-aware-mutation-enabled*
     :compression-reseed-enabled *compression-reseed-enabled*
+    :categorical-predicate-mutation-enabled
+      *categorical-predicate-mutation-enabled*
     :terminal-action-format *terminal-action-format*
     :decoy-order-mode *decoy-order-mode*
     :cage2-opening-mode *cage2-opening-mode*

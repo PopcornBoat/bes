@@ -38,7 +38,9 @@
    (eq (getf request :effective-aware-mutation-enabled) :enabled)
    (eq (getf request :compression-reseed-enabled) :enabled)
    (eq (getf request :compression-reseed-force-next-event) :enabled)
-   (getf request :read-only-register-profile)))
+   (getf request :read-only-register-profile)
+   (eq (getf request :categorical-predicate-mutation-enabled :disabled)
+       :enabled)))
 
 (check-ror
  (and (cl-tpg::valid-read-only-register-profile-p :disabled)
