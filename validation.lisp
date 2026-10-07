@@ -199,50 +199,21 @@ CAGE3 MODE:
       (when cage2-p
         (report-checkpoint-controller-protocol
          *loaded-checkpoint-metadata* "Validation")
-        (let ((saved-format
-                (or (getf *loaded-checkpoint-metadata*
-                          :terminal-action-format)
-                    :factored)))
-          (unless (valid-terminal-action-format-p saved-format)
-            (error "Unsupported checkpoint terminal action format: ~S."
-                   saved-format))
-          (setf *terminal-action-format* saved-format))
-        (let ((saved-profile
-                (or (getf *loaded-checkpoint-metadata*
-                          :instruction-set-profile)
-                    :full)))
-          (unless (valid-instruction-set-profile-p saved-profile)
-            (error "Unsupported checkpoint instruction-set profile: ~S."
-                   saved-profile))
-          (setf *instruction-set-profile* saved-profile)
+        (multiple-value-bind (saved-format saved-profile saved-ror-profile)
+            (checkpoint-execution-profile
+             *loaded-checkpoint-metadata* "Validation checkpoint")
+          (setf *terminal-action-format* saved-format
+                *instruction-set-profile* saved-profile
+                *read-only-register-profile* saved-ror-profile)
           (emit-message
            (format nil
                    "Validation checkpoint instruction-set profile=~A; serialized historical opcodes remain executable."
-                   saved-profile))))
-        (let* ((saved-ror-profile
-                 (or (getf *loaded-checkpoint-metadata*
-                           :read-only-register-profile)
-                     :disabled))
-               (saved-ror-values
-                 (getf *loaded-checkpoint-metadata*
-                       :read-only-register-values)))
-          (unless (valid-read-only-register-profile-p saved-ror-profile)
-            (error "Unsupported checkpoint read-only-register profile: ~S."
-                   saved-ror-profile))
-          (when (and saved-ror-values
-                     (not (equal saved-ror-values
-                                 (coerce
-                                  (active-read-only-register-values
-                                   saved-ror-profile)
-                                  'list))))
-            (error "Checkpoint ROR bank does not match profile ~S: ~S."
-                   saved-ror-profile saved-ror-values))
-          (setf *read-only-register-profile* saved-ror-profile)
+                   saved-profile))
           (emit-message
            (format nil
                    "Validation checkpoint read-only-register profile=~A values=~S."
                    saved-ror-profile
-                   (active-read-only-register-values saved-ror-profile))))
+                   (active-read-only-register-values saved-ror-profile)))))
       (when cage2-p
         (ensure-team-observation-compatible team *num-observations*))
       (emit-message

@@ -404,6 +404,8 @@ return their fixed configured addresses."
                                     (compression-reseed-force-next-event nil)
                                     (read-only-register-profile :disabled)
                                     (categorical-predicate-mutation-enabled
+                                      nil)
+                                    (teacher-guided-predicate-injection-enabled
                                       nil))
   "Set the hyperparameters according to the TCP request."
 
@@ -491,7 +493,9 @@ return their fixed configured addresses."
         *compression-reseed-force-next-event*
           (not (null compression-reseed-force-next-event))
         *categorical-predicate-mutation-enabled*
-          (not (null categorical-predicate-mutation-enabled)))
+          (not (null categorical-predicate-mutation-enabled))
+        *teacher-guided-predicate-injection-enabled*
+          (not (null teacher-guided-predicate-injection-enabled)))
 
   (when (and *compression-reseed-enabled*
              (or (not (eq *instruction-mutation-mode* :field-local))
@@ -507,6 +511,12 @@ return their fixed configured addresses."
                  (not (member :eq (active-instruction-opcodes) :test #'eq))
                  (zerop (active-read-only-register-count))))
     (error "Categorical predicate mutation requires FIELD-LOCAL, EQ, and active RORs."))
+
+  (when (and *teacher-guided-predicate-injection-enabled*
+             (or (not (eq *instruction-mutation-mode* :field-local))
+                 (not (member :eq (active-instruction-opcodes) :test #'eq))
+                 (zerop (active-read-only-register-count))))
+    (error "Teacher-guided predicate injection requires FIELD-LOCAL, EQ, and active RORs."))
 
   (setf *checkpoint-directory* checkpoint-directory))
 
@@ -531,7 +541,9 @@ return their fixed configured addresses."
                                   (compression-reseed-enabled nil)
                                   (compression-reseed-force-next-event nil)
                                   (read-only-register-profile :disabled)
-                                  (categorical-predicate-mutation-enabled nil))
+                                  (categorical-predicate-mutation-enabled nil)
+                                  (teacher-guided-predicate-injection-enabled
+                                    nil))
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -608,6 +620,16 @@ return their fixed configured addresses."
            compression-reseed-enabled)
        (or (not categorical-predicate-mutation-enabled)
            (and (eq instruction-mutation-mode :field-local)
+                (member :eq
+                        (active-instruction-opcodes instruction-set-profile)
+                        :test #'eq)
+                (plusp
+                 (length
+                 (active-read-only-register-values
+                   read-only-register-profile)))))
+       (or (not teacher-guided-predicate-injection-enabled)
+           (and (eq mode :official-guided)
+                (eq instruction-mutation-mode :field-local)
                 (member :eq
                         (active-instruction-opcodes instruction-set-profile)
                         :test #'eq)
@@ -706,6 +728,9 @@ return their fixed configured addresses."
         (categorical-predicate-mutation-enabled
           (eq (getf msg :categorical-predicate-mutation-enabled :disabled)
               :enabled))
+        (teacher-guided-predicate-injection-enabled
+          (eq (getf msg :teacher-guided-predicate-injection-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -718,7 +743,7 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
@@ -728,6 +753,7 @@ return their fixed configured addresses."
              read-only-register-profile
              instruction-mutation-mode
              categorical-predicate-mutation-enabled
+             teacher-guided-predicate-injection-enabled
              effective-aware-mutation-enabled
              compression-reseed-enabled
              compression-reseed-force-next-event
@@ -802,7 +828,8 @@ return their fixed configured addresses."
          compression-reseed-enabled
          compression-reseed-force-next-event
          read-only-register-profile
-         categorical-predicate-mutation-enabled)
+         categorical-predicate-mutation-enabled
+         teacher-guided-predicate-injection-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -848,7 +875,9 @@ return their fixed configured addresses."
              compression-reseed-force-next-event
            :read-only-register-profile read-only-register-profile
            :categorical-predicate-mutation-enabled
-             categorical-predicate-mutation-enabled)
+             categorical-predicate-mutation-enabled
+           :teacher-guided-predicate-injection-enabled
+             teacher-guided-predicate-injection-enabled)
 
           (push
            (bt:make-thread
@@ -959,6 +988,9 @@ return their fixed configured addresses."
         (categorical-predicate-mutation-enabled
           (eq (getf msg :categorical-predicate-mutation-enabled :disabled)
               :enabled))
+        (teacher-guided-predicate-injection-enabled
+          (eq (getf msg :teacher-guided-predicate-injection-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -1019,7 +1051,8 @@ return their fixed configured addresses."
          compression-reseed-enabled
          compression-reseed-force-next-event
          read-only-register-profile
-         categorical-predicate-mutation-enabled)
+         categorical-predicate-mutation-enabled
+         teacher-guided-predicate-injection-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -1065,7 +1098,9 @@ return their fixed configured addresses."
              compression-reseed-force-next-event
            :read-only-register-profile read-only-register-profile
            :categorical-predicate-mutation-enabled
-             categorical-predicate-mutation-enabled)
+             categorical-predicate-mutation-enabled
+           :teacher-guided-predicate-injection-enabled
+             teacher-guided-predicate-injection-enabled)
 
           (push
            (bt:make-thread

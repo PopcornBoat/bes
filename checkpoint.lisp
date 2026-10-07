@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 27
-  "Checkpoint version recording categorical-predicate mutation provenance.")
+(defconstant +best-team-checkpoint-version+ 28
+  "Checkpoint version recording teacher-guided predicate provenance.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -45,6 +45,8 @@
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
       (cond
+        (*teacher-guided-predicate-injection-enabled*
+         "official-guided-teacher-guided-predicate")
         (*near-miss-lineages-enabled*
          "official-guided-near-miss-lineage")
         (*teacher-directed-repair-enabled*
@@ -134,6 +136,8 @@ checkpoint directory."
                              *compression-reseed-enabled*)
                            (categorical-predicate-mutation-enabled
                              *categorical-predicate-mutation-enabled*)
+                           (teacher-guided-predicate-injection-enabled
+                             *teacher-guided-predicate-injection-enabled*)
                            (terminal-action-format *terminal-action-format*))
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   (unless (valid-instruction-set-profile-p instruction-set-profile)
@@ -183,6 +187,11 @@ checkpoint directory."
     :categorical-predicate-mutation-probability
       ,(and categorical-predicate-mutation-enabled
             *categorical-predicate-mutation-probability*)
+    :teacher-guided-predicate-injection-enabled
+      ,(not (null teacher-guided-predicate-injection-enabled))
+    :teacher-guided-predicate-protocol
+      ,(and teacher-guided-predicate-injection-enabled
+            +teacher-guided-predicate-protocol+)
     :terminal-action-format ,terminal-action-format
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode
@@ -205,6 +214,10 @@ checkpoint directory."
       ,(and *targeted-routing-repair-enabled*
             (fboundp 'targeted-routing-repair-state-copy)
             (targeted-routing-repair-state-copy))
+    :teacher-guided-predicate-state
+      ,(and teacher-guided-predicate-injection-enabled
+            (fboundp 'teacher-guided-predicate-state-copy)
+            (teacher-guided-predicate-state-copy))
     :targeted-specialist-composition-state
       ,(and *targeted-specialist-composition-enabled*
             (fboundp 'targeted-specialist-composition-state-copy)
@@ -257,6 +270,8 @@ checkpoint directory."
                                   *compression-reseed-enabled*)
                                 (categorical-predicate-mutation-enabled
                                   *categorical-predicate-mutation-enabled*)
+                                (teacher-guided-predicate-injection-enabled
+                                  *teacher-guided-predicate-injection-enabled*)
                                 (terminal-action-format
                                   *terminal-action-format*))
   "Write TEAM, FITNESS, and provenance metadata to PATH."
@@ -293,6 +308,8 @@ checkpoint directory."
            :compression-reseed-enabled compression-reseed-enabled
            :categorical-predicate-mutation-enabled
              categorical-predicate-mutation-enabled
+           :teacher-guided-predicate-injection-enabled
+             teacher-guided-predicate-injection-enabled
            :terminal-action-format terminal-action-format
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
@@ -332,6 +349,8 @@ checkpoint directory."
     :compression-reseed-enabled *compression-reseed-enabled*
     :categorical-predicate-mutation-enabled
       *categorical-predicate-mutation-enabled*
+    :teacher-guided-predicate-injection-enabled
+      *teacher-guided-predicate-injection-enabled*
     :terminal-action-format *terminal-action-format*
     :decoy-order-mode *decoy-order-mode*
     :cage2-opening-mode *cage2-opening-mode*
@@ -386,6 +405,52 @@ return NIL for FITNESS and METADATA."
           *loaded-best-fitness* fitness
           *loaded-checkpoint-metadata* metadata)
     (values team fitness metadata)))
+
+(defun checkpoint-execution-profile (metadata &optional (context "Checkpoint"))
+  "Return validated terminal, instruction, and ROR profiles from METADATA.
+
+Legacy checkpoints use the historical defaults.  The ROR bank is checked as
+part of the profile because programs containing ROR sources must never be
+evaluated under a missing or different constant bank."
+  (let* ((terminal-format
+           (or (getf metadata :terminal-action-format) :factored))
+         (instruction-profile
+           (or (getf metadata :instruction-set-profile) :full))
+         (ror-profile
+           (or (getf metadata :read-only-register-profile) :disabled))
+         (saved-ror-values
+           (getf metadata :read-only-register-values)))
+    (unless (valid-terminal-action-format-p terminal-format)
+      (error "~A has unsupported terminal action format: ~S."
+             context terminal-format))
+    (unless (valid-instruction-set-profile-p instruction-profile)
+      (error "~A has unsupported instruction-set profile: ~S."
+             context instruction-profile))
+    (unless (valid-read-only-register-profile-p ror-profile)
+      (error "~A has unsupported read-only-register profile: ~S."
+             context ror-profile))
+    (when (and saved-ror-values
+               (not (equal saved-ror-values
+                           (coerce
+                            (active-read-only-register-values ror-profile)
+                            'list))))
+      (error "~A ROR bank does not match profile ~S: ~S."
+             context ror-profile saved-ror-values))
+    (values terminal-format instruction-profile ror-profile)))
+
+(defun checkpoint-execution-profile-list
+       (metadata &optional (context "Checkpoint"))
+  "Return CHECKPOINT-EXECUTION-PROFILE as a comparable three-item list."
+  (multiple-value-list (checkpoint-execution-profile metadata context)))
+
+(defun ensure-compatible-checkpoint-execution-profile
+       (expected metadata context)
+  "Require METADATA to use the three-item execution profile EXPECTED."
+  (let ((actual (checkpoint-execution-profile-list metadata context)))
+    (unless (equal expected actual)
+      (error "~A execution profile ~S differs from candidate profile ~S."
+             context actual expected))
+    actual))
 
 (defun report-checkpoint-controller-protocol (metadata context)
   "Report how checkpoint Controller provenance relates to the active protocol."

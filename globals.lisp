@@ -100,6 +100,12 @@ selection, behavioral-locality control, or official promotion.")
 (defparameter *categorical-predicate-mutation-probability* 0.10d0
   "Probability of a complete categorical predicate edit per field mutation.")
 
+(defparameter *teacher-guided-predicate-injection-enabled* nil
+  "When true, use systematic DAgger disagreements to synthesize exact
+categorical bid gates for the teacher's target/response pair.  Generated
+children still pass behavioral-locality, collateral, grouped-selection, and
+official paired-evaluation gates; the teacher is never consulted at deployment.")
+
 (defconstant +compression-reseed-protocol+ :compression-reseed-v1
   "Versioned stateless R0 intron-compression and population-reseed protocol.")
 
@@ -527,6 +533,25 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
 (defconstant +teacher-directed-repair-mismatch-penalty+ 1000.0d0
   "Penalty multiplier suppressing a synthesized bidder off its target gate.")
 
+(defconstant +teacher-guided-predicate-protocol+
+  :teacher-guided-categorical-predicate-v1
+  "Version tag for disagreement-directed exact categorical bid gates.")
+
+(defconstant +teacher-guided-predicate-rng-salt+ 4404741
+  "Independent deterministic salt for guided-predicate scheduling draws.")
+
+(defconstant +teacher-guided-predicate-quota+ 0.10d0
+  "Fraction of reproduced roots reserved for guided-predicate attempts.")
+
+(defconstant +teacher-guided-predicate-max-parents+ 8
+  "Maximum live parents inspected for one guided-predicate slot.")
+
+(defconstant +teacher-guided-predicate-max-predicates+ 12
+  "Maximum highest-separation predicates tried for one parent and issue.")
+
+(defconstant +teacher-guided-predicate-protected-survivors+ 1
+  "Maximum accepted guided repair protected for its first evaluated selection.")
+
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
@@ -567,6 +592,9 @@ candidate to the independent reference evaluator.")
 
 (defvar *online-staged-best-parent-team* nil
   "Independent direct-parent graph associated with the staged challenger.")
+
+(defvar *online-staged-best-guided-priority* nil
+  "Whether the staged official challenger is a teacher-guided repair candidate.")
 
 (defconstant +online-fitness-stage-two-generation+ 201
   "First online generation evaluated with ten training episodes per team.")
@@ -970,6 +998,21 @@ this switch for selection or promotion.")
 
 (defvar *teacher-directed-repair-generation-records* nil
   "teacher-directed repair directed repair decisions waiting for generation journaling.")
+
+(defvar *teacher-guided-predicate-rng-root* nil
+  "Root of the independent counter-based guided-predicate stream.")
+
+(defvar *teacher-guided-predicate-rng-cursor* 0
+  "Number of deterministic guided-predicate draws consumed.")
+
+(defvar *teacher-guided-predicate-age* 0
+  "Number of completed guided-predicate reproduction generations.")
+
+(defvar *teacher-guided-predicate-generation-records* nil
+  "Guided-predicate decisions waiting for generation journaling.")
+
+(defvar *teacher-guided-predicate-live-records* nil
+  "EQ table mapping newly generated guided children to repair records.")
 
 (defvar *grouped-selection-generation-record* nil
   "Pending serializable grouped selection record for the current generation.")

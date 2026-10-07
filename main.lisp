@@ -800,6 +800,7 @@ promotion still requires the stricter positive one-standard-error improvement."
         *online-staged-best-generation* nil
         *online-staged-best-lineage* nil
         *online-staged-best-parent-team* nil
+        *online-staged-best-guided-priority* nil
         *online-staged-best-credit-priority* nil
         *online-staged-best-credit-lineage-id* nil
         *online-staged-best-near-miss-lineage-id* nil
@@ -841,16 +842,23 @@ promotion still requires the stricter positive one-standard-error improvement."
    :recurrent-policy-enabled *recurrent-policy-enabled*
    :teacher-backend *teacher-backend*))
 
-(defun note-online-generation-candidate (team fitness)
+(defun note-online-generation-candidate
+       (team fitness &key (guided-priority 0))
   "Retain the strongest training winner seen in the current submission window."
   (let ((priority
           (if (official-return-credit-active-p)
               (official-return-credit-candidate-priority team)
               0)))
     (when (or (null *online-staged-best-fitness*)
-              (> priority (or *online-staged-best-credit-priority* 0))
-              (and (= priority (or *online-staged-best-credit-priority* 0))
-                   (> fitness *online-staged-best-fitness*)))
+              (> guided-priority
+                 (or *online-staged-best-guided-priority* 0))
+              (and (= guided-priority
+                      (or *online-staged-best-guided-priority* 0))
+                   (or (> priority
+                          (or *online-staged-best-credit-priority* 0))
+                       (and (= priority
+                               (or *online-staged-best-credit-priority* 0))
+                            (> fitness *online-staged-best-fitness*)))))
       (let ((parent (behavioral-parent-for-team team))
             (near-miss-identity
               (and (near-miss-active-p)
@@ -864,6 +872,7 @@ promotion still requires the stricter positive one-standard-error improvement."
             *online-staged-best-parent-team*
               (and parent
                    (deep-copy-team-via-serialization parent))
+            *online-staged-best-guided-priority* guided-priority
             *online-staged-best-credit-priority* priority
             *online-staged-best-credit-lineage-id*
               (and (official-return-credit-active-p)
@@ -941,6 +950,7 @@ promotion still requires the stricter positive one-standard-error improvement."
           *online-staged-best-generation* nil
           *online-staged-best-lineage* nil
           *online-staged-best-parent-team* nil
+          *online-staged-best-guided-priority* nil
           *online-staged-best-credit-priority* nil
           *online-staged-best-credit-lineage-id* nil)
     (emit-message
@@ -1336,6 +1346,7 @@ promotion still requires the stricter positive one-standard-error improvement."
           *online-staged-best-generation* nil
           *online-staged-best-lineage* nil
           *online-staged-best-parent-team* nil
+          *online-staged-best-guided-priority* nil
           *online-staged-best-credit-priority* nil
           *online-staged-best-credit-lineage-id* nil
           *online-staged-best-near-miss-lineage-id* nil
@@ -1860,12 +1871,29 @@ promotion still requires the stricter positive one-standard-error improvement."
                  (*recurrent-policy-enabled* nil)
                  (*hamming-space-enabled* nil)
                  (*factored-actions-enabled* t)
-                 (candidate (load-best-team (getf request :candidate-path)))
-                 (incumbent (load-best-team (getf request :incumbent-path)))
+                 (candidate-values
+                   (multiple-value-list
+                    (load-best-team (getf request :candidate-path))))
+                 (candidate (first candidate-values))
+                 (candidate-metadata (third candidate-values))
+                 (candidate-profile
+                   (checkpoint-execution-profile-list
+                    candidate-metadata "Official-guided candidate"))
+                 (*terminal-action-format* (first candidate-profile))
+                 (*instruction-set-profile* (second candidate-profile))
+                 (*read-only-register-profile* (third candidate-profile))
+                 (incumbent-values
+                   (multiple-value-list
+                    (load-best-team (getf request :incumbent-path))))
+                 (incumbent (first incumbent-values))
+                 (incumbent-metadata (third incumbent-values))
                  (direct-parent-path (getf request :direct-parent-path))
-                 (direct-parent
+                 (direct-parent-values
                    (and direct-parent-path
-                        (load-best-team direct-parent-path)))
+                        (multiple-value-list
+                         (load-best-team direct-parent-path))))
+                 (direct-parent (first direct-parent-values))
+                 (direct-parent-metadata (third direct-parent-values))
                  (return-credit-seeds
                    (getf request :return-credit-seeds))
                  (return-credit-stages
@@ -1888,6 +1916,13 @@ promotion still requires the stricter positive one-standard-error improvement."
                  (promotion-seeds (getf request :promotion-seeds))
                  (promotion-stages (getf request :promotion-stages))
                  (reference-seeds (getf request :reference-seeds)))
+            (ensure-compatible-checkpoint-execution-profile
+             candidate-profile incumbent-metadata
+             "Official-guided incumbent")
+            (when direct-parent
+              (ensure-compatible-checkpoint-execution-profile
+               candidate-profile direct-parent-metadata
+               "Official-guided direct parent"))
             (ensure-team-observation-compatible candidate *num-observations*)
             (ensure-team-observation-compatible incumbent *num-observations*)
             (when direct-parent
@@ -2223,6 +2258,9 @@ reference batch."
         *semantic-locality-control-enabled* (eq mode :official-guided)
         *grouped-selection-enabled* (eq mode :official-guided)
         *targeted-disagreement-audit-enabled* (eq mode :official-guided)
+        *teacher-guided-predicate-injection-enabled*
+          (and *teacher-guided-predicate-injection-enabled*
+               (eq mode :official-guided))
         ;; Experimental repair/lineage mechanisms remain loadable for archived
         ;; checkpoints but are not part of the active research configuration.
         *official-return-credit-enabled* nil
@@ -2715,10 +2753,17 @@ return-credit lineage uses this bounded exception only for fresh official-credit
          (return-credit-protected
            (and (official-return-credit-active-p)
                 (official-return-credit-protected-teams)))
+         (guided-protected
+           (and (teacher-guided-predicate-active-p)
+                (teacher-guided-protected-teams scores)))
+         (forced-protected
+           (remove-duplicates
+            (append return-credit-protected guided-protected)
+            :test #'eq))
          (selected
            (grouped-lexicase-survivors
             scores generation-best-team survivor-count
-            return-credit-protected))
+            forced-protected))
          (selected-teams (mapcar #'car selected))
          (unselected
            (remove-if (lambda (entry)
@@ -2774,6 +2819,8 @@ return-credit lineage uses this bounded exception only for fresh official-credit
                  :selected-evaluated-root-ids (mapcar #'team-id selected-teams)
                  :return-credit-protected-root-ids
                    (mapcar #'team-id return-credit-protected)
+                 :teacher-guided-protected-root-ids
+                   (mapcar #'team-id guided-protected)
                  :old-scalar-survivor-ids
                    (mapcar (lambda (entry) (team-id (car entry)))
                            old-survivors))
@@ -2832,8 +2879,13 @@ through serialization/deserialization and save it to disk."
          (generation-best-team
            (car best-entry))
 
+         (guided-submission-entry
+           (and (teacher-guided-predicate-active-p)
+                (teacher-guided-candidate-entry sorted)))
+
          (official-guided-submission-entry
            (cond
+             (guided-submission-entry guided-submission-entry)
              ((near-miss-active-p)
               (near-miss-candidate-entry sorted))
              ((official-return-credit-active-p)
@@ -2882,7 +2934,12 @@ through serialization/deserialization and save it to disk."
        (when official-guided-submission-entry
          (note-online-generation-candidate
           (car official-guided-submission-entry)
-          (cdr official-guided-submission-entry)))
+          (cdr official-guided-submission-entry)
+          :guided-priority
+            (if (eq official-guided-submission-entry
+                    guided-submission-entry)
+                1
+                0)))
        (maybe-launch-official-guided-candidate-evaluation))
       (staged-online-p
        (poll-online-candidate-evaluation)
@@ -3001,6 +3058,7 @@ through serialization/deserialization and save it to disk."
              scores sorted generation-best-team n-remove)))
     (dolist (entry worst-entries)
       (delete-team (car entry)))
+    (teacher-guided-finish-selection)
     (when (near-miss-active-p)
       (near-miss-prune-live-team-map))
     (when (grouped-selection-active-p)
@@ -3069,6 +3127,7 @@ through serialization/deserialization and save it to disk."
   (setf *targeted-specialist-composition-generation-records* nil)
   (setf *targeted-combined-repair-generation-records* nil)
   (setf *teacher-directed-repair-generation-records* nil)
+  (setf *teacher-guided-predicate-generation-records* nil)
   ;; A guarded compression event installs one behavior-equivalent, independent
   ;; incumbent clone. Its variants still use the ordinary mutation/locality
   ;; path; the protected historical best is never inserted or modified.
@@ -3080,11 +3139,16 @@ through serialization/deserialization and save it to disk."
             do (reproduce-native-child compressed-parent))))
   (loop while (< (length (root-teams)) *population-size*)
         do (let* ((parents (root-teams))
+                  (guided-p (teacher-guided-predicate-active-p))
+                  (guided-slot-p
+                    (and guided-p (teacher-guided-predicate-slot-p)))
                   (directed-p (teacher-directed-repair-active-p))
                   (directed-slot-p
-                    (and directed-p (teacher-directed-repair-slot-p)))
+                    (and (not guided-p) directed-p
+                         (teacher-directed-repair-slot-p)))
                   (combined-p
-                    (and (not directed-p)
+                    (and (not guided-p)
+                         (not directed-p)
                          (targeted-combined-repair-active-p)))
                   (combined-slot-p
                     (and combined-p (targeted-combined-repair-slot-p)))
@@ -3101,6 +3165,8 @@ through serialization/deserialization and save it to disk."
                          (targeted-routing-repair-slot-p))))
              (multiple-value-bind (repair-child repair-parent)
                  (cond
+                   (guided-slot-p
+                    (teacher-guided-attempt-predicate-repair parents))
                    (directed-slot-p
                     (teacher-directed-attempt-repair parents))
                    (combined-slot-p
@@ -3112,6 +3178,7 @@ through serialization/deserialization and save it to disk."
                    (t (values nil nil)))
                (let* ((lineage-child
                         (and (null repair-child)
+                             (not guided-slot-p)
                              (not directed-slot-p)
                              (not combined-slot-p)
                              (not composition-p)
@@ -3134,6 +3201,7 @@ through serialization/deserialization and save it to disk."
     (grouped-update-specialist-lifecycle :post-reproduction)
     (persist-grouped-selection-generation-record))
   (finish-targeted-combined-repair-generation)
+  (finish-teacher-guided-predicate-generation)
   (finish-targeted-routing-repair-generation)
   (finish-targeted-specialist-composition-generation)
   (finish-teacher-directed-repair-generation)
@@ -3202,6 +3270,8 @@ through serialization/deserialization and save it to disk."
         (reset-grouped-selection-runtime))
       (when (targeted-routing-repair-active-p)
         (initialize-targeted-routing-repair-state seed))
+      (when (teacher-guided-predicate-active-p)
+        (initialize-teacher-guided-predicate-state seed))
       (when (targeted-specialist-composition-active-p)
         (initialize-targeted-specialist-composition-state seed))
       (make-initial-population)
@@ -3556,6 +3626,8 @@ normal evolution."
         (reset-grouped-selection-runtime))
       (when (targeted-routing-repair-active-p)
         (initialize-targeted-routing-repair-state seed))
+      (when (teacher-guided-predicate-active-p)
+        (initialize-teacher-guided-predicate-state seed))
       (when (targeted-specialist-composition-active-p)
         (initialize-targeted-specialist-composition-state seed))
 

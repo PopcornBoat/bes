@@ -323,12 +323,15 @@
        (incumbent (cl-tpg::%make-team :id "official-guided-incumbent" :learners nil))
        (parent (cl-tpg::%make-team :id "official-guided-parent" :learners nil))
        (original-rollout (symbol-function 'cl-gym:rollout))
-       (rollout-count 0))
+       (rollout-count 0)
+       (observed-profiles nil))
   (unwind-protect
        (progn
-         (cl-tpg::write-best-team-checkpoint candidate 0.75d0 candidate-path)
-         (cl-tpg::write-best-team-checkpoint incumbent 0.50d0 incumbent-path)
-         (cl-tpg::write-best-team-checkpoint parent 0.70d0 parent-path)
+         (let ((cl-tpg::*instruction-set-profile* :reduced-eq)
+               (cl-tpg::*read-only-register-profile* :cage2-categorical-v1))
+           (cl-tpg::write-best-team-checkpoint candidate 0.75d0 candidate-path)
+           (cl-tpg::write-best-team-checkpoint incumbent 0.50d0 incumbent-path)
+           (cl-tpg::write-best-team-checkpoint parent 0.70d0 parent-path))
          (cl-tpg::write-readable-object-atomically
           (list :version 1
                 :candidate-path (namestring candidate-path)
@@ -352,6 +355,9 @@
          (setf (symbol-function 'cl-gym:rollout)
                (lambda (team environment seed &key video-path)
                  (declare (ignore team environment seed video-path))
+                 (push (list cl-tpg::*instruction-set-profile*
+                             cl-tpg::*read-only-register-profile*)
+                       observed-profiles)
                  (incf rollout-count)
                  (cond
                    ;; Racing invokes five candidate/incumbent pairs first.
@@ -383,9 +389,13 @@
                      :paired-mean)
                     0.5d0)
                  (= (getf (getf result :reference-monitoring) :episode-count)
-                    6))
+                    6)
+                 (every (lambda (profile)
+                          (equal profile
+                                 '(:reduced-eq :cage2-categorical-v1)))
+                        observed-profiles))
             (format nil
-                    "worker promotes only after tail-aware Stage 4 and keeps monitoring separate: ~S"
+                    "worker restores checkpoint execution profiles, promotes only after tail-aware Stage 4, and keeps monitoring separate: ~S"
                     result))))
     (setf (symbol-function 'cl-gym:rollout) original-rollout)
     (dolist (path (list candidate-path incumbent-path parent-path

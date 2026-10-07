@@ -184,7 +184,7 @@
 
 (defun official-guided-runtime-state ()
   "Return the small recoverable state journaled beside the best checkpoint."
-  (list :version 8
+  (list :version 9
         :fitness-protocol +official-guided-fitness-protocol+
         :checkpoint-filename (best-team-checkpoint-filename)
         :generation *generation*
@@ -198,6 +198,10 @@
           (and *targeted-routing-repair-enabled*
                (fboundp 'targeted-routing-repair-state-copy)
                (targeted-routing-repair-state-copy))
+        :teacher-guided-predicate-state
+          (and *teacher-guided-predicate-injection-enabled*
+               (fboundp 'teacher-guided-predicate-state-copy)
+               (teacher-guided-predicate-state-copy))
         :targeted-specialist-composition-state
           (and *targeted-specialist-composition-enabled*
                (fboundp 'targeted-specialist-composition-state-copy)
@@ -321,6 +325,11 @@
                     (>= journal-version metadata-version))
                (getf journal :targeted-routing-repair-state)
                (getf metadata :targeted-routing-repair-state)))
+         (teacher-guided-predicate-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :teacher-guided-predicate-state)
+               (getf metadata :teacher-guided-predicate-state)))
          (targeted-specialist-composition-state
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
@@ -358,6 +367,10 @@
     (when (and *targeted-routing-repair-enabled*
                targeted-routing-repair-state)
       (restore-targeted-routing-repair-state targeted-routing-repair-state))
+    (when (and *teacher-guided-predicate-injection-enabled*
+               teacher-guided-predicate-state)
+      (restore-teacher-guided-predicate-state
+       teacher-guided-predicate-state))
     (when (and *targeted-specialist-composition-enabled*
                targeted-specialist-composition-state)
       (restore-targeted-specialist-composition-state

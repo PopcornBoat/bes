@@ -5,7 +5,7 @@ Updated: 2026-10-07
 ## Canonical state
 
 - Repository: `/home/hardison/bes`
-- Branch: `read-only-registers`
+- Branch: `teacher-guided-predicate-injection`
 - Bridge: `/home/hardison/venv-base`
 - Policy: 62 inputs, direct Semantic-36 terminals, stateless execution
 - Controller: global heuristic Decoy schedule, protocol v2
@@ -34,13 +34,23 @@ compiled heuristic at disagreement states under the same controller, then use
 that evidence to improve evolutionary routing without changing the policy
 contract or controller semantics.
 
-The current controlled treatment tests whether explicit categorical constants
-reduce the cost of evolving exact state checks. It adds source-only
-`ROR0..ROR3 = 0.0d0..3.0d0` while retaining reduced arithmetic opcodes, direct
-Semantic-36 terminals, stateless execution, fixed Decoy scheduling, and all
-existing TPG learner/team/graph evolution. It warm-starts from a protected
-compact copy of the validated `-33.7650` checkpoint and writes to
-`/home/hardison/checkpoints/semantic36/read-only-registers/`.
+The random atomic-predicate treatment stopped cleanly at generation 680. It
+created more than four thousand complete categorical predicates with mean
+Top-1 disruption near five percent and retained high population diversity, but
+none of those lineages reached official evaluation. Teacher Top-8 coverage
+improved while Top-1/response agreement did not. The frozen baseline is:
+
+```text
+/home/hardison/checkpoints/semantic36/frozen/random-categorical-predicate-gen680-20261007/
+```
+
+The active treatment therefore directs predicate construction from systematic
+DAgger disagreements. It scores `EQ(OBS-i, ROR-c)` predicates by error-group
+coverage minus protected-probe collisions, connects the best predicate to the
+teacher's explicit Semantic-36 terminal, and admits a child only after local
+group improvement plus existing locality/collateral checks. One accepted child
+may receive a single evaluated generation of survivor protection and official
+challenger priority; historical promotion remains unchanged and authoritative.
 
 ## Recovery archive
 

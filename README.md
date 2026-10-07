@@ -208,6 +208,17 @@ without choosing an action or bypassing normal TPG selection and official
 promotion. The operator is disabled by default and recorded in checkpoint
 metadata and filenames.
 
+The controlled teacher-guided treatment uses
+`:teacher-guided-predicate-injection-enabled :enabled`. It keeps random compound
+predicate mutation disabled, derives repeated error groups from clean DAgger
+diagnostics, and ranks `EQ(OBS-i, ROR-c)` gates by target coverage minus
+collisions on the protected probe archive. A selected gate either raises an
+existing direct Semantic-36 terminal or adds a minimal direct specialist when
+the terminal is missing. A child must improve the diagnosed group and pass the
+existing behavioral-locality and collateral-damage limits. At most one such
+child receives first-evaluation grouped-selection protection, and a guided
+challenger still has to pass the unchanged official paired promotion protocol.
+
 ## Running the system
 
 The canonical checkout is `/home/hardison/bes` in WSL Ubuntu. The Python bridge
@@ -224,6 +235,8 @@ scripts/bes-search submit experiments/read-only-registers.sexp
 scripts/bes-search submit experiments/categorical-equality.sexp
 # Atomically form complete EQ(OBS-i, ROR-c) predicates during mutation:
 scripts/bes-search submit experiments/categorical-predicate-mutation.sexp
+# Direct predicates toward repeated teacher disagreements:
+scripts/bes-search submit experiments/teacher-guided-predicate-injection.sexp
 ```
 
 Monitor or stop a search with:
