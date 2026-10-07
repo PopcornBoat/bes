@@ -84,6 +84,7 @@ RESET-REGISTERS-P so that one learner's episode-local state is preserved."
                         (:SUB (- arg1 arg2))
                         (:MUL (* arg1 arg2))
                         (:DIV (if (zerop arg2) 0.0d0 (/ arg1 arg2)))
+                        (:EQ (if (= arg1 arg2) 1.0d0 0.0d0))
                         (:MOD (if (zerop arg2)
                                   0.0d0
                                   (let ((q (ffloor (/ arg1 arg2))))

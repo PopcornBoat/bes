@@ -51,7 +51,9 @@
    (getf request :instruction-set-profile)
    (getf request :instruction-mutation-mode :legacy)
    (eq (getf request :effective-aware-mutation-enabled :disabled) :enabled)
-   (eq (getf request :compression-reseed-enabled :disabled) :enabled)))
+   (eq (getf request :compression-reseed-enabled :disabled) :enabled)
+   (eq (getf request :compression-reseed-force-next-event :disabled) :enabled)
+   (getf request :read-only-register-profile :disabled)))
 
 (check-instruction-set
  (equal (cl-tpg::active-instruction-opcodes :full)
@@ -64,10 +66,51 @@
  "the reduced profile contains only the compiled-heuristic arithmetic core")
 
 (check-instruction-set
+ (equal (cl-tpg::active-instruction-opcodes :reduced-eq)
+        '(:add :sub :mul :div :eq))
+ "the reduced-EQ profile adds only exact equality to the arithmetic core")
+
+(check-instruction-set
  (and (cl-tpg::valid-instruction-set-profile-p :full)
       (cl-tpg::valid-instruction-set-profile-p :reduced)
+      (cl-tpg::valid-instruction-set-profile-p :reduced-eq)
       (not (cl-tpg::valid-instruction-set-profile-p :unknown)))
- "only the two versioned profiles are accepted")
+ "only the versioned profiles are accepted")
+
+(check-instruction-set
+ (= (cl-tpg::opcode-arity :eq) 2)
+ "EQ is a binary instruction")
+
+;; EQ is deliberately exact: categorical observations and ROR values are
+;; transported as exact double-float encodings of small integers.
+(let* ((cl-tpg::*read-only-register-profile* :cage2-categorical-v1)
+       (equal-instruction
+         (cl-tpg::%make-instruction
+          :dest 0 :op :eq
+          :src1-type :obs :src1-val 0.0d0
+          :src2-type :ror :src2-val 2.0d0
+          :arity 2))
+       (program
+         (cl-tpg::make-program
+          :instructions
+          (make-array 1 :fill-pointer t :adjustable t
+                      :initial-contents (list equal-instruction)))))
+  (check-instruction-set
+   (= (aref (cl-tpg::execute-program
+             program
+             (make-array 1 :element-type 'double-float
+                           :initial-contents '(2.0d0)))
+            0)
+      1.0d0)
+   "EQ returns one for an observation matching a categorical ROR")
+  (check-instruction-set
+   (= (aref (cl-tpg::execute-program
+             program
+             (make-array 1 :element-type 'double-float
+                           :initial-contents '(1.0d0)))
+            0)
+      0.0d0)
+   "EQ returns zero for a categorical mismatch"))
 
 (let ((full
         (instruction-set-test-read-request
@@ -96,6 +139,18 @@
   (check-instruction-set
    (not (instruction-set-test-valid-request-p request))
    "compression is rejected without effective-aware selection"))
+
+(let ((request
+        (instruction-set-test-read-request
+         "experiments/categorical-equality.sexp")))
+  (check-instruction-set
+   (instruction-set-test-valid-request-p request)
+   "the ROR+EQ controlled request passes server validation")
+  (check-instruction-set
+   (and (eq (getf request :instruction-set-profile) :reduced-eq)
+        (eq (getf request :read-only-register-profile)
+            :cage2-categorical-v1))
+   "the ROR+EQ request keeps both experimental factors explicit"))
 
 ;; Fresh instructions and instruction additions obey the selected profile.
 (let ((cl-tpg::*instruction-set-profile* :reduced)

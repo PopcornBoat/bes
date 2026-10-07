@@ -208,6 +208,7 @@ selected yet."
          (pcase (transient-arg-value "--instruction-set=" args)
            ("full" :full)
            ("reduced" :reduced)
+           ("reduced-eq" :reduced-eq)
            (other (error "Invalid instruction-set profile: %S" other))))
         (read-only-register-profile
          (pcase (transient-arg-value "--read-only-registers=" args)
@@ -490,7 +491,7 @@ selected yet."
    ("-Z" "Number of Observations" "*num-observations=")
    ("-X" "Number of Actions" "*num-actions=")
    ("-U" "Instruction Set" "--instruction-set="
-    :choices ("full" "reduced"))
+    :choices ("full" "reduced" "reduced-eq"))
    ("-R" "Read-only Registers" "--read-only-registers="
     :choices ("off" "cage2-categorical-v1"))
    ("-J" "Instruction Mutation" "--instruction-mutation="
@@ -618,7 +619,7 @@ selected yet."
             ":"
             (completing-read
              "Instruction set: "
-             '("full" "reduced")
+             '("full" "reduced" "reduced-eq")
              nil
              t
              "full"))))

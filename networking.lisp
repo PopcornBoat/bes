@@ -469,7 +469,7 @@ return their fixed configured addresses."
   (setf *teacher-backend* teacher-backend)
 
   (unless (valid-instruction-set-profile-p instruction-set-profile)
-    (error "Instruction-set profile must be :FULL or :REDUCED, got ~S."
+    (error "Instruction-set profile must be :FULL, :REDUCED, or :REDUCED-EQ, got ~S."
            instruction-set-profile))
   (setf *instruction-set-profile* instruction-set-profile)
 

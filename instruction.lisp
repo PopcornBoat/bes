@@ -38,7 +38,7 @@
 (defun opcode-arity (opcode)
   "Returns the arity of a given OPCODE."
   (ecase opcode
-    ((:ADD :SUB :MUL :DIV :MOD :MAX) 2)
+    ((:ADD :SUB :MUL :DIV :MOD :MAX :EQ) 2)
     ((:SIN :COS :TAN :EXP :LOG) 1)))
 
 (defun decode-symbol (sym)

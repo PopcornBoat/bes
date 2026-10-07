@@ -55,9 +55,17 @@ These four operators are sufficient to express the compiled B-line heuristic.
 The profile changes instruction creation only; old checkpoint instructions
 remain executable and are never rewritten when a checkpoint is loaded.")
 
+(defparameter +reduced-eq-instruction-opcodes+
+  '(:add :sub :mul :div :eq)
+  "Reduced arithmetic instruction set plus an exact categorical predicate.
+
+EQ writes 1.0d0 when its two operands are numerically equal and 0.0d0
+otherwise.  The separate profile keeps the ROR-only and ROR+EQ experiments
+comparable without changing historical :REDUCED runs.")
+
 (defparameter *instruction-set-profile* :full
   "Instruction creation profile. :FULL preserves the historical opcode set;
-:REDUCED samples only ADD, SUB, MUL, and DIV.")
+:REDUCED samples only arithmetic, and :REDUCED-EQ adds exact equality.")
 
 (defparameter *instruction-mutation-mode* :legacy
   "Instruction-level mutation policy.
@@ -121,14 +129,15 @@ checks remain mandatory.")
 
 (defun valid-instruction-set-profile-p (profile)
   "Return true for a supported instruction creation profile."
-  (member profile '(:full :reduced) :test #'eq))
+  (member profile '(:full :reduced :reduced-eq) :test #'eq))
 
 (defun active-instruction-opcodes (&optional (profile *instruction-set-profile*))
   "Return a fresh list of opcodes permitted for newly created instructions."
   (copy-list
    (ecase profile
      (:full +full-instruction-opcodes+)
-     (:reduced +reduced-instruction-opcodes+))))
+     (:reduced +reduced-instruction-opcodes+)
+     (:reduced-eq +reduced-eq-instruction-opcodes+))))
 
 (defconstant +response-register+ 1
   "Register on the final terminal learner used to decode response type.")

@@ -211,6 +211,8 @@ scripts/bes-runtime start
 scripts/bes-search submit experiments/official-guided-semantic36.sexp
 # ROR warm start from the frozen compact checkpoint:
 scripts/bes-search submit experiments/read-only-registers.sexp
+# Exact categorical predicates over observations/ROR values:
+scripts/bes-search submit experiments/categorical-equality.sexp
 ```
 
 Monitor or stop a search with:
