@@ -2,17 +2,27 @@
 
 (defun random-register ()
   "Return a random register symbol."
-  (intern (format nil "R~D" (1+ (random +num-registers+)))))
+  (intern (format nil "R~D" (1+ (random +num-registers+))) :cl-tpg))
 
 (defun random-observation  ()
   "Return a random observation symbol."
-  (intern (format nil "OBS~D" (1+ (random *num-observations*)))))
+  (intern (format nil "OBS~D" (1+ (random *num-observations*))) :cl-tpg))
+
+(defun random-read-only-register ()
+  "Return a random active ROR symbol. ROR indices are zero-based."
+  (let ((count (active-read-only-register-count)))
+    (unless (plusp count)
+      (error "No read-only-register profile is active."))
+    (intern (format nil "ROR~D" (random count)) :cl-tpg)))
 
 (defun random-argument ()
-  "Returns a random register or a random observation."
-  (case (random-choice '(:reg :obs))
-    (:reg (random-register))
-    (:obs (random-observation))))
+  "Return a random writable register, observation, or enabled ROR source."
+  (if (and (plusp (active-read-only-register-count))
+           (coin-flip *read-only-register-source-probability*))
+      (random-read-only-register)
+      (case (random-choice '(:reg :obs))
+        (:reg (random-register))
+        (:obs (random-observation)))))
 
 (defun random-constant ()
   "Returns a random constant in the range of [-5.0, 5.0]"
@@ -32,15 +42,17 @@
     ((:SIN :COS :TAN :EXP :LOG) 1)))
 
 (defun decode-symbol (sym)
-  "Convert symbols like registers (RXX) or observations (OBSYY) into types and indices."
+  "Decode writable registers, observations, ROR sources, or constants."
   (if (numberp sym)
       (values :const (coerce sym 'double-float))
       (let ((name (symbol-name sym)))
 	(cond
-	  ((string= (subseq name 0 1) "R")
-	   (values :reg (coerce (1- (parse-integer (subseq name 1))) 'double-float)))
-	  ((string= (subseq name 0 3) "OBS")
+	  ((and (>= (length name) 3) (string= (subseq name 0 3) "ROR"))
+	   (values :ror (coerce (parse-integer (subseq name 3)) 'double-float)))
+	  ((and (>= (length name) 3) (string= (subseq name 0 3) "OBS"))
 	   (values :obs (coerce (1- (parse-integer (subseq name 3))) 'double-float)))
+	  ((and (plusp (length name)) (string= (subseq name 0 1) "R"))
+	   (values :reg (coerce (1- (parse-integer (subseq name 1))) 'double-float)))
 	  (t (error "Unknown operand: ~A" sym))))))
 
 (defstruct (instruction
@@ -77,8 +89,9 @@
   "Converts a raw instruction vector back into a readable format."
   (flet ((render (type val)
 	   (case type
-	     (:reg (intern (format nil "R~D" (1+ (truncate val)))))
-	     (:obs (intern (format nil "OBS~D" (1+ (truncate val)))))
+	     (:reg (intern (format nil "R~D" (1+ (truncate val))) :cl-tpg))
+	     (:obs (intern (format nil "OBS~D" (1+ (truncate val))) :cl-tpg))
+	     (:ror (intern (format nil "ROR~D" (truncate val)) :cl-tpg))
 	     (t val))))
     (let ((dest (render :reg (float (instruction-dest instr) 1.0d0)))
 	  (op (instruction-op instr))

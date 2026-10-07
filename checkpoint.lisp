@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 25
-  "Checkpoint version recording local/effective mutation and compression provenance.")
+(defconstant +best-team-checkpoint-version+ 26
+  "Checkpoint version recording read-only-register policy provenance.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -79,12 +79,17 @@ A configuration keeps overwriting its own immediate-best file, while agent,
 observation/action shape, mode, and Hamming variants can coexist in one
 checkpoint directory."
   (format nil
-          "~A-~D-~D-~A-operators-~A~A-order-~A-teacher-~A-opening-~A-hamming-~A-memory-~A.lisp"
+          "~A-~D-~D-~A-operators-~A~A~A-order-~A-teacher-~A-opening-~A-hamming-~A-memory-~A.lisp"
           (checkpoint-agent-type)
           *num-observations*
           *num-actions*
           (checkpoint-training-mode)
           (string-downcase (symbol-name *instruction-set-profile*))
+          (if (eq *read-only-register-profile* :disabled)
+              ""
+              (format nil "-ror-~A"
+                      (string-downcase
+                       (symbol-name *read-only-register-profile*))))
           (if (and (eq *instruction-mutation-mode* :legacy)
                    (not *effective-aware-mutation-enabled*)
                    (not *compression-reseed-enabled*))
@@ -116,6 +121,8 @@ checkpoint directory."
                            recurrent-policy-enabled teacher-backend
                            (instruction-set-profile
                              *instruction-set-profile*)
+                           (read-only-register-profile
+                             *read-only-register-profile*)
                            (instruction-mutation-mode
                              *instruction-mutation-mode*)
                            (effective-aware-mutation-enabled
@@ -127,6 +134,9 @@ checkpoint directory."
   (unless (valid-instruction-set-profile-p instruction-set-profile)
     (error "Cannot checkpoint unsupported instruction-set profile: ~S."
            instruction-set-profile))
+  (unless (valid-read-only-register-profile-p read-only-register-profile)
+    (error "Cannot checkpoint unsupported read-only-register profile: ~S."
+           read-only-register-profile))
   (unless (valid-instruction-mutation-mode-p instruction-mutation-mode)
     (error "Cannot checkpoint unsupported instruction mutation mode: ~S."
            instruction-mutation-mode))
@@ -147,6 +157,12 @@ checkpoint directory."
     :mixed-training-lineage ,mixed-training-lineage
     :num-observations ,num-observations
     :instruction-set-profile ,instruction-set-profile
+    :read-only-register-profile ,read-only-register-profile
+    :read-only-register-values
+      ,(and (not (eq read-only-register-profile :disabled))
+            (coerce (active-read-only-register-values
+                     read-only-register-profile)
+                    'list))
     :instruction-mutation-mode ,instruction-mutation-mode
     :effective-aware-mutation-enabled
       ,(not (null effective-aware-mutation-enabled))
@@ -221,6 +237,8 @@ checkpoint directory."
                                 recurrent-policy-enabled teacher-backend
                                 (instruction-set-profile
                                   *instruction-set-profile*)
+                                (read-only-register-profile
+                                  *read-only-register-profile*)
                                 (instruction-mutation-mode
                                   *instruction-mutation-mode*)
                                 (effective-aware-mutation-enabled
@@ -256,6 +274,7 @@ checkpoint directory."
            :mixed-training-lineage mixed-training-lineage
            :num-observations num-observations
            :instruction-set-profile instruction-set-profile
+           :read-only-register-profile read-only-register-profile
            :instruction-mutation-mode instruction-mutation-mode
            :effective-aware-mutation-enabled
              effective-aware-mutation-enabled
@@ -293,6 +312,7 @@ checkpoint directory."
     :mixed-training-lineage *mixed-training-lineage*
     :num-observations *num-observations*
     :instruction-set-profile *instruction-set-profile*
+    :read-only-register-profile *read-only-register-profile*
     :instruction-mutation-mode *instruction-mutation-mode*
     :effective-aware-mutation-enabled *effective-aware-mutation-enabled*
     :compression-reseed-enabled *compression-reseed-enabled*
@@ -389,6 +409,7 @@ return NIL for FITNESS and METADATA."
                            cage2-opening-mode
                            recurrent-policy-enabled teacher-backend
                            instruction-set-profile
+                           read-only-register-profile
                            terminal-action-format)
   "Add fitness metadata to a legacy best-team checkpoint.
 
@@ -415,6 +436,8 @@ preserving the original legacy file."
      :num-observations num-observations
      :instruction-set-profile
        (or instruction-set-profile *instruction-set-profile*)
+     :read-only-register-profile
+       (or read-only-register-profile *read-only-register-profile*)
      :terminal-action-format
        (or terminal-action-format *terminal-action-format*)
      :decoy-order-mode decoy-order-mode

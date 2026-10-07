@@ -10,6 +10,39 @@
 (defconstant +bid-register+ 0
   "Register used as a learner's bid during team execution.")
 
+(defparameter +cage2-categorical-read-only-register-values+
+  #(0.0d0 1.0d0 2.0d0 3.0d0)
+  "Fixed categorical constants exposed by the CAGE2 ROR profile.")
+
+(defparameter *read-only-register-profile* :disabled
+  "Read-only instruction-source profile.
+
+:DISABLED preserves historical BES behavior. :CAGE2-CATEGORICAL-V1 exposes
+ROR0..ROR3 with values 0.0d0..3.0d0. RORs are sources only: they are not part
+of the eight writable program registers and cannot hold recurrent state.")
+
+(defparameter *read-only-register-source-probability* 0.20d0
+  "Probability that random argument generation selects an active ROR source.")
+
+(defun valid-read-only-register-profile-p (profile)
+  "Return true for a supported read-only-register profile."
+  (member profile '(:disabled :cage2-categorical-v1) :test #'eq))
+
+(declaim (inline active-read-only-register-values
+                 active-read-only-register-count))
+
+(defun active-read-only-register-values
+       (&optional (profile *read-only-register-profile*))
+  "Return the immutable value bank selected by PROFILE, or NIL when disabled."
+  (ecase profile
+    (:disabled nil)
+    (:cage2-categorical-v1
+     +cage2-categorical-read-only-register-values+)))
+
+(defun active-read-only-register-count ()
+  "Return the number of read-only source registers currently available."
+  (length (active-read-only-register-values)))
+
 (defparameter +full-instruction-opcodes+
   '(:add :sub :mul :div :max :exp :log :sin :cos :tan :mod)
   "Historical BES instruction set, retained as the default profile.")

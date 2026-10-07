@@ -178,6 +178,27 @@ only the generation, plateau, and cooldown schedule. It is consumed when graph
 analysis begins; the intron threshold, stateless-only rule, independent deep
 copy, exact probe-ranking equivalence, and capacity checks remain mandatory.
 
+### Categorical read-only registers
+
+The `read-only-registers` treatment warm-starts from a separately frozen,
+effective-code-only copy of the independently validated `-33.7650` policy.
+The source checkpoint remains untouched. The compact copy contains 13,089
+instructions instead of 100,462 and produced identical complete semantic
+rankings on 512 deterministic probes.
+
+Set `:read-only-register-profile :cage2-categorical-v1` to expose four
+source-only operands: `ROR0=0.0d0`, `ROR1=1.0d0`, `ROR2=2.0d0`, and
+`ROR3=3.0d0`. They are not writable registers, do not change the eight-register
+program state, cannot be instruction destinations, and do not introduce
+recurrent memory. The profile is disabled by default. New random arguments use
+an ROR with probability 0.20 when enabled; field-local mutation can separately
+change an operand to/from ROR addressing or change only its ROR index. Existing
+learner, terminal, team-edge, and graph mutation remain unchanged.
+
+Checkpoints record both the ROR profile and the exact value bank. ROR runs use
+their own filename component and checkpoint directory. The Python bridge and
+Semantic-36 Controller contract are unchanged.
+
 ## Running the system
 
 The canonical checkout is `/home/hardison/bes` in WSL Ubuntu. The Python bridge
@@ -188,6 +209,8 @@ cd /home/hardison/bes
 scripts/bes-doctor
 scripts/bes-runtime start
 scripts/bes-search submit experiments/official-guided-semantic36.sexp
+# ROR warm start from the frozen compact checkpoint:
+scripts/bes-search submit experiments/read-only-registers.sexp
 ```
 
 Monitor or stop a search with:

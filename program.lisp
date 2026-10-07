@@ -56,6 +56,8 @@ RESET-REGISTERS-P so that one learner's episode-local state is preserved."
              (arg1 (case (instruction-src1-type ins)
                      (:reg (aref registers (the fixnum (truncate v1))))
                      (:obs (aref observations (the fixnum (truncate v1))))
+                     (:ror (aref (active-read-only-register-values)
+                                  (the fixnum (truncate v1))))
                      (t v1))))
         (declare (type double-float arg1) (type fixnum dest))
         
@@ -73,6 +75,8 @@ RESET-REGISTERS-P so that one learner's episode-local state is preserved."
                            (arg2 (case (instruction-src2-type ins)
                                    (:reg (aref registers (the fixnum (truncate v2))))
                                    (:obs (aref observations (the fixnum (truncate v2))))
+                                   (:ror (aref (active-read-only-register-values)
+                                               (the fixnum (truncate v2))))
                                    (t v2))))
                       (declare (type double-float arg2))
                       (case op

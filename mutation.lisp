@@ -145,7 +145,14 @@ allowing permanent positive bloat pressure."
   (ecase type
     (:reg (coerce (random +num-registers+) 'double-float))
     (:obs (coerce (random *num-observations*) 'double-float))
+    (:ror (coerce (random (active-read-only-register-count)) 'double-float))
     (:const (coerce (random-constant) 'double-float))))
+
+(defun active-instruction-source-types ()
+  "Return source types available to newly mutated instructions."
+  (if (plusp (active-read-only-register-count))
+      '(:reg :obs :ror :const)
+      '(:reg :obs :const)))
 
 (defun random-different-integer (current count)
   "Return an integer below COUNT distinct from CURRENT when possible."
@@ -196,32 +203,38 @@ allowing permanent positive bloat pressure."
     (/= old (instruction-dest instruction))))
 
 (defun mutate-instruction-source-type (instruction)
-  "Change one source between register, observation, and constant addressing."
+  "Change one source representation, including ROR when its profile is active."
   (let* ((slot (random-choice (instruction-source-slots instruction)))
          (old-type (instruction-source-type-at instruction slot))
          (new-type
-           (random-choice (remove old-type '(:reg :obs :const) :test #'eq))))
+           (random-choice
+            (remove old-type (active-instruction-source-types) :test #'eq))))
     (set-instruction-source
      instruction slot new-type (random-source-value new-type))
+    (when (eq new-type :ror)
+      (note-mutation-event :read-only-register-source-type-mutation))
     t))
 
 (defun mutate-instruction-source-index (instruction)
-  "Change one register/observation source index without changing its type."
+  "Change one register, observation, or ROR index without changing its type."
   (let ((slots
           (remove-if-not
            (lambda (slot)
              (member (instruction-source-type-at instruction slot)
-                     '(:reg :obs) :test #'eq))
+                     '(:reg :obs :ror) :test #'eq))
            (instruction-source-slots instruction))))
     (when slots
       (let* ((slot (random-choice slots))
              (type (instruction-source-type-at instruction slot))
              (old (truncate (instruction-source-value-at instruction slot)))
-             (count (if (eq type :reg)
-                        +num-registers+
-                        *num-observations*)))
+             (count (ecase type
+                      (:reg +num-registers+)
+                      (:obs *num-observations*)
+                      (:ror (active-read-only-register-count)))))
         (set-instruction-source
          instruction slot type (random-different-integer old count))
+        (when (eq type :ror)
+          (note-mutation-event :read-only-register-index-mutation))
         (/= old (truncate (instruction-source-value-at instruction slot)))))))
 
 (defun mutate-instruction-constant (instruction)
@@ -243,7 +256,7 @@ allowing permanent positive bloat pressure."
   (let ((kinds '(:opcode :destination :source-type)))
     (when (some (lambda (slot)
                   (member (instruction-source-type-at instruction slot)
-                          '(:reg :obs) :test #'eq))
+                          '(:reg :obs :ror) :test #'eq))
                 (instruction-source-slots instruction))
       (push :source-index kinds))
     (when (some (lambda (slot)

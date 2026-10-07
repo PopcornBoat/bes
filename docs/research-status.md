@@ -1,11 +1,11 @@
 # Current Research Status
 
-Updated: 2026-10-01
+Updated: 2026-10-07
 
 ## Canonical state
 
 - Repository: `/home/hardison/bes`
-- Branch: `semantic36-policy-evolution`
+- Branch: `read-only-registers`
 - Bridge: `/home/hardison/venv-base`
 - Policy: 62 inputs, direct Semantic-36 terminals, stateless execution
 - Controller: global heuristic Decoy schedule, protocol v2
@@ -33,6 +33,14 @@ the desired policy. The next work should compare the evolved checkpoint and
 compiled heuristic at disagreement states under the same controller, then use
 that evidence to improve evolutionary routing without changing the policy
 contract or controller semantics.
+
+The current controlled treatment tests whether explicit categorical constants
+reduce the cost of evolving exact state checks. It adds source-only
+`ROR0..ROR3 = 0.0d0..3.0d0` while retaining reduced arithmetic opcodes, direct
+Semantic-36 terminals, stateless execution, fixed Decoy scheduling, and all
+existing TPG learner/team/graph evolution. It warm-starts from a protected
+compact copy of the validated `-33.7650` checkpoint and writes to
+`/home/hardison/checkpoints/semantic36/read-only-registers/`.
 
 ## Recovery archive
 

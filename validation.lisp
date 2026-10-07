@@ -219,6 +219,30 @@ CAGE3 MODE:
            (format nil
                    "Validation checkpoint instruction-set profile=~A; serialized historical opcodes remain executable."
                    saved-profile))))
+        (let* ((saved-ror-profile
+                 (or (getf *loaded-checkpoint-metadata*
+                           :read-only-register-profile)
+                     :disabled))
+               (saved-ror-values
+                 (getf *loaded-checkpoint-metadata*
+                       :read-only-register-values)))
+          (unless (valid-read-only-register-profile-p saved-ror-profile)
+            (error "Unsupported checkpoint read-only-register profile: ~S."
+                   saved-ror-profile))
+          (when (and saved-ror-values
+                     (not (equal saved-ror-values
+                                 (coerce
+                                  (active-read-only-register-values
+                                   saved-ror-profile)
+                                  'list))))
+            (error "Checkpoint ROR bank does not match profile ~S: ~S."
+                   saved-ror-profile saved-ror-values))
+          (setf *read-only-register-profile* saved-ror-profile)
+          (emit-message
+           (format nil
+                   "Validation checkpoint read-only-register profile=~A values=~S."
+                   saved-ror-profile
+                   (active-read-only-register-values saved-ror-profile))))
       (when cage2-p
         (ensure-team-observation-compatible team *num-observations*))
       (emit-message

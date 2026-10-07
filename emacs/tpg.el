@@ -209,6 +209,11 @@ selected yet."
            ("full" :full)
            ("reduced" :reduced)
            (other (error "Invalid instruction-set profile: %S" other))))
+        (read-only-register-profile
+         (pcase (transient-arg-value "--read-only-registers=" args)
+           ("off" :disabled)
+           ("cage2-categorical-v1" :cage2-categorical-v1)
+           (other (error "Invalid read-only-register profile: %S" other))))
         (instruction-mutation-mode
          (pcase (transient-arg-value "--instruction-mutation=" args)
            ("legacy" :legacy)
@@ -315,6 +320,7 @@ selected yet."
       :num-observations ,num-observations
       :num-actions ,num-actions
       :instruction-set-profile ,instruction-set-profile
+      :read-only-register-profile ,read-only-register-profile
       :instruction-mutation-mode ,instruction-mutation-mode
       :effective-aware-mutation-enabled ,effective-aware-mutation-enabled
       :compression-reseed-enabled ,compression-reseed-enabled
@@ -460,6 +466,7 @@ selected yet."
             "--teacher-rollout=dagger"
             "--teacher-backend=heuristic"
             "--instruction-set=full"
+            "--read-only-registers=off"
             "--instruction-mutation=legacy"
             "--effective-aware=off"
             "--compression-reseed=off"
@@ -484,6 +491,8 @@ selected yet."
    ("-X" "Number of Actions" "*num-actions=")
    ("-U" "Instruction Set" "--instruction-set="
     :choices ("full" "reduced"))
+   ("-R" "Read-only Registers" "--read-only-registers="
+    :choices ("off" "cage2-categorical-v1"))
    ("-J" "Instruction Mutation" "--instruction-mutation="
     :choices ("legacy" "field-local"))
    ("-E" "Effective-aware Mutation" "--effective-aware="
@@ -613,6 +622,17 @@ selected yet."
              nil
              t
              "full"))))
+
+         (read-only-register-profile
+          (intern
+           (concat
+            ":"
+            (pcase
+                (completing-read
+                 "Read-only registers: "
+                 '("off" "cage2-categorical-v1") nil t "off")
+              ("off" "disabled")
+              (profile profile)))))
 
          (instruction-mutation-mode
           (intern
@@ -824,6 +844,7 @@ selected yet."
             :num-observations ,num-observations
             :num-actions ,num-actions
             :instruction-set-profile ,instruction-set-profile
+            :read-only-register-profile ,read-only-register-profile
             :instruction-mutation-mode ,instruction-mutation-mode
             :effective-aware-mutation-enabled
             ,(if effective-aware-mutation-enabled :enabled :disabled)

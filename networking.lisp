@@ -401,7 +401,8 @@ return their fixed configured addresses."
                                     (instruction-mutation-mode :legacy)
                                     (effective-aware-mutation-enabled nil)
                                     (compression-reseed-enabled nil)
-                                    (compression-reseed-force-next-event nil))
+                                    (compression-reseed-force-next-event nil)
+                                    (read-only-register-profile :disabled))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -472,6 +473,11 @@ return their fixed configured addresses."
            instruction-set-profile))
   (setf *instruction-set-profile* instruction-set-profile)
 
+  (unless (valid-read-only-register-profile-p read-only-register-profile)
+    (error "Read-only-register profile must be :DISABLED or :CAGE2-CATEGORICAL-V1, got ~S."
+           read-only-register-profile))
+  (setf *read-only-register-profile* read-only-register-profile)
+
   (unless (valid-instruction-mutation-mode-p instruction-mutation-mode)
     (error "Instruction mutation mode must be :LEGACY or :FIELD-LOCAL, got ~S."
            instruction-mutation-mode))
@@ -513,7 +519,8 @@ return their fixed configured addresses."
                                   (instruction-mutation-mode :legacy)
                                   (effective-aware-mutation-enabled nil)
                                   (compression-reseed-enabled nil)
-                                  (compression-reseed-force-next-event nil))
+                                  (compression-reseed-force-next-event nil)
+                                  (read-only-register-profile :disabled))
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -579,6 +586,7 @@ return their fixed configured addresses."
         teacher-forcing-rollout-mode)
        (valid-teacher-backend-p teacher-backend)
        (valid-instruction-set-profile-p instruction-set-profile)
+       (valid-read-only-register-profile-p read-only-register-profile)
        (valid-instruction-mutation-mode-p instruction-mutation-mode)
        (or (not compression-reseed-enabled)
            (and (eq mode :official-guided)
@@ -673,6 +681,8 @@ return their fixed configured addresses."
         (compression-reseed-force-next-event
           (eq (getf msg :compression-reseed-force-next-event :disabled)
               :enabled))
+        (read-only-register-profile
+          (getf msg :read-only-register-profile :disabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -685,13 +695,14 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A instruction-mutation=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
              num-observations
              num-actions
              instruction-set-profile
+             read-only-register-profile
              instruction-mutation-mode
              effective-aware-mutation-enabled
              compression-reseed-enabled
@@ -765,7 +776,8 @@ return their fixed configured addresses."
          instruction-mutation-mode
          effective-aware-mutation-enabled
          compression-reseed-enabled
-         compression-reseed-force-next-event)
+         compression-reseed-force-next-event
+         read-only-register-profile)
 
         (progn
           (unless (begin-search-operation)
@@ -808,7 +820,8 @@ return their fixed configured addresses."
              effective-aware-mutation-enabled
            :compression-reseed-enabled compression-reseed-enabled
            :compression-reseed-force-next-event
-             compression-reseed-force-next-event)
+             compression-reseed-force-next-event
+           :read-only-register-profile read-only-register-profile)
 
           (push
            (bt:make-thread
@@ -914,6 +927,8 @@ return their fixed configured addresses."
         (compression-reseed-force-next-event
           (eq (getf msg :compression-reseed-force-next-event :disabled)
               :enabled))
+        (read-only-register-profile
+          (getf msg :read-only-register-profile :disabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -972,7 +987,8 @@ return their fixed configured addresses."
          instruction-mutation-mode
          effective-aware-mutation-enabled
          compression-reseed-enabled
-         compression-reseed-force-next-event)
+         compression-reseed-force-next-event
+         read-only-register-profile)
 
         (progn
           (unless (begin-search-operation)
@@ -1015,7 +1031,8 @@ return their fixed configured addresses."
              effective-aware-mutation-enabled
            :compression-reseed-enabled compression-reseed-enabled
            :compression-reseed-force-next-event
-             compression-reseed-force-next-event)
+             compression-reseed-force-next-event
+           :read-only-register-profile read-only-register-profile)
 
           (push
            (bt:make-thread
