@@ -29,6 +29,7 @@
 	       (:file "gym")
 	       (:file "teacher")
 	       (:file "rare-failure-diagnostics")
+	       (:file "policy-disagreement-analysis")
 	       (:file "counterfactual-credit")
 	       (:file "official-guided")
 	       (:file "official-return-credit")

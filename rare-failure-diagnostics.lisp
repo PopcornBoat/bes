@@ -103,6 +103,7 @@ for earlier result blocks are consumed exactly as RUN-VALIDATION-ROLLOUTS did."
                    (getf policy :label) winner-pair (first pairs)))
           (list :label (getf policy :label)
                 :winning-learner (learner-id winner)
+                :winning-bid (aref registers +bid-register+)
                 :preferred-path (mapcar #'team-id path)
                 :terminal-team (and terminal-team (team-id terminal-team))
                 :ranking pairs

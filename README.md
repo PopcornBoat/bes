@@ -62,6 +62,22 @@ regenerate it after changing the compiler, load
  "oracles/checkpoints/bline-62-36-compiled-heuristic.lisp")
 ```
 
+To compare an evolved checkpoint with the compiled heuristic on both policies'
+official trajectories, use:
+
+```bash
+scripts/policy-disagreement-analysis \
+  /path/to/evolved.lisp \
+  oracles/checkpoints/bline-62-36-compiled-heuristic.lisp \
+  /path/to/output \
+  153,42,2026
+```
+
+The report separates semantic ranking disagreement from the concrete action
+ultimately selected by the shared Controller. The same seed couples the initial
+environment RNG state only; after policies diverge it is not an event-keyed
+counterfactual replay.
+
 The controller correction improved the unchanged evolved checkpoint by
 `8.5924` reward and reduced its penalty by about 20.5%. The remaining gap to
 the compiled heuristic is `4.3120`. The largest improvement appears at 100
