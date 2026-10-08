@@ -106,6 +106,11 @@ categorical bid gates for the teacher's target/response pair.  Generated
 children still pass behavioral-locality, collateral, grouped-selection, and
 official paired-evaluation gates; the teacher is never consulted at deployment.")
 
+(defparameter *incumbent-conservative-repair-enabled* nil
+  "When true, synthesize conjunctive categorical specialists only from the
+frozen official incumbent.  This treatment is isolated from population-parent
+single-predicate injection and remains disabled by default.")
+
 (defconstant +compression-reseed-protocol+ :compression-reseed-v1
   "Versioned stateless R0 intron-compression and population-reseed protocol.")
 
@@ -551,6 +556,22 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
 
 (defconstant +teacher-guided-predicate-protected-survivors+ 1
   "Maximum accepted guided repair protected for its first evaluated selection.")
+
+(defconstant +incumbent-conservative-repair-protocol+
+  :incumbent-anchored-conjunctive-repair-v1
+  "Version tag for conservative repairs of the frozen official incumbent.")
+
+(defconstant +incumbent-conservative-atomic-candidates+ 24
+  "Highest-precision atomic predicates retained before conjunction search.")
+
+(defconstant +incumbent-conservative-max-conjunctions+ 12
+  "Maximum conjunctive gates evaluated for one incumbent disagreement group.")
+
+(defconstant +incumbent-conservative-background-limit+ 256
+  "Maximum current on-policy background observations used for collateral checks.")
+
+(defconstant +incumbent-conservative-bid-quantile+ 0.50d0
+  "Incumbent winning-bid quantile used as a conservative specialist threshold.")
 
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")

@@ -5,7 +5,7 @@ Updated: 2026-10-07
 ## Canonical state
 
 - Repository: `/home/hardison/bes`
-- Branch: `teacher-guided-predicate-injection`
+- Branch: `incumbent-anchored-conservative-repair`
 - Bridge: `/home/hardison/venv-base`
 - Policy: 62 inputs, direct Semantic-36 terminals, stateless execution
 - Controller: global heuristic Decoy schedule, protocol v2
@@ -44,13 +44,24 @@ improved while Top-1/response agreement did not. The frozen baseline is:
 /home/hardison/checkpoints/semantic36/frozen/random-categorical-predicate-gen680-20261007/
 ```
 
-The active treatment therefore directs predicate construction from systematic
-DAgger disagreements. It scores `EQ(OBS-i, ROR-c)` predicates by error-group
-coverage minus protected-probe collisions, connects the best predicate to the
-teacher's explicit Semantic-36 terminal, and admits a child only after local
-group improvement plus existing locality/collateral checks. One accepted child
-may receive a single evaluated generation of survivor protection and official
-challenger priority; historical promotion remains unchanged and authoritative.
+The population-parent single-predicate treatment was stopped at generation 565.
+It admitted 745 of 4,510 local repairs and sent 55 challengers to official
+evaluation, but none promoted. Only 27 challengers improved their direct parent,
+and higher local separation/coverage was negatively correlated with official
+return. Its frozen evidence is stored at:
+
+```text
+/home/hardison/checkpoints/semantic36/frozen/teacher-guided-predicate-gen565-20261007/
+```
+
+The active treatment addresses that failure without changing official
+promotion. Every targeted child is cloned from the frozen incumbent, restricted
+to repeated early or step-10--29 Top-8 omissions, and receives only one new
+direct specialist. Its gate is the conjunction of two exact categorical
+predicates, its winning bid is calibrated from incumbent root bids, and it must
+cause zero Top-1 changes over a broad current on-policy background before it can
+enter selection. The normal paired racing protocol therefore compares the
+repair to the same incumbent that generated it.
 
 ## Recovery archive
 

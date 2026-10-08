@@ -9,7 +9,8 @@
 
 (defun teacher-guided-predicate-active-p ()
   "Return true when disagreement-directed predicate injection is safe."
-  (and *teacher-guided-predicate-injection-enabled*
+  (and (or *teacher-guided-predicate-injection-enabled*
+           *incumbent-conservative-repair-enabled*)
        *targeted-disagreement-audit-enabled*
        *grouped-selection-enabled*
        *semantic-locality-control-enabled*
@@ -18,6 +19,12 @@
        (eq *terminal-action-format* :target-response-36)
        (member :eq (active-instruction-opcodes) :test #'eq)
        (plusp (active-read-only-register-count))))
+
+(defun teacher-guided-active-protocol ()
+  "Return the protocol owning the shared guided-repair scheduler."
+  (if *incumbent-conservative-repair-enabled*
+      +incumbent-conservative-repair-protocol+
+      +teacher-guided-predicate-protocol+))
 
 (defun initialize-teacher-guided-predicate-state (search-seed)
   "Initialize the independent deterministic guided-predicate stream."
@@ -36,7 +43,7 @@
   "Return resumable scheduling state; live population objects are ephemeral."
   (and *teacher-guided-predicate-rng-root*
        (list :version 1
-             :protocol +teacher-guided-predicate-protocol+
+             :protocol (teacher-guided-active-protocol)
              :root *teacher-guided-predicate-rng-root*
              :cursor *teacher-guided-predicate-rng-cursor*
              :age *teacher-guided-predicate-age*)))
@@ -45,7 +52,10 @@
   "Return true when STATE can resume guided-predicate scheduling."
   (and (listp state)
        (= (getf state :version 0) 1)
-       (eq (getf state :protocol) +teacher-guided-predicate-protocol+)
+       (member (getf state :protocol)
+               (list +teacher-guided-predicate-protocol+
+                     +incumbent-conservative-repair-protocol+)
+               :test #'eq)
        (integerp (getf state :root))
        (integerp (getf state :cursor))
        (not (minusp (getf state :cursor)))
@@ -54,7 +64,9 @@
 
 (defun restore-teacher-guided-predicate-state (state)
   "Restore scheduling state without restoring a discarded old population."
-  (unless (teacher-guided-predicate-state-valid-p state)
+  (unless (and (teacher-guided-predicate-state-valid-p state)
+               (eq (getf state :protocol)
+                   (teacher-guided-active-protocol)))
     (error "Invalid teacher-guided predicate state: ~S" state))
   (setf *teacher-guided-predicate-rng-root* (getf state :root)
         *teacher-guided-predicate-rng-cursor* (getf state :cursor)
@@ -425,6 +437,9 @@
 
 (defun teacher-guided-attempt-predicate-repair (parents)
   "Attempt one disagreement-directed child and return CHILD/PARENT."
+  (when *incumbent-conservative-repair-enabled*
+    (return-from teacher-guided-attempt-predicate-repair
+      (incumbent-conservative-attempt-repair)))
   (let ((issues (teacher-guided-systematic-issues)))
     (unless (and issues *teacher-training-dataset*)
       (teacher-guided-note-attempt
@@ -548,7 +563,7 @@
         (when (behavioral-locality-active-p)
           (append-behavioral-locality-form
            (list :type :teacher-guided-predicate-generation
-                 :protocol +teacher-guided-predicate-protocol+
+                 :protocol (teacher-guided-active-protocol)
                  :generation *generation*
                  :age *teacher-guided-predicate-age*
                  :attempted attempted

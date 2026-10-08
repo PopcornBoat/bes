@@ -219,6 +219,17 @@ existing behavioral-locality and collateral-damage limits. At most one such
 child receives first-evaluation grouped-selection protection, and a guided
 challenger still has to pass the unchanged official paired promotion protocol.
 
+The successor treatment uses
+`:incumbent-conservative-repair-enabled :enabled`. It always clones the frozen
+official incumbent, limits repairs to repeated early and step-10--29 Top-8
+omissions, and adds one new direct Semantic-36 specialist. Two exact categorical
+predicates are combined as an AND gate, and its bid is calibrated against the
+incumbent instead of being saturated. A candidate is admitted only if it changes
+no Top-1 decision over as many as 256 current on-policy background observations
+plus the protected archive. Ordinary grouped selection and the unchanged fresh
+paired official racing/promotion protocol remain authoritative. This switch is
+mutually exclusive with the older population-parent guided treatment.
+
 ## Running the system
 
 The canonical checkout is `/home/hardison/bes` in WSL Ubuntu. The Python bridge
@@ -237,6 +248,8 @@ scripts/bes-search submit experiments/categorical-equality.sexp
 scripts/bes-search submit experiments/categorical-predicate-mutation.sexp
 # Direct predicates toward repeated teacher disagreements:
 scripts/bes-search submit experiments/teacher-guided-predicate-injection.sexp
+# Incumbent-anchored two-predicate conservative repair:
+scripts/bes-search submit experiments/incumbent-conservative-repair.sexp
 ```
 
 Monitor or stop a search with:

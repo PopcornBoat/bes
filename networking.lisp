@@ -406,6 +406,8 @@ return their fixed configured addresses."
                                     (categorical-predicate-mutation-enabled
                                       nil)
                                     (teacher-guided-predicate-injection-enabled
+                                      nil)
+                                    (incumbent-conservative-repair-enabled
                                       nil))
   "Set the hyperparameters according to the TCP request."
 
@@ -495,7 +497,13 @@ return their fixed configured addresses."
         *categorical-predicate-mutation-enabled*
           (not (null categorical-predicate-mutation-enabled))
         *teacher-guided-predicate-injection-enabled*
-          (not (null teacher-guided-predicate-injection-enabled)))
+          (not (null teacher-guided-predicate-injection-enabled))
+        *incumbent-conservative-repair-enabled*
+          (not (null incumbent-conservative-repair-enabled)))
+
+  (when (and *teacher-guided-predicate-injection-enabled*
+             *incumbent-conservative-repair-enabled*)
+    (error "Population-parent and incumbent-conservative guided repair are mutually exclusive."))
 
   (when (and *compression-reseed-enabled*
              (or (not (eq *instruction-mutation-mode* :field-local))
@@ -517,6 +525,12 @@ return their fixed configured addresses."
                  (not (member :eq (active-instruction-opcodes) :test #'eq))
                  (zerop (active-read-only-register-count))))
     (error "Teacher-guided predicate injection requires FIELD-LOCAL, EQ, and active RORs."))
+
+  (when (and *incumbent-conservative-repair-enabled*
+             (or (not (eq *instruction-mutation-mode* :field-local))
+                 (not (member :eq (active-instruction-opcodes) :test #'eq))
+                 (zerop (active-read-only-register-count))))
+    (error "Incumbent-conservative repair requires FIELD-LOCAL, EQ, and active RORs."))
 
   (setf *checkpoint-directory* checkpoint-directory))
 
@@ -543,7 +557,8 @@ return their fixed configured addresses."
                                   (read-only-register-profile :disabled)
                                   (categorical-predicate-mutation-enabled nil)
                                   (teacher-guided-predicate-injection-enabled
-                                    nil))
+                                    nil)
+                                  (incumbent-conservative-repair-enabled nil))
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -629,6 +644,17 @@ return their fixed configured addresses."
                    read-only-register-profile)))))
        (or (not teacher-guided-predicate-injection-enabled)
            (and (eq mode :official-guided)
+                (eq instruction-mutation-mode :field-local)
+                (member :eq
+                        (active-instruction-opcodes instruction-set-profile)
+                        :test #'eq)
+                (plusp
+                 (length
+                  (active-read-only-register-values
+                   read-only-register-profile)))))
+       (or (not incumbent-conservative-repair-enabled)
+           (and (eq mode :official-guided)
+                (not teacher-guided-predicate-injection-enabled)
                 (eq instruction-mutation-mode :field-local)
                 (member :eq
                         (active-instruction-opcodes instruction-set-profile)
@@ -731,6 +757,9 @@ return their fixed configured addresses."
         (teacher-guided-predicate-injection-enabled
           (eq (getf msg :teacher-guided-predicate-injection-enabled :disabled)
               :enabled))
+        (incumbent-conservative-repair-enabled
+          (eq (getf msg :incumbent-conservative-repair-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -743,7 +772,7 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
@@ -754,6 +783,7 @@ return their fixed configured addresses."
              instruction-mutation-mode
              categorical-predicate-mutation-enabled
              teacher-guided-predicate-injection-enabled
+             incumbent-conservative-repair-enabled
              effective-aware-mutation-enabled
              compression-reseed-enabled
              compression-reseed-force-next-event
@@ -829,7 +859,8 @@ return their fixed configured addresses."
          compression-reseed-force-next-event
          read-only-register-profile
          categorical-predicate-mutation-enabled
-         teacher-guided-predicate-injection-enabled)
+         teacher-guided-predicate-injection-enabled
+         incumbent-conservative-repair-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -877,7 +908,9 @@ return their fixed configured addresses."
            :categorical-predicate-mutation-enabled
              categorical-predicate-mutation-enabled
            :teacher-guided-predicate-injection-enabled
-             teacher-guided-predicate-injection-enabled)
+             teacher-guided-predicate-injection-enabled
+           :incumbent-conservative-repair-enabled
+             incumbent-conservative-repair-enabled)
 
           (push
            (bt:make-thread
@@ -991,6 +1024,9 @@ return their fixed configured addresses."
         (teacher-guided-predicate-injection-enabled
           (eq (getf msg :teacher-guided-predicate-injection-enabled :disabled)
               :enabled))
+        (incumbent-conservative-repair-enabled
+          (eq (getf msg :incumbent-conservative-repair-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -1052,7 +1088,8 @@ return their fixed configured addresses."
          compression-reseed-force-next-event
          read-only-register-profile
          categorical-predicate-mutation-enabled
-         teacher-guided-predicate-injection-enabled)
+         teacher-guided-predicate-injection-enabled
+         incumbent-conservative-repair-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -1100,7 +1137,9 @@ return their fixed configured addresses."
            :categorical-predicate-mutation-enabled
              categorical-predicate-mutation-enabled
            :teacher-guided-predicate-injection-enabled
-             teacher-guided-predicate-injection-enabled)
+             teacher-guided-predicate-injection-enabled
+           :incumbent-conservative-repair-enabled
+             incumbent-conservative-repair-enabled)
 
           (push
            (bt:make-thread

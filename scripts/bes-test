@@ -15,6 +15,7 @@ if [[ "${1:-}" == --core ]]; then
     tests/read-only-registers.lisp
     tests/categorical-predicate-mutation.lisp
     tests/teacher-guided-predicate.lisp
+    tests/incumbent-conservative-repair.lisp
     tests/local-mutation-compression.lisp
     tests/behavioral-locality.lisp
     tests/official-guided.lisp

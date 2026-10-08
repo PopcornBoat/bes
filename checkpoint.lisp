@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 28
-  "Checkpoint version recording teacher-guided predicate provenance.")
+(defconstant +best-team-checkpoint-version+ 29
+  "Checkpoint version recording incumbent-conservative repair provenance.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -45,6 +45,8 @@
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
       (cond
+        (*incumbent-conservative-repair-enabled*
+         "official-guided-incumbent-conservative-repair")
         (*teacher-guided-predicate-injection-enabled*
          "official-guided-teacher-guided-predicate")
         (*near-miss-lineages-enabled*
@@ -138,6 +140,8 @@ checkpoint directory."
                              *categorical-predicate-mutation-enabled*)
                            (teacher-guided-predicate-injection-enabled
                              *teacher-guided-predicate-injection-enabled*)
+                           (incumbent-conservative-repair-enabled
+                             *incumbent-conservative-repair-enabled*)
                            (terminal-action-format *terminal-action-format*))
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   (unless (valid-instruction-set-profile-p instruction-set-profile)
@@ -192,6 +196,11 @@ checkpoint directory."
     :teacher-guided-predicate-protocol
       ,(and teacher-guided-predicate-injection-enabled
             +teacher-guided-predicate-protocol+)
+    :incumbent-conservative-repair-enabled
+      ,(not (null incumbent-conservative-repair-enabled))
+    :incumbent-conservative-repair-protocol
+      ,(and incumbent-conservative-repair-enabled
+            +incumbent-conservative-repair-protocol+)
     :terminal-action-format ,terminal-action-format
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode
@@ -215,7 +224,8 @@ checkpoint directory."
             (fboundp 'targeted-routing-repair-state-copy)
             (targeted-routing-repair-state-copy))
     :teacher-guided-predicate-state
-      ,(and teacher-guided-predicate-injection-enabled
+      ,(and (or teacher-guided-predicate-injection-enabled
+                incumbent-conservative-repair-enabled)
             (fboundp 'teacher-guided-predicate-state-copy)
             (teacher-guided-predicate-state-copy))
     :targeted-specialist-composition-state
@@ -272,6 +282,8 @@ checkpoint directory."
                                   *categorical-predicate-mutation-enabled*)
                                 (teacher-guided-predicate-injection-enabled
                                   *teacher-guided-predicate-injection-enabled*)
+                                (incumbent-conservative-repair-enabled
+                                  *incumbent-conservative-repair-enabled*)
                                 (terminal-action-format
                                   *terminal-action-format*))
   "Write TEAM, FITNESS, and provenance metadata to PATH."
@@ -310,6 +322,8 @@ checkpoint directory."
              categorical-predicate-mutation-enabled
            :teacher-guided-predicate-injection-enabled
              teacher-guided-predicate-injection-enabled
+           :incumbent-conservative-repair-enabled
+             incumbent-conservative-repair-enabled
            :terminal-action-format terminal-action-format
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
@@ -351,6 +365,8 @@ checkpoint directory."
       *categorical-predicate-mutation-enabled*
     :teacher-guided-predicate-injection-enabled
       *teacher-guided-predicate-injection-enabled*
+    :incumbent-conservative-repair-enabled
+      *incumbent-conservative-repair-enabled*
     :terminal-action-format *terminal-action-format*
     :decoy-order-mode *decoy-order-mode*
     :cage2-opening-mode *cage2-opening-mode*

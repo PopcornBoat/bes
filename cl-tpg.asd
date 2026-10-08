@@ -36,5 +36,6 @@
 	       (:file "targeted-repair")
 	       (:file "teacher-directed-repair")
 	       (:file "teacher-guided-predicate")
+	       (:file "incumbent-conservative-repair")
 	       (:file "compression-reseed")
 	       (:file "main")))

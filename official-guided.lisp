@@ -184,7 +184,7 @@
 
 (defun official-guided-runtime-state ()
   "Return the small recoverable state journaled beside the best checkpoint."
-  (list :version 9
+  (list :version 10
         :fitness-protocol +official-guided-fitness-protocol+
         :checkpoint-filename (best-team-checkpoint-filename)
         :generation *generation*
@@ -199,7 +199,8 @@
                (fboundp 'targeted-routing-repair-state-copy)
                (targeted-routing-repair-state-copy))
         :teacher-guided-predicate-state
-          (and *teacher-guided-predicate-injection-enabled*
+          (and (or *teacher-guided-predicate-injection-enabled*
+                   *incumbent-conservative-repair-enabled*)
                (fboundp 'teacher-guided-predicate-state-copy)
                (teacher-guided-predicate-state-copy))
         :targeted-specialist-composition-state
@@ -367,7 +368,8 @@
     (when (and *targeted-routing-repair-enabled*
                targeted-routing-repair-state)
       (restore-targeted-routing-repair-state targeted-routing-repair-state))
-    (when (and *teacher-guided-predicate-injection-enabled*
+    (when (and (or *teacher-guided-predicate-injection-enabled*
+                   *incumbent-conservative-repair-enabled*)
                teacher-guided-predicate-state)
       (restore-teacher-guided-predicate-state
        teacher-guided-predicate-state))
