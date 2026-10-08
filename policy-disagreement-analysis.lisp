@@ -643,14 +643,29 @@
          (merge-pathnames "trajectories.sexp" output-directory)))
       summary)))
 
+(defun policy-disagreement-validation-100-seeds
+       (&optional (episodes 1000) (root +cage2-evaluation-seed+))
+  "Return the exact B-line-100 seed block used by full validation."
+  #+sbcl
+  (let ((*random-state* (sb-ext:seed-random-state root)))
+    ;; Full validation draws B-line-30 and B-line-50 before B-line-100.
+    (loop repeat (* 2 episodes) do (random 9999999))
+    (loop repeat episodes collect (random 9999999)))
+  #-sbcl
+  (declare (ignore episodes root))
+  #-sbcl
+  (error "Exact validation seed recovery currently requires SBCL."))
+
 (defun policy-disagreement-parse-seeds (text)
   (let ((seeds
-          (loop for start = 0 then (1+ comma)
-                for comma = (position #\, text :start start)
-                for token = (string-trim '(#\Space #\Tab)
-                                         (subseq text start comma))
-                collect (parse-integer token)
-                while comma)))
+          (if (string-equal text "validation-bline-100")
+              (policy-disagreement-validation-100-seeds)
+              (loop for start = 0 then (1+ comma)
+                    for comma = (position #\, text :start start)
+                    for token = (string-trim '(#\Space #\Tab)
+                                             (subseq text start comma))
+                    collect (parse-integer token)
+                    while comma))))
     (unless (every (lambda (seed) (and (integerp seed) (not (minusp seed))))
                    seeds)
       (error "Seeds must be non-negative integers, got ~S." seeds))

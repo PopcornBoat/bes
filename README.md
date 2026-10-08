@@ -70,8 +70,11 @@ scripts/policy-disagreement-analysis \
   /path/to/evolved.lisp \
   oracles/checkpoints/bline-62-36-compiled-heuristic.lisp \
   /path/to/output \
-  153,42,2026
+  validation-bline-100
 ```
+
+The named seed specification recovers the exact 1000-seed B-line-100 block
+used by full validation. A comma-separated explicit seed list is also accepted.
 
 The report separates semantic ranking disagreement from the concrete action
 ultimately selected by the shared Controller. The same seed couples the initial

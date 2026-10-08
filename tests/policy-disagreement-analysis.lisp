@@ -56,6 +56,10 @@
 
 (assert (equal (cl-tpg::policy-disagreement-parse-seeds "153, 42,2026")
                '(153 42 2026)))
+(assert (= (length
+            (cl-tpg::policy-disagreement-parse-seeds
+             "validation-bline-100"))
+           1000))
 (assert (= (cl-tpg::policy-disagreement-copy-value 255) 255))
 
 (format t "Policy disagreement analysis checks passed.~%")
