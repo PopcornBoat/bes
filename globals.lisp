@@ -111,6 +111,11 @@ official paired-evaluation gates; the teacher is never consulted at deployment."
 frozen official incumbent.  This treatment is isolated from population-parent
 single-predicate injection and remains disabled by default.")
 
+(defparameter *coordinated-repair-bundles-enabled* nil
+  "When true, create one child containing a coordinated set of specialists for
+teacher Top-k categories that repeatedly go missing together.  The operator is
+teacher-guided only during training; accepted checkpoints remain ordinary TPGs.")
+
 (defconstant +compression-reseed-protocol+ :compression-reseed-v1
   "Versioned stateless R0 intron-compression and population-reseed protocol.")
 
@@ -537,6 +542,28 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
 
 (defconstant +teacher-directed-repair-mismatch-penalty+ 1000.0d0
   "Penalty multiplier suppressing a synthesized bidder off its target gate.")
+
+(defconstant +coordinated-repair-bundle-protocol+
+  :coordinated-repair-bundles-v1
+  "Version tag for coordinated multi-specialist repair variation.")
+
+(defconstant +coordinated-repair-bundle-rng-salt+ 4404729
+  "Independent deterministic salt for coordinated repair scheduling.")
+
+(defconstant +coordinated-repair-bundle-quota+ 0.10d0
+  "Fraction of offspring slots reserved for coordinated bundle attempts.")
+
+(defconstant +coordinated-repair-bundle-min-members+ 2
+  "Minimum number of co-missing teacher categories in one repair bundle.")
+
+(defconstant +coordinated-repair-bundle-max-members+ 3
+  "Maximum number of specialists installed together in one repair child.")
+
+(defconstant +coordinated-repair-bundle-max-conjunctions+ 8
+  "Maximum categorical gates considered for each bundle member.")
+
+(defconstant +coordinated-repair-bundle-background-limit+ 128
+  "Maximum current on-policy background rows used for collateral screening.")
 
 (defconstant +teacher-guided-predicate-protocol+
   :teacher-guided-categorical-predicate-v1
@@ -1019,6 +1046,21 @@ this switch for selection or promotion.")
 
 (defvar *teacher-directed-repair-generation-records* nil
   "teacher-directed repair directed repair decisions waiting for generation journaling.")
+
+(defvar *coordinated-repair-bundle-rng-root* nil
+  "Root of the independent coordinated-repair scheduling stream.")
+
+(defvar *coordinated-repair-bundle-rng-cursor* 0
+  "Number of deterministic coordinated-repair scheduling draws consumed.")
+
+(defvar *coordinated-repair-bundle-age* 0
+  "Number of completed coordinated-repair reproduction generations.")
+
+(defvar *coordinated-repair-bundle-generation-records* nil
+  "Serializable coordinated-repair decisions awaiting generation journaling.")
+
+(defvar *coordinated-repair-bundle-attempted-this-generation* nil
+  "Ephemeral guard preventing duplicate deterministic bundles in one generation.")
 
 (defvar *teacher-guided-predicate-rng-root* nil
   "Root of the independent counter-based guided-predicate stream.")

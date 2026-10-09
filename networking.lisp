@@ -408,7 +408,8 @@ return their fixed configured addresses."
                                     (teacher-guided-predicate-injection-enabled
                                       nil)
                                     (incumbent-conservative-repair-enabled
-                                      nil))
+                                      nil)
+                                    (coordinated-repair-bundles-enabled nil))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -499,11 +500,18 @@ return their fixed configured addresses."
         *teacher-guided-predicate-injection-enabled*
           (not (null teacher-guided-predicate-injection-enabled))
         *incumbent-conservative-repair-enabled*
-          (not (null incumbent-conservative-repair-enabled)))
+          (not (null incumbent-conservative-repair-enabled))
+        *coordinated-repair-bundles-enabled*
+          (not (null coordinated-repair-bundles-enabled)))
 
   (when (and *teacher-guided-predicate-injection-enabled*
              *incumbent-conservative-repair-enabled*)
     (error "Population-parent and incumbent-conservative guided repair are mutually exclusive."))
+
+  (when (and *coordinated-repair-bundles-enabled*
+             (or *teacher-guided-predicate-injection-enabled*
+                 *incumbent-conservative-repair-enabled*))
+    (error "Coordinated repair bundles are isolated from single-issue guided repair."))
 
   (when (and *compression-reseed-enabled*
              (or (not (eq *instruction-mutation-mode* :field-local))
@@ -532,6 +540,12 @@ return their fixed configured addresses."
                  (zerop (active-read-only-register-count))))
     (error "Incumbent-conservative repair requires FIELD-LOCAL, EQ, and active RORs."))
 
+  (when (and *coordinated-repair-bundles-enabled*
+             (or (not (eq *instruction-mutation-mode* :field-local))
+                 (not (member :eq (active-instruction-opcodes) :test #'eq))
+                 (zerop (active-read-only-register-count))))
+    (error "Coordinated repair bundles require FIELD-LOCAL, EQ, and active RORs."))
+
   (setf *checkpoint-directory* checkpoint-directory))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
@@ -558,7 +572,8 @@ return their fixed configured addresses."
                                   (categorical-predicate-mutation-enabled nil)
                                   (teacher-guided-predicate-injection-enabled
                                     nil)
-                                  (incumbent-conservative-repair-enabled nil))
+                                  (incumbent-conservative-repair-enabled nil)
+                                  (coordinated-repair-bundles-enabled nil))
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -655,6 +670,18 @@ return their fixed configured addresses."
        (or (not incumbent-conservative-repair-enabled)
            (and (eq mode :official-guided)
                 (not teacher-guided-predicate-injection-enabled)
+                (eq instruction-mutation-mode :field-local)
+                (member :eq
+                        (active-instruction-opcodes instruction-set-profile)
+                        :test #'eq)
+                (plusp
+                 (length
+                  (active-read-only-register-values
+                   read-only-register-profile)))))
+       (or (not coordinated-repair-bundles-enabled)
+           (and (eq mode :official-guided)
+                (not teacher-guided-predicate-injection-enabled)
+                (not incumbent-conservative-repair-enabled)
                 (eq instruction-mutation-mode :field-local)
                 (member :eq
                         (active-instruction-opcodes instruction-set-profile)
@@ -760,6 +787,9 @@ return their fixed configured addresses."
         (incumbent-conservative-repair-enabled
           (eq (getf msg :incumbent-conservative-repair-enabled :disabled)
               :enabled))
+        (coordinated-repair-bundles-enabled
+          (eq (getf msg :coordinated-repair-bundles-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -772,7 +802,7 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A coordinated-bundles=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
@@ -784,6 +814,7 @@ return their fixed configured addresses."
              categorical-predicate-mutation-enabled
              teacher-guided-predicate-injection-enabled
              incumbent-conservative-repair-enabled
+             coordinated-repair-bundles-enabled
              effective-aware-mutation-enabled
              compression-reseed-enabled
              compression-reseed-force-next-event
@@ -860,7 +891,8 @@ return their fixed configured addresses."
          read-only-register-profile
          categorical-predicate-mutation-enabled
          teacher-guided-predicate-injection-enabled
-         incumbent-conservative-repair-enabled)
+         incumbent-conservative-repair-enabled
+         coordinated-repair-bundles-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -910,7 +942,9 @@ return their fixed configured addresses."
            :teacher-guided-predicate-injection-enabled
              teacher-guided-predicate-injection-enabled
            :incumbent-conservative-repair-enabled
-             incumbent-conservative-repair-enabled)
+             incumbent-conservative-repair-enabled
+           :coordinated-repair-bundles-enabled
+             coordinated-repair-bundles-enabled)
 
           (push
            (bt:make-thread
@@ -1027,6 +1061,9 @@ return their fixed configured addresses."
         (incumbent-conservative-repair-enabled
           (eq (getf msg :incumbent-conservative-repair-enabled :disabled)
               :enabled))
+        (coordinated-repair-bundles-enabled
+          (eq (getf msg :coordinated-repair-bundles-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -1089,7 +1126,8 @@ return their fixed configured addresses."
          read-only-register-profile
          categorical-predicate-mutation-enabled
          teacher-guided-predicate-injection-enabled
-         incumbent-conservative-repair-enabled)
+         incumbent-conservative-repair-enabled
+         coordinated-repair-bundles-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -1139,7 +1177,9 @@ return their fixed configured addresses."
            :teacher-guided-predicate-injection-enabled
              teacher-guided-predicate-injection-enabled
            :incumbent-conservative-repair-enabled
-             incumbent-conservative-repair-enabled)
+             incumbent-conservative-repair-enabled
+           :coordinated-repair-bundles-enabled
+             coordinated-repair-bundles-enabled)
 
           (push
            (bt:make-thread

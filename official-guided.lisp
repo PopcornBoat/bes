@@ -184,7 +184,7 @@
 
 (defun official-guided-runtime-state ()
   "Return the small recoverable state journaled beside the best checkpoint."
-  (list :version 10
+  (list :version 11
         :fitness-protocol +official-guided-fitness-protocol+
         :checkpoint-filename (best-team-checkpoint-filename)
         :generation *generation*
@@ -207,6 +207,10 @@
           (and *targeted-specialist-composition-enabled*
                (fboundp 'targeted-specialist-composition-state-copy)
                (targeted-specialist-composition-state-copy))
+        :coordinated-repair-bundle-state
+          (and *coordinated-repair-bundles-enabled*
+               (fboundp 'coordinated-repair-bundle-state-copy)
+               (coordinated-repair-bundle-state-copy))
         :official-return-credit-state
           (and *official-return-credit-enabled*
                (fboundp 'official-return-credit-state-copy)
@@ -336,6 +340,11 @@
                     (>= journal-version metadata-version))
                (getf journal :targeted-specialist-composition-state)
                (getf metadata :targeted-specialist-composition-state)))
+         (coordinated-repair-bundle-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :coordinated-repair-bundle-state)
+               (getf metadata :coordinated-repair-bundle-state)))
          (official-return-credit-state
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
@@ -377,6 +386,10 @@
                targeted-specialist-composition-state)
       (restore-targeted-specialist-composition-state
        targeted-specialist-composition-state))
+    (when (and *coordinated-repair-bundles-enabled*
+               coordinated-repair-bundle-state)
+      (restore-coordinated-repair-bundle-state
+       coordinated-repair-bundle-state))
     (when (and *official-return-credit-enabled*
                official-return-credit-state)
       (restore-official-return-credit-state

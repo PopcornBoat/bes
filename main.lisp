@@ -1778,9 +1778,25 @@ promotion still requires the stricter positive one-standard-error improvement."
                  (*recurrent-policy-enabled* nil)
                  (*hamming-space-enabled* nil)
                  (*factored-actions-enabled* t)
-                 (child (load-best-team (getf request :child-path)))
-                 (parent (load-best-team (getf request :parent-path)))
+                 (child-values
+                   (multiple-value-list
+                    (load-best-team (getf request :child-path))))
+                 (child (first child-values))
+                 (child-metadata (third child-values))
+                 (child-profile
+                   (checkpoint-execution-profile-list
+                    child-metadata "Passive locality child"))
+                 (*terminal-action-format* (first child-profile))
+                 (*instruction-set-profile* (second child-profile))
+                 (*read-only-register-profile* (third child-profile))
+                 (parent-values
+                   (multiple-value-list
+                    (load-best-team (getf request :parent-path))))
+                 (parent (first parent-values))
+                 (parent-metadata (third parent-values))
                  (seeds (getf request :seeds)))
+            (ensure-compatible-checkpoint-execution-profile
+             child-profile parent-metadata "Passive locality parent")
             (ensure-team-observation-compatible child *num-observations*)
             (ensure-team-observation-compatible parent *num-observations*)
             (multiple-value-bind (child-returns parent-returns)
@@ -2256,6 +2272,9 @@ reference batch."
         *semantic-locality-control-enabled* (eq mode :official-guided)
         *grouped-selection-enabled* (eq mode :official-guided)
         *targeted-disagreement-audit-enabled* (eq mode :official-guided)
+        *coordinated-repair-bundles-enabled*
+          (and *coordinated-repair-bundles-enabled*
+               (eq mode :official-guided))
         *teacher-guided-predicate-injection-enabled*
           (and *teacher-guided-predicate-injection-enabled*
                (eq mode :official-guided))
@@ -3125,6 +3144,8 @@ through serialization/deserialization and save it to disk."
   (setf *targeted-specialist-composition-generation-records* nil)
   (setf *targeted-combined-repair-generation-records* nil)
   (setf *teacher-directed-repair-generation-records* nil)
+  (setf *coordinated-repair-bundle-generation-records* nil)
+  (setf *coordinated-repair-bundle-attempted-this-generation* nil)
   (setf *teacher-guided-predicate-generation-records* nil)
   ;; A guarded compression event installs one behavior-equivalent, independent
   ;; incumbent clone. Its variants still use the ordinary mutation/locality
@@ -3137,9 +3158,13 @@ through serialization/deserialization and save it to disk."
             do (reproduce-native-child compressed-parent))))
   (loop while (< (length (root-teams)) *population-size*)
         do (let* ((parents (root-teams))
+                  (bundle-p (coordinated-repair-bundle-active-p))
+                  (bundle-slot-p
+                    (and bundle-p (coordinated-repair-bundle-slot-p)))
                   (guided-p (teacher-guided-predicate-active-p))
                   (guided-slot-p
-                    (and guided-p (teacher-guided-predicate-slot-p)))
+                    (and (not bundle-p) guided-p
+                         (teacher-guided-predicate-slot-p)))
                   (directed-p (teacher-directed-repair-active-p))
                   (directed-slot-p
                     (and (not guided-p) directed-p
@@ -3163,6 +3188,8 @@ through serialization/deserialization and save it to disk."
                          (targeted-routing-repair-slot-p))))
              (multiple-value-bind (repair-child repair-parent)
                  (cond
+                   (bundle-slot-p
+                    (coordinated-repair-attempt-bundle))
                    (guided-slot-p
                     (teacher-guided-attempt-predicate-repair parents))
                    (directed-slot-p
@@ -3176,6 +3203,7 @@ through serialization/deserialization and save it to disk."
                    (t (values nil nil)))
                (let* ((lineage-child
                         (and (null repair-child)
+                             (not bundle-slot-p)
                              (not guided-slot-p)
                              (not directed-slot-p)
                              (not combined-slot-p)
@@ -3199,6 +3227,7 @@ through serialization/deserialization and save it to disk."
     (grouped-update-specialist-lifecycle :post-reproduction)
     (persist-grouped-selection-generation-record))
   (finish-targeted-combined-repair-generation)
+  (finish-coordinated-repair-bundle-generation)
   (finish-teacher-guided-predicate-generation)
   (finish-targeted-routing-repair-generation)
   (finish-targeted-specialist-composition-generation)
@@ -3272,6 +3301,8 @@ through serialization/deserialization and save it to disk."
         (initialize-teacher-guided-predicate-state seed))
       (when (targeted-specialist-composition-active-p)
         (initialize-targeted-specialist-composition-state seed))
+      (when (coordinated-repair-bundle-active-p)
+        (initialize-coordinated-repair-bundle-state seed))
       (make-initial-population)
 
       (when (and (official-guided-mode-p)
@@ -3628,6 +3659,8 @@ normal evolution."
         (initialize-teacher-guided-predicate-state seed))
       (when (targeted-specialist-composition-active-p)
         (initialize-targeted-specialist-composition-state seed))
+      (when (coordinated-repair-bundle-active-p)
+        (initialize-coordinated-repair-bundle-state seed))
 
       ;; Build fresh random population for this island.
       (make-initial-population)

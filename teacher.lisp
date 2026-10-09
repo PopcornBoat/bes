@@ -387,8 +387,9 @@ the historical learner-controlled DAgger behavior is preserved."
                                (incf total-reward episode-reward)
                                (return)))))))))
       (ignore-errors (py4cl2:pymethod env "close")))
-    (setf *last-dagger-diagnostics*
-          (list :episodes (length episode-seeds)
+    (let ((ordered-rows (nreverse rows)))
+      (setf *last-dagger-diagnostics*
+            (list :episodes (length episode-seeds)
                 :policy-steps policy-steps
                 :disagreements disagreements
                 :disagreement-rate
@@ -404,10 +405,15 @@ the historical learner-controlled DAgger behavior is preserved."
                 :teacher-mixing-rate teacher-rate
                 :teacher-controlled-steps teacher-controlled
                 :learner-controlled-steps learner-controlled
-                :mean-mixed-return
-                  (/ total-reward
-                     (coerce (max 1 (length episode-seeds)) 'double-float))))
-    (nreverse rows)))
+                  :mean-mixed-return
+                    (/ total-reward
+                       (coerce (max 1 (length episode-seeds)) 'double-float))))
+      (when (targeted-disagreement-audit-active-p)
+        (setf (getf *last-dagger-diagnostics*
+                    :missing-teacher-ranking-audit)
+              (targeted-missing-ranking-audit-for-rows
+               behavior-team ordered-rows)))
+      ordered-rows)))
 
 (defun dagger-diagnostic-phase (timestep)
   "Return the stable episode-phase bucket for TIMESTEP."
@@ -464,6 +470,97 @@ graph."
     (teacher-rank :case-a-routing)
     ((gethash teacher-pair support) :case-b1-reachable-support)
     (t :case-b2-missing-support)))
+
+(defun targeted-missing-ranking-entries (teacher-ranking student-ranking)
+  "Return teacher PAIR/RANK records absent from STUDENT-RANKING."
+  (loop for pair in teacher-ranking
+        for rank fixnum from 1
+        unless (member pair student-ranking :test #'equal)
+          collect (list :pair (copy-list pair) :teacher-rank rank)))
+
+(defun targeted-missing-ranking-records (counts episodes kind)
+  "Return deterministic systematic records for one missing-ranking KIND."
+  (mapcar
+   (lambda (entry)
+     (let* ((key (car entry))
+            (count (cdr entry))
+            (episode-list (copy-list (gethash key episodes)))
+            (systematic-p
+              (and (>= count +targeted-systematic-minimum-occurrences+)
+                   (>= (length episode-list)
+                       +targeted-systematic-minimum-episodes+))))
+       (ecase kind
+         (:category
+          (destructuring-bind (phase pair teacher-rank case) key
+            (list :phase phase :teacher-pair pair
+                  :teacher-rank teacher-rank :case case
+                  :occurrences count
+                  :episode-count (length episode-list)
+                  :systematic-p systematic-p)))
+         (:bundle
+          (destructuring-bind (phase pairs) key
+            (list :phase phase :teacher-pairs pairs
+                  :occurrences count
+                  :episode-count (length episode-list)
+                  :systematic-p systematic-p))))))
+   (dagger-count-table-alist counts)))
+
+(defun targeted-missing-ranking-audit-for-rows (behavior-team rows)
+  "Audit every teacher Top-k category absent from the learner Top-k.
+
+The existing disagreement audit describes the resolved teacher action.  This
+companion audit retains lower-ranked omissions and the sets that co-occur on a
+row, which coordinated repair needs to compose several specialists at once."
+  (let ((support (targeted-behavior-terminal-support behavior-team))
+        (category-counts (make-hash-table :test #'equal))
+        (category-episodes (make-hash-table :test #'equal))
+        (bundle-counts (make-hash-table :test #'equal))
+        (bundle-episodes (make-hash-table :test #'equal)))
+    (dolist (row rows)
+      (destructuring-bind
+          (observation selected ranking decoy-mask
+           &optional episode-id step)
+          row
+        (declare (ignore selected decoy-mask))
+        (let* ((phase (dagger-diagnostic-phase (or step 0)))
+               (student
+                 (behavioral-ranking-pairs
+                  behavior-team (policy-observation observation)))
+               (missing
+                 (targeted-missing-ranking-entries ranking student)))
+          (dolist (record missing)
+            (let* ((pair (getf record :pair))
+                   (key
+                     (list phase pair (getf record :teacher-rank)
+                           (targeted-disagreement-case nil pair support))))
+              (dagger-increment key category-counts)
+              (pushnew episode-id (gethash key category-episodes)
+                       :test #'equal)))
+          (when (>= (length missing)
+                    +coordinated-repair-bundle-min-members+)
+            (let ((key
+                    (list phase
+                          (mapcar (lambda (record)
+                                    (copy-list (getf record :pair)))
+                                  missing))))
+              (dagger-increment key bundle-counts)
+              (pushnew episode-id (gethash key bundle-episodes)
+                       :test #'equal))))))
+    (let* ((categories
+             (targeted-missing-ranking-records
+              category-counts category-episodes :category))
+           (bundles
+             (targeted-missing-ranking-records
+              bundle-counts bundle-episodes :bundle)))
+      (list :protocol +coordinated-repair-bundle-protocol+
+            :category-issues categories
+            :systematic-category-issues
+              (remove-if-not
+               (lambda (record) (getf record :systematic-p)) categories)
+            :co-missing-bundles bundles
+            :systematic-co-missing-bundles
+              (remove-if-not
+               (lambda (record) (getf record :systematic-p)) bundles)))))
 
 (defun targeted-repair-issue-records (counts episodes)
   "Return deterministic serializable issue records from audit hash tables."
@@ -724,8 +821,9 @@ updated only from the observation and concrete action that actually occurred."
                                (incf total-reward episode-reward)
                                (return)))))))))
       (ignore-errors (py4cl2:pymethod env "close")))
-    (setf *last-dagger-diagnostics*
-          (list :episodes (length episode-seeds)
+    (let ((ordered-rows (nreverse rows)))
+      (setf *last-dagger-diagnostics*
+            (list :episodes (length episode-seeds)
                 :policy-steps policy-steps
                 :disagreements disagreements
                 :disagreement-rate
@@ -765,10 +863,15 @@ updated only from the observation and concrete action that actually occurred."
                         repair-phase-case-counts repair-pair-case-counts
                         repair-rank-counts repair-issue-counts
                         repair-issue-episodes))
-                :mean-mixed-return
-                  (/ total-reward
-                     (coerce (max 1 (length episode-seeds)) 'double-float))))
-    (nreverse rows)))
+                  :mean-mixed-return
+                    (/ total-reward
+                       (coerce (max 1 (length episode-seeds)) 'double-float))))
+      (when repair-audit-active
+        (setf (getf *last-dagger-diagnostics*
+                    :missing-teacher-ranking-audit)
+              (targeted-missing-ranking-audit-for-rows
+               behavior-team ordered-rows)))
+      ordered-rows)))
 
 (defun generate-dagger-trace-rows
        (behavior-team environment-name episode-seeds)
@@ -1128,6 +1231,25 @@ official incumbent and is never repurposed as mutable DAgger state."
                                       :case-b2-missing-support)
                                      (getf audit
                                            :systematic-issue-count 0))))))
+                      (let ((missing-audit
+                              (getf *last-dagger-diagnostics*
+                                    :missing-teacher-ranking-audit)))
+                        (when missing-audit
+                          (emit-message
+                           (format nil
+                                   "Generation ~D missing teacher Top-k audit: categories=~D systematic-categories=~D co-missing-bundles=~D systematic-bundles=~D."
+                                   *generation*
+                                   (length
+                                    (getf missing-audit :category-issues))
+                                   (length
+                                    (getf missing-audit
+                                          :systematic-category-issues))
+                                   (length
+                                    (getf missing-audit
+                                          :co-missing-bundles))
+                                   (length
+                                    (getf missing-audit
+                                          :systematic-co-missing-bundles))))))
                       (when (behavioral-locality-active-p)
                         (append-behavioral-locality-form
                          (list :type :dagger-disagreement-generation
