@@ -591,7 +591,7 @@ return their fixed configured addresses."
                (eq decoy-order-mode :fixed)
                (eq cage2-opening-mode :fixed)
                (eq teacher-forcing-rollout-mode :dagger)
-               (eq teacher-backend :heuristic)
+               (valid-teacher-backend-p teacher-backend)
                (not recurrent-policy-enabled)
                (not hamming-space-enabled)))
 	 (:offline (and dataset-name

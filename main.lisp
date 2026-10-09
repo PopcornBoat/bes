@@ -2188,9 +2188,7 @@ reference batch."
            *teacher-dagger-random-state* nil
            *current-dataset-fingerprint* nil)
      (when (cl-gym:cage2-environment-p gym-environment-name)
-       (configure-cage2-terminal-action-format)
-       (when (eq *terminal-action-format* :target-response-36)
-         (setf *teacher-backend* :heuristic)))
+       (configure-cage2-terminal-action-format))
      (configure-hamming-observation-space)
      (setf *fitness-fn*
            (lambda (team)
@@ -2287,10 +2285,10 @@ reference batch."
      (unless (and (eq *teacher-forcing-rollout-mode* :dagger)
                   (eq *decoy-order-mode* :fixed)
                   (eq *cage2-opening-mode* :fixed)
-                  (eq *teacher-backend* :heuristic)
+                  (valid-teacher-backend-p *teacher-backend*)
                   (not *recurrent-policy-enabled*)
                   (not *hamming-space-enabled*))
-       (error "Official-guided direct policy requires the heuristic teacher, stateless DAgger, fixed opening/order, and Hamming disabled."))
+       (error "Official-guided direct policy requires a supported teacher, stateless DAgger, fixed opening/order, and Hamming disabled."))
      (configure-teacher-forcing-fitness gym-environment-name))))
 
 (defun safe-evaluate-team (team)

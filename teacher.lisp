@@ -888,12 +888,9 @@ updated only from the observation and concrete action that actually occurred."
            *num-actions*))
   (configure-cage2-terminal-action-format)
   (when (eq *terminal-action-format* :target-response-36)
-    (setf *teacher-backend* :heuristic)
     (unless (= *num-observations* +cage2-scan-observation-size+)
       (error "Direct Semantic-36 teacher forcing requires exactly ~D observations."
-             +cage2-scan-observation-size+))
-    (unless (search "b_line" environment-name)
-      (error "The Lisp heuristic Semantic-36 path currently supports B-line only.")))
+             +cage2-scan-observation-size+)))
   (unless (valid-cage2-policy-observation-size-p *num-observations*)
     (error "Teacher forcing requires ~D or ~D observations, got ~S."
            +cage2-scan-observation-size+
