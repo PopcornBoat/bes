@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 SOURCE_CHECKPOINT OUTPUT_CHECKPOINT" >&2
+  exit 2
+fi
+
+repo=/home/hardison/bes
+source_checkpoint=$1
+output_checkpoint=$2
+
+cd "$repo"
+env \
+  "SOURCE_CHECKPOINT=$source_checkpoint" \
+  "OUTPUT_CHECKPOINT=$output_checkpoint" \
+  'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+  /usr/bin/sbcl \
+    --dynamic-space-size 4096 \
+    --non-interactive \
+    --eval '(require :asdf)' \
+    --eval '(asdf:load-system :cl-tpg)' \
+    --eval '(cl-tpg::write-reactive-decoy-backbone-from-environment)'
