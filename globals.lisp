@@ -210,6 +210,15 @@ checks remain mandatory.")
 (defvar *compiled-heuristic-donor-last-record* nil
   "Provenance for the donor cohort installed in the current search.")
 
+(defvar *compiled-heuristic-donor-lineages* nil
+  "EQ table mapping live donor descendants to immutable lineage provenance.")
+
+(defvar *compiled-heuristic-donor-best-lineage* nil
+  "Donor lineage of the protected incumbent, or NIL for a non-donor best.")
+
+(defvar *online-staged-best-donor-lineage* nil
+  "Donor lineage captured before the staged challenger is deep-copied.")
+
 (defun valid-instruction-set-profile-p (profile)
   "Return true for a supported instruction creation profile."
   (member profile '(:full :reduced :reduced-eq) :test #'eq))

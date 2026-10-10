@@ -103,6 +103,25 @@ graph edges after the accepted descendant joins the population."
   "Return roots eligible for replacement, excluding PROTECTED-ROOT."
   (remove protected-root (root-teams) :test #'eq))
 
+(defun compiled-heuristic-donor-lineage-for (team)
+  "Return an independent copy of TEAM's donor lineage, if any."
+  (and *compiled-heuristic-donor-lineages*
+       (copy-tree (gethash team *compiled-heuristic-donor-lineages*))))
+
+(defun compiled-heuristic-donor-note-descendant (parent child)
+  "Propagate donor provenance from PARENT to CHILD without affecting selection."
+  (let ((lineage (compiled-heuristic-donor-lineage-for parent)))
+    (when lineage
+      (unless *compiled-heuristic-donor-lineages*
+        (setf *compiled-heuristic-donor-lineages*
+              (make-hash-table :test #'eq)))
+      (setf (getf lineage :parent-team-id) (team-id parent)
+            (getf lineage :team-id) (team-id child)
+            (getf lineage :depth) (1+ (getf lineage :depth 0))
+            (getf lineage :last-generation) *generation*
+            (gethash child *compiled-heuristic-donor-lineages*) lineage)
+      (copy-tree lineage))))
+
 (defun install-compiled-heuristic-donor-cohort (protected-root)
   "Replace random warm-start roots with mutated compiled-heuristic descendants.
 
@@ -134,6 +153,9 @@ with nonzero bounded Top-1 probe distance enter the ordinary population."
     (when (< (length replaceable) count)
       (error "Compiled donor requested ~D slots but only ~D roots are replaceable."
              count (length replaceable)))
+    (unless *compiled-heuristic-donor-lineages*
+      (setf *compiled-heuristic-donor-lineages*
+            (make-hash-table :test #'eq)))
     ;; Keep cohort creation reproducible without consuming ordinary mutation RNG.
     (let ((*random-state* random-state))
       (loop repeat count
@@ -150,8 +172,21 @@ with nonzero bounded Top-1 probe distance enter the ordinary population."
             do (setf replaceable
                      (delete victim replaceable :test #'eq :count 1))
                (delete-team victim)))
-    (dolist (variant variants)
-      (install-independent-team-closure variant))
+    (loop for variant in variants
+          for record in records
+          for origin-index from 0
+          do (install-independent-team-closure variant)
+             (setf (gethash variant *compiled-heuristic-donor-lineages*)
+                   (list :protocol +compiled-heuristic-donor-protocol+
+                         :origin-index origin-index
+                         :origin-team-id (team-id variant)
+                         :team-id (team-id variant)
+                         :parent-team-id nil
+                         :depth 0
+                         :created-generation *generation*
+                         :last-generation *generation*
+                         :origin-top1-hamming
+                           (getf record :top1-hamming))))
     (unless (= roots-before (length (root-teams)))
       (error "Compiled donor seeding changed root count from ~D to ~D."
              roots-before (length (root-teams))))

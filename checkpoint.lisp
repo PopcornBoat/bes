@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 32
-  "Checkpoint version recording compiled-heuristic donor provenance.")
+(defconstant +best-team-checkpoint-version+ 33
+  "Checkpoint version recording compiled-heuristic donor lineage.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -260,6 +260,9 @@ checkpoint directory."
     :compiled-heuristic-donor-record
       ,(and compiled-heuristic-donor-seeding-enabled
             (copy-tree *compiled-heuristic-donor-last-record*))
+    :compiled-heuristic-donor-best-lineage
+      ,(and compiled-heuristic-donor-seeding-enabled
+            (copy-tree *compiled-heuristic-donor-best-lineage*))
     :terminal-action-format ,terminal-action-format
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode

@@ -123,6 +123,8 @@
        (cl-tpg::*checkpoint-directory* nil)
        (cl-tpg::*teams* nil)
        (cl-tpg::*best-team* nil)
+       (cl-tpg::*compiled-heuristic-donor-lineages*
+         (make-hash-table :test #'eq))
        (cl-tpg::*random-state* (sb-ext:seed-random-state 9917)))
   (loop for target across cl-tpg::*semantic-36-targets*
         do (loop for response below cl-tpg::+num-semantic-responses+
@@ -151,7 +153,27 @@
      "only mandatory behaviorally changed descendants enter the population")
     (check-compiled-donor
      (= expected-next-random (random 1000000 cl-tpg::*random-state*))
-     "donor construction does not consume ordinary evolution RNG")))
+     "donor construction does not consume ordinary evolution RNG")
+    (let* ((origin
+             (find-if
+              (lambda (team)
+                (cl-tpg::compiled-heuristic-donor-lineage-for team))
+              (cl-tpg::root-teams)))
+           (child (cl-tpg::deep-copy-team-via-serialization origin))
+           (origin-lineage
+             (cl-tpg::compiled-heuristic-donor-lineage-for origin)))
+      (cl-tpg::compiled-heuristic-donor-note-descendant origin child)
+      (let ((child-lineage
+              (cl-tpg::compiled-heuristic-donor-lineage-for child)))
+        (check-compiled-donor
+         (and origin-lineage
+              child-lineage
+              (= (getf child-lineage :origin-index)
+                 (getf origin-lineage :origin-index))
+              (= (getf child-lineage :depth) 1)
+              (equal (getf child-lineage :parent-team-id)
+                     (cl-tpg::team-id origin)))
+         "ordinary descendants inherit donor provenance without installing the donor")))))
 
 (let* ((cl-tpg::*compiled-heuristic-donor-seeding-enabled* t)
        (cl-tpg::*current-search-mode* :official-guided)
@@ -166,6 +188,8 @@
        (cl-tpg::*compiled-heuristic-donor-max-top1-hamming* 0.25d0)
        (cl-tpg::*compiled-heuristic-donor-last-record*
          '(:descendants 16 :donor-installed nil))
+       (cl-tpg::*compiled-heuristic-donor-best-lineage*
+         '(:origin-index 3 :depth 7 :team-id 919))
        (team (cl-tpg::%make-team :learners nil))
        (data (cl-tpg::make-best-team-checkpoint-data team 0.0d0)))
   (check-compiled-donor
@@ -174,7 +198,9 @@
             cl-tpg::+compiled-heuristic-donor-protocol+)
         (= (getf data :compiled-heuristic-donor-fraction) 0.10d0)
         (equal (getf data :compiled-heuristic-donor-record)
-               '(:descendants 16 :donor-installed nil)))
+               '(:descendants 16 :donor-installed nil))
+        (equal (getf data :compiled-heuristic-donor-best-lineage)
+               '(:origin-index 3 :depth 7 :team-id 919)))
    "checkpoint metadata records donor protocol and cohort provenance")
   (check-compiled-donor
    (search "compiled-donor" (cl-tpg::best-team-checkpoint-filename))

@@ -24,6 +24,7 @@ if [[ "${1:-}" == --core ]]; then
     tests/grouped-selection.lisp
     tests/disagreement-audit.lisp
     tests/population-diversity-pulse.lisp
+    tests/compiled-heuristic-donor.lisp
   )
 elif [[ $# -gt 0 ]]; then
   tests=("$@")

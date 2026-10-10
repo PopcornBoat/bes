@@ -799,6 +799,7 @@ promotion still requires the stricter positive one-standard-error improvement."
         *online-staged-best-fitness* nil
         *online-staged-best-generation* nil
         *online-staged-best-lineage* nil
+        *online-staged-best-donor-lineage* nil
         *online-staged-best-parent-team* nil
         *online-staged-best-guided-priority* nil
         *online-staged-best-credit-priority* nil
@@ -869,6 +870,8 @@ promotion still requires the stricter positive one-standard-error improvement."
             *online-staged-best-generation* *generation*
             *online-staged-best-lineage*
               (behavioral-lineage-for-team team)
+            *online-staged-best-donor-lineage*
+              (compiled-heuristic-donor-lineage-for team)
             *online-staged-best-parent-team*
               (and parent
                    (deep-copy-team-via-serialization parent))
@@ -1213,6 +1216,7 @@ promotion still requires the stricter positive one-standard-error improvement."
            *online-staged-best-near-miss-lineage-id*)
          (near-miss-head-version
            *online-staged-best-near-miss-head-version*)
+         (donor-lineage *online-staged-best-donor-lineage*)
          (near-miss-request
            (and near-miss-lineage-id
                 (near-miss-local-comparison-request
@@ -1288,6 +1292,7 @@ promotion still requires the stricter positive one-standard-error improvement."
            :teacher-backend *teacher-backend*
            :behavioral-locality
              (copy-tree *online-staged-best-lineage*)
+           :compiled-heuristic-donor-lineage (copy-tree donor-lineage)
            :return-credit-priority credit-priority
            :return-credit-lineage-id credit-lineage-id
            :return-credit-seeds credit-seeds
@@ -1333,6 +1338,8 @@ promotion still requires the stricter positive one-standard-error improvement."
                   :incumbent-version *official-guided-incumbent-version*
                   :credit-priority credit-priority
                   :credit-lineage-id credit-lineage-id
+                  :compiled-heuristic-donor-lineage
+                    (copy-tree donor-lineage)
                   :near-miss-lineage-id
                     (and near-miss-request
                          (getf near-miss-request :lineage-id))
@@ -1345,6 +1352,7 @@ promotion still requires the stricter positive one-standard-error improvement."
           *online-staged-best-fitness* nil
           *online-staged-best-generation* nil
           *online-staged-best-lineage* nil
+          *online-staged-best-donor-lineage* nil
           *online-staged-best-parent-team* nil
           *online-staged-best-guided-priority* nil
           *online-staged-best-credit-priority* nil
@@ -1356,8 +1364,12 @@ promotion still requires the stricter positive one-standard-error improvement."
       (incf *official-return-credit-neutral-submissions*))
     (emit-message
      (format nil
-             "Generation ~D submitted to official-guided evaluator: imitation=~,4F near-miss-lineage=~A local-counts=~S racing=~D promotion-stages=~S reference-monitor=~D."
+             "Generation ~D submitted to official-guided evaluator: imitation=~,4F donor-lineage=~A near-miss-lineage=~A local-counts=~S racing=~D promotion-stages=~S reference-monitor=~D."
              generation imitation-score
+             (if donor-lineage
+                 (list :origin (getf donor-lineage :origin-index)
+                       :depth (getf donor-lineage :depth))
+                 :none)
              (or (and near-miss-request
                       (getf near-miss-request :lineage-id))
                  :none)
@@ -1383,6 +1395,10 @@ promotion still requires the stricter positive one-standard-error improvement."
            (getf *online-candidate-job* :near-miss-lineage-id))
          (candidate-lineage-id
            (getf *online-candidate-job* :credit-lineage-id))
+         (donor-lineage
+           (copy-tree
+            (getf *online-candidate-job*
+                  :compiled-heuristic-donor-lineage)))
          (candidate-priority
            (getf *online-candidate-job* :credit-priority))
          (anchor nil)
@@ -1488,7 +1504,12 @@ promotion still requires the stricter positive one-standard-error improvement."
          (incf *official-guided-incumbent-version*)
          (setf *best-team* frozen
                *best-fitness* primary-mean
-               *official-guided-best-evaluation* (copy-tree record))
+               *official-guided-best-evaluation* (copy-tree record)
+               *compiled-heuristic-donor-best-lineage* donor-lineage)
+         (when donor-lineage
+           (setf (getf *official-guided-best-evaluation*
+                       :compiled-heuristic-donor-lineage)
+                 (copy-tree donor-lineage)))
          (when (near-miss-active-p)
            (near-miss-clear-after-promotion *best-team*))
          (emit-message
@@ -3226,6 +3247,8 @@ through serialization/deserialization and save it to disk."
                             (reproduce-native-child parent))))
                  (when (official-return-credit-active-p)
                    (official-return-credit-note-descendant parent child))
+                 (when parent
+                   (compiled-heuristic-donor-note-descendant parent child))
                  (when (and parent (near-miss-active-p))
                    (near-miss-note-descendant parent child))
                  (when (grouped-selection-active-p)
@@ -3288,6 +3311,8 @@ through serialization/deserialization and save it to disk."
           *official-guided-best-evaluation* nil
           *official-guided-incumbent-version* 0
           *compiled-heuristic-donor-last-record* nil
+          *compiled-heuristic-donor-lineages* (make-hash-table :test #'eq)
+          *compiled-heuristic-donor-best-lineage* nil
           *search-start-time* (get-universal-time))
 
     (catch 'search-stop-requested
@@ -3657,6 +3682,9 @@ normal evolution."
           *official-guided-last-evaluation* nil
           *official-guided-best-evaluation* nil
           *official-guided-incumbent-version* 0
+          *compiled-heuristic-donor-last-record* nil
+          *compiled-heuristic-donor-lineages* (make-hash-table :test #'eq)
+          *compiled-heuristic-donor-best-lineage* nil
           *search-start-time* (get-universal-time))
 
     (catch 'search-stop-requested
@@ -3703,7 +3731,18 @@ normal evolution."
         (when (official-guided-mode-p)
           (restore-official-guided-runtime-state
            checkpoint-metadata best-team-path))
+        (setf *compiled-heuristic-donor-best-lineage*
+              (copy-tree
+               (getf checkpoint-metadata
+                     :compiled-heuristic-donor-best-lineage)))
         (inject-loaded-best-team-into-population loaded-best-team)
+        ;; A resumed donor incumbent is reconstructed as a fresh graph object.
+        ;; Reattach its persisted lineage so ordinary offspring continue the
+        ;; provenance chain without ever installing the exact compiled donor.
+        (when *compiled-heuristic-donor-best-lineage*
+          (setf (gethash loaded-best-team
+                         *compiled-heuristic-donor-lineages*)
+                (copy-tree *compiled-heuristic-donor-best-lineage*)))
         (emit-policy-limit-warning loaded-best-team)
 
         (setf *mixed-training-lineage*
