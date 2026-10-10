@@ -3287,6 +3287,7 @@ through serialization/deserialization and save it to disk."
           *official-guided-last-evaluation* nil
           *official-guided-best-evaluation* nil
           *official-guided-incumbent-version* 0
+          *compiled-heuristic-donor-last-record* nil
           *search-start-time* (get-universal-time))
 
     (catch 'search-stop-requested
@@ -3343,11 +3344,23 @@ through serialization/deserialization and save it to disk."
     (unless random-roots
       (error "Cannot inject best team: no root teams exist in the current population."))
 
+    ;; Only the designated checkpoint entry is an evaluated root. Historical
+    ;; serialized graphs can retain stale :ROOT tags on referenced teams; if
+    ;; left intact, those internal policies incorrectly enter selection as
+    ;; independent candidates and make a population of N start larger than N.
+    (dolist (graph-team loaded-closure)
+      (unless (eq graph-team loaded-best-team)
+        (setf (team-type graph-team) :internal)))
+
     ;; Fresh population contains only random root teams. Drop the first one and
-    ;; prepend the loaded best team's full closure.
+    ;; prepend the normalized loaded best team's full closure.
     (setf *teams*
           (append loaded-closure
                   (rest random-roots)))
+
+    (unless (= (length (root-teams)) (length random-roots))
+      (error "Warm-start injection changed root count from ~D to ~D."
+             (length random-roots) (length (root-teams))))
 
     loaded-best-team))
 					     
@@ -3726,10 +3739,15 @@ normal evolution."
           ;; Official-guided resume must never let imitation alone replace the
           ;; official incumbent. Other modes retain the historical behavior.
           (if (official-guided-mode-p)
-              (initialize-official-guided-best-from-current-population
-               loaded-best-team
-               (or saved-best-fitness comparable-fitness)
-               checkpoint-metadata)
+              (progn
+                (initialize-official-guided-best-from-current-population
+                 loaded-best-team
+                 (or saved-best-fitness comparable-fitness)
+                 checkpoint-metadata)
+                ;; The first evaluation creates the versioned probe archive.
+                ;; Only then may behaviorally non-identical donor descendants
+                ;; replace random roots; the compiled donor is never installed.
+                (install-compiled-heuristic-donor-cohort loaded-best-team))
               (initialize-best-from-current-population
                loaded-best-team
                comparable-fitness))))

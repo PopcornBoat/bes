@@ -412,7 +412,12 @@ return their fixed configured addresses."
                                     (coordinated-repair-bundles-enabled nil)
                                     (population-diversity-pulse-enabled nil)
                                     (population-diversity-pulse-wipe-fraction
-                                      +population-diversity-pulse-default-wipe-fraction+))
+                                      +population-diversity-pulse-default-wipe-fraction+)
+                                    (compiled-heuristic-donor-seeding-enabled nil)
+                                    compiled-heuristic-donor-checkpoint
+                                    (compiled-heuristic-donor-fraction 0.10d0)
+                                    (compiled-heuristic-donor-max-top1-hamming
+                                      0.25d0))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -507,7 +512,11 @@ return their fixed configured addresses."
         *coordinated-repair-bundles-enabled*
           (not (null coordinated-repair-bundles-enabled))
         *population-diversity-pulse-enabled*
-          (not (null population-diversity-pulse-enabled)))
+          (not (null population-diversity-pulse-enabled))
+        *compiled-heuristic-donor-seeding-enabled*
+          (not (null compiled-heuristic-donor-seeding-enabled))
+        *compiled-heuristic-donor-checkpoint*
+          compiled-heuristic-donor-checkpoint)
 
   (unless (and (realp population-diversity-pulse-wipe-fraction)
                (> population-diversity-pulse-wipe-fraction 0)
@@ -516,6 +525,25 @@ return their fixed configured addresses."
            population-diversity-pulse-wipe-fraction))
   (setf *population-diversity-pulse-wipe-fraction*
         (coerce population-diversity-pulse-wipe-fraction 'double-float))
+
+  (unless (and (realp compiled-heuristic-donor-fraction)
+               (> compiled-heuristic-donor-fraction 0)
+               (< compiled-heuristic-donor-fraction 1))
+    (error "Compiled heuristic donor fraction must be in (0,1), got ~S."
+           compiled-heuristic-donor-fraction))
+  (unless (and (realp compiled-heuristic-donor-max-top1-hamming)
+               (> compiled-heuristic-donor-max-top1-hamming 0)
+               (<= compiled-heuristic-donor-max-top1-hamming 1))
+    (error "Compiled heuristic donor maximum Top-1 Hamming must be in (0,1], got ~S."
+           compiled-heuristic-donor-max-top1-hamming))
+  (setf *compiled-heuristic-donor-fraction*
+          (coerce compiled-heuristic-donor-fraction 'double-float)
+        *compiled-heuristic-donor-max-top1-hamming*
+          (coerce compiled-heuristic-donor-max-top1-hamming 'double-float))
+
+  (when (and *compiled-heuristic-donor-seeding-enabled*
+             *population-diversity-pulse-enabled*)
+    (error "Compiled donor seeding and population diversity pulses are isolated treatments."))
 
   (when (and *teacher-guided-predicate-injection-enabled*
              *incumbent-conservative-repair-enabled*)
@@ -589,7 +617,12 @@ return their fixed configured addresses."
                                   (coordinated-repair-bundles-enabled nil)
                                   (population-diversity-pulse-enabled nil)
                                   (population-diversity-pulse-wipe-fraction
-                                    +population-diversity-pulse-default-wipe-fraction+))
+                                    +population-diversity-pulse-default-wipe-fraction+)
+                                  (compiled-heuristic-donor-seeding-enabled nil)
+                                  compiled-heuristic-donor-checkpoint
+                                  (compiled-heuristic-donor-fraction 0.10d0)
+                                  (compiled-heuristic-donor-max-top1-hamming
+                                    0.25d0))
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -720,6 +753,18 @@ return their fixed configured addresses."
                 (realp population-diversity-pulse-wipe-fraction)
                 (> population-diversity-pulse-wipe-fraction 0)
                 (<= population-diversity-pulse-wipe-fraction 1)))
+       (or (not compiled-heuristic-donor-seeding-enabled)
+           (and (eq mode :official-guided)
+                (not recurrent-policy-enabled)
+                (not population-diversity-pulse-enabled)
+                (stringp compiled-heuristic-donor-checkpoint)
+                (plusp (length compiled-heuristic-donor-checkpoint))
+                (realp compiled-heuristic-donor-fraction)
+                (> compiled-heuristic-donor-fraction 0)
+                (< compiled-heuristic-donor-fraction 1)
+                (realp compiled-heuristic-donor-max-top1-hamming)
+                (> compiled-heuristic-donor-max-top1-hamming 0)
+                (<= compiled-heuristic-donor-max-top1-hamming 1)))
        (or (not (and (member mode '(:teacher-forcing :official-guided)
                                     :test #'eq)
                      (eq teacher-backend :heuristic)))
@@ -826,6 +871,15 @@ return their fixed configured addresses."
         (population-diversity-pulse-wipe-fraction
           (getf msg :population-diversity-pulse-wipe-fraction
                 +population-diversity-pulse-default-wipe-fraction+))
+        (compiled-heuristic-donor-seeding-enabled
+          (eq (getf msg :compiled-heuristic-donor-seeding-enabled :disabled)
+              :enabled))
+        (compiled-heuristic-donor-checkpoint
+          (getf msg :compiled-heuristic-donor-checkpoint))
+        (compiled-heuristic-donor-fraction
+          (getf msg :compiled-heuristic-donor-fraction 0.10d0))
+        (compiled-heuristic-donor-max-top1-hamming
+          (getf msg :compiled-heuristic-donor-max-top1-hamming 0.25d0))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -836,9 +890,13 @@ return their fixed configured addresses."
        "Training requires finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
       (return-from handle-start-search))
 
+    (when compiled-heuristic-donor-seeding-enabled
+      (emit-error "Compiled heuristic donor seeding requires resume-search with a protected evolved incumbent.")
+      (return-from handle-start-search))
+
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A profile=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A coordinated-bundles=~A diversity-pulse=~A diversity-wipe=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A profile=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A coordinated-bundles=~A diversity-pulse=~A diversity-wipe=~A compiled-donor=~A donor-fraction=~A donor-max-top1=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              +live-search-profile+
              gym-environment-name
@@ -854,6 +912,9 @@ return their fixed configured addresses."
              coordinated-repair-bundles-enabled
              population-diversity-pulse-enabled
              population-diversity-pulse-wipe-fraction
+             compiled-heuristic-donor-seeding-enabled
+             compiled-heuristic-donor-fraction
+             compiled-heuristic-donor-max-top1-hamming
              effective-aware-mutation-enabled
              compression-reseed-enabled
              compression-reseed-force-next-event
@@ -933,7 +994,11 @@ return their fixed configured addresses."
          incumbent-conservative-repair-enabled
          coordinated-repair-bundles-enabled
          population-diversity-pulse-enabled
-         population-diversity-pulse-wipe-fraction)
+         population-diversity-pulse-wipe-fraction
+         compiled-heuristic-donor-seeding-enabled
+         compiled-heuristic-donor-checkpoint
+         compiled-heuristic-donor-fraction
+         compiled-heuristic-donor-max-top1-hamming)
 
         (progn
           (unless (begin-search-operation)
@@ -989,7 +1054,15 @@ return their fixed configured addresses."
            :population-diversity-pulse-enabled
              population-diversity-pulse-enabled
            :population-diversity-pulse-wipe-fraction
-             population-diversity-pulse-wipe-fraction)
+             population-diversity-pulse-wipe-fraction
+           :compiled-heuristic-donor-seeding-enabled
+             compiled-heuristic-donor-seeding-enabled
+           :compiled-heuristic-donor-checkpoint
+             compiled-heuristic-donor-checkpoint
+           :compiled-heuristic-donor-fraction
+             compiled-heuristic-donor-fraction
+           :compiled-heuristic-donor-max-top1-hamming
+             compiled-heuristic-donor-max-top1-hamming)
 
           (push
            (bt:make-thread
@@ -1115,6 +1188,15 @@ return their fixed configured addresses."
         (population-diversity-pulse-wipe-fraction
           (getf msg :population-diversity-pulse-wipe-fraction
                 +population-diversity-pulse-default-wipe-fraction+))
+        (compiled-heuristic-donor-seeding-enabled
+          (eq (getf msg :compiled-heuristic-donor-seeding-enabled :disabled)
+              :enabled))
+        (compiled-heuristic-donor-checkpoint
+          (getf msg :compiled-heuristic-donor-checkpoint))
+        (compiled-heuristic-donor-fraction
+          (getf msg :compiled-heuristic-donor-fraction 0.10d0))
+        (compiled-heuristic-donor-max-top1-hamming
+          (getf msg :compiled-heuristic-donor-max-top1-hamming 0.25d0))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -1180,7 +1262,11 @@ return their fixed configured addresses."
          incumbent-conservative-repair-enabled
          coordinated-repair-bundles-enabled
          population-diversity-pulse-enabled
-         population-diversity-pulse-wipe-fraction)
+         population-diversity-pulse-wipe-fraction
+         compiled-heuristic-donor-seeding-enabled
+         compiled-heuristic-donor-checkpoint
+         compiled-heuristic-donor-fraction
+         compiled-heuristic-donor-max-top1-hamming)
 
         (progn
           (unless (begin-search-operation)
@@ -1236,7 +1322,15 @@ return their fixed configured addresses."
            :population-diversity-pulse-enabled
              population-diversity-pulse-enabled
            :population-diversity-pulse-wipe-fraction
-             population-diversity-pulse-wipe-fraction)
+             population-diversity-pulse-wipe-fraction
+           :compiled-heuristic-donor-seeding-enabled
+             compiled-heuristic-donor-seeding-enabled
+           :compiled-heuristic-donor-checkpoint
+             compiled-heuristic-donor-checkpoint
+           :compiled-heuristic-donor-fraction
+             compiled-heuristic-donor-fraction
+           :compiled-heuristic-donor-max-top1-hamming
+             compiled-heuristic-donor-max-top1-hamming)
 
           (push
            (bt:make-thread

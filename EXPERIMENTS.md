@@ -189,6 +189,46 @@ primary outcomes are final official promotions per interval and independent
 full validation; imitation fitness, mixed return, and diversity diagnostics
 remain explanatory rather than promotion criteria.
 
+The completed 2666-generation run produced 229 official candidate evaluations
+and no promotions despite repeated 50% restarts. Population coverage alone is
+therefore not retained as an active treatment.
+
+## Compiled heuristic donor seeding
+
+`experiments/compiled-heuristic-donor.sexp` tests whether the remaining gap is
+primarily a discoverability problem. It warm-starts from the protected evolved
+v13 incumbent and replaces 10% of the freshly reconstructed roots with mutated
+descendants of the compiled heuristic checkpoint.
+
+The compiled checkpoint is only an unregistered parent. It is never inserted,
+evaluated, promoted, or saved. Every admitted descendant must differ from the
+compiled parent on the versioned probe archive and remain within the configured
+Top-1 Hamming bound. Cohort construction uses a deterministic independent RNG
+stream, leaving ordinary mutation RNG untouched. Subsequent descendants use the
+normal learner, terminal, team-edge, graph, and field-local mutation pipeline.
+
+Warm-start injection also normalizes every referenced checkpoint team to
+`:internal`; only the designated checkpoint entry remains a root. This prevents
+stale serialized type tags from making internal subgraphs compete as independent
+policies or inflating the configured population.
+
+Run with:
+
+```bash
+scripts/bes-runtime start bes-compiled-donor
+scripts/bes-search submit experiments/compiled-heuristic-donor.sexp
+```
+
+Interpretation is deliberately asymmetric:
+
+- descendants survive and improve: useful structure was hard to discover;
+- descendants imitate well but fail official promotion: the selection objective
+  still rewards the wrong behavior or tail risk;
+- descendants disappear immediately: current population pressure cannot preserve
+  the useful routing scaffold;
+- evolved descendants beat the compiled reference: the scaffold can support
+  improvement without deploying the hand-written policy itself.
+
 ## Evidence to monitor
 
 Do not judge a run from mixed return or imitation fitness alone. Record:

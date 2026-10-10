@@ -271,6 +271,8 @@ scripts/bes-search submit experiments/teacher-guided-predicate-injection.sexp
 scripts/bes-search submit experiments/incumbent-conservative-repair.sexp
 # Plateau-triggered warm-start-sized diversity cohorts:
 scripts/bes-search submit experiments/population-diversity-pulse.sexp
+# Mutated descendants of an unregistered compiled heuristic donor:
+scripts/bes-search submit experiments/compiled-heuristic-donor.sexp
 ```
 
 Monitor or stop a search with:

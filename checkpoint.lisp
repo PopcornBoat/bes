@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 31
-  "Checkpoint version recording population-diversity pulse provenance.")
+(defconstant +best-team-checkpoint-version+ 32
+  "Checkpoint version recording compiled-heuristic donor provenance.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -45,6 +45,8 @@
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
       (cond
+        (*compiled-heuristic-donor-seeding-enabled*
+         "official-guided-compiled-donor")
         (*population-diversity-pulse-enabled*
          "official-guided-population-diversity-pulse")
         (*coordinated-repair-bundles-enabled*
@@ -152,6 +154,14 @@ checkpoint directory."
                              *population-diversity-pulse-enabled*)
                            (population-diversity-pulse-wipe-fraction
                              *population-diversity-pulse-wipe-fraction*)
+                           (compiled-heuristic-donor-seeding-enabled
+                             *compiled-heuristic-donor-seeding-enabled*)
+                           (compiled-heuristic-donor-checkpoint
+                             *compiled-heuristic-donor-checkpoint*)
+                           (compiled-heuristic-donor-fraction
+                             *compiled-heuristic-donor-fraction*)
+                           (compiled-heuristic-donor-max-top1-hamming
+                             *compiled-heuristic-donor-max-top1-hamming*)
                            (terminal-action-format *terminal-action-format*))
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   (unless (valid-instruction-set-profile-p instruction-set-profile)
@@ -233,6 +243,23 @@ checkpoint directory."
       ,(and population-diversity-pulse-enabled
             (fboundp 'population-diversity-pulse-state-copy)
             (population-diversity-pulse-state-copy))
+    :compiled-heuristic-donor-seeding-enabled
+      ,(not (null compiled-heuristic-donor-seeding-enabled))
+    :compiled-heuristic-donor-protocol
+      ,(and compiled-heuristic-donor-seeding-enabled
+            +compiled-heuristic-donor-protocol+)
+    :compiled-heuristic-donor-checkpoint
+      ,(and compiled-heuristic-donor-seeding-enabled
+            compiled-heuristic-donor-checkpoint)
+    :compiled-heuristic-donor-fraction
+      ,(and compiled-heuristic-donor-seeding-enabled
+            compiled-heuristic-donor-fraction)
+    :compiled-heuristic-donor-max-top1-hamming
+      ,(and compiled-heuristic-donor-seeding-enabled
+            compiled-heuristic-donor-max-top1-hamming)
+    :compiled-heuristic-donor-record
+      ,(and compiled-heuristic-donor-seeding-enabled
+            (copy-tree *compiled-heuristic-donor-last-record*))
     :terminal-action-format ,terminal-action-format
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode
@@ -322,6 +349,14 @@ checkpoint directory."
                                   *population-diversity-pulse-enabled*)
                                 (population-diversity-pulse-wipe-fraction
                                   *population-diversity-pulse-wipe-fraction*)
+                                (compiled-heuristic-donor-seeding-enabled
+                                  *compiled-heuristic-donor-seeding-enabled*)
+                                (compiled-heuristic-donor-checkpoint
+                                  *compiled-heuristic-donor-checkpoint*)
+                                (compiled-heuristic-donor-fraction
+                                  *compiled-heuristic-donor-fraction*)
+                                (compiled-heuristic-donor-max-top1-hamming
+                                  *compiled-heuristic-donor-max-top1-hamming*)
                                 (terminal-action-format
                                   *terminal-action-format*))
   "Write TEAM, FITNESS, and provenance metadata to PATH."
@@ -368,6 +403,14 @@ checkpoint directory."
              population-diversity-pulse-enabled
            :population-diversity-pulse-wipe-fraction
              population-diversity-pulse-wipe-fraction
+           :compiled-heuristic-donor-seeding-enabled
+             compiled-heuristic-donor-seeding-enabled
+           :compiled-heuristic-donor-checkpoint
+             compiled-heuristic-donor-checkpoint
+           :compiled-heuristic-donor-fraction
+             compiled-heuristic-donor-fraction
+           :compiled-heuristic-donor-max-top1-hamming
+             compiled-heuristic-donor-max-top1-hamming
            :terminal-action-format terminal-action-format
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode

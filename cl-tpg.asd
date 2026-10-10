@@ -41,4 +41,5 @@
 	       (:file "coordinated-repair-bundles")
 	       (:file "compression-reseed")
 	       (:file "population-diversity-pulse")
+	       (:file "compiled-heuristic-donor")
 	       (:file "main")))

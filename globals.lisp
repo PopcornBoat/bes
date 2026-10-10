@@ -185,6 +185,31 @@ checks remain mandatory.")
 (defvar *population-diversity-pulse-event-count* 0)
 (defvar *population-diversity-pulse-last-record* nil)
 
+(defconstant +compiled-heuristic-donor-protocol+
+  :compiled-heuristic-mutated-donors-v1
+  "Versioned warm-start protocol that admits only behaviorally changed donor descendants.")
+
+(defconstant +compiled-heuristic-donor-rng-salt+ 7109221
+  "Independent deterministic salt for compiled-donor variant creation.")
+
+(defparameter *compiled-heuristic-donor-seeding-enabled* nil
+  "When true, replace part of a warm-start population with mutated heuristic descendants.")
+
+(defparameter *compiled-heuristic-donor-checkpoint* nil
+  "Checkpoint used only as an unregistered parent for donor descendants.")
+
+(defparameter *compiled-heuristic-donor-fraction* 0.10d0
+  "Fraction of warm-start roots replaced by behaviorally non-identical donor descendants.")
+
+(defparameter *compiled-heuristic-donor-max-top1-hamming* 0.25d0
+  "Largest probe Top-1 distance accepted for an initial donor descendant.")
+
+(defconstant +compiled-heuristic-donor-max-attempts+ 256
+  "Maximum mutation attempts used to create each accepted donor descendant.")
+
+(defvar *compiled-heuristic-donor-last-record* nil
+  "Provenance for the donor cohort installed in the current search.")
+
 (defun valid-instruction-set-profile-p (profile)
   "Return true for a supported instruction creation profile."
   (member profile '(:full :reduced :reduced-eq) :test #'eq))
