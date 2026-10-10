@@ -3223,6 +3223,10 @@ through serialization/deserialization and save it to disk."
                    (near-miss-note-descendant parent child))
                  (when (grouped-selection-active-p)
                    (grouped-note-specialist-descendant parent child))))))
+  ;; A plateau pulse is deliberately installed only after ordinary reproduction
+  ;; has restored the configured population.  It temporarily enlarges the next
+  ;; evaluated generation; unchanged selection then contracts it again.
+  (maybe-install-population-diversity-pulse)
   (when (grouped-selection-active-p)
     (grouped-update-specialist-lifecycle :post-reproduction)
     (persist-grouped-selection-generation-record))
@@ -3311,6 +3315,7 @@ through serialization/deserialization and save it to disk."
          (first (root-teams)) nil 0))
 
       (reset-compression-reseed-state)
+      (reset-population-diversity-pulse-state)
 
       (loop while *running*
             do (evolve)
@@ -3726,6 +3731,7 @@ normal evolution."
       ;; counters are therefore run-local even though prior event provenance is
       ;; retained in the loaded checkpoint metadata.
       (reset-compression-reseed-state)
+      (reset-population-diversity-pulse-state)
 
       ;; Continue normal BES/TPG evolution.
       (loop while *running*

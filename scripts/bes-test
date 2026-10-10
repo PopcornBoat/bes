@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo=/home/hardison/bes
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
 
 cd "$repo"
@@ -29,6 +29,7 @@ if [[ "${1:-}" == --core ]]; then
     tests/routing-repair.lisp
     tests/specialist-composition.lisp
     tests/combined-repair.lisp
+    tests/population-diversity-pulse.lisp
   )
 elif [[ $# -gt 0 ]]; then
   tests=("$@")
@@ -49,5 +50,5 @@ done
 
 env \
   "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-  'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+  "CL_SOURCE_REGISTRY=(:source-registry (:tree \"$repo/\") :ignore-inherited-configuration)" \
   sbcl "${args[@]}"

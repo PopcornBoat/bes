@@ -153,6 +153,31 @@ checks remain mandatory.")
 (defvar *compression-reseed-event-count* 0)
 (defvar *compression-reseed-last-record* nil)
 
+(defconstant +population-diversity-pulse-protocol+
+  :population-diversity-pulse-v1
+  "Versioned plateau-triggered warm-start cohort injection protocol.")
+
+(defconstant +population-diversity-pulse-rng-salt+ 5404787
+  "Independent deterministic salt for periodic diversity cohorts.")
+
+(defparameter *population-diversity-pulse-enabled* nil
+  "When true, add a fresh warm-start-sized cohort after a long official plateau.")
+
+(defparameter *population-diversity-pulse-plateau-generations* 400
+  "Official-incumbent plateau required before a diversity pulse.")
+
+(defparameter *population-diversity-pulse-cooldown-generations* 400
+  "Minimum generation distance between diversity pulses.")
+
+(defparameter *population-diversity-pulse-cohort-fraction* 1.0d0
+  "Fresh cohort size as a fraction of the configured root population.")
+
+(defvar *population-diversity-pulse-last-event-generation* nil)
+(defvar *population-diversity-pulse-last-improvement-generation* 1)
+(defvar *population-diversity-pulse-last-incumbent-version* 0)
+(defvar *population-diversity-pulse-event-count* 0)
+(defvar *population-diversity-pulse-last-record* nil)
+
 (defun valid-instruction-set-profile-p (profile)
   "Return true for a supported instruction creation profile."
   (member profile '(:full :reduced :reduced-eq) :test #'eq))

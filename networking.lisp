@@ -409,7 +409,8 @@ return their fixed configured addresses."
                                       nil)
                                     (incumbent-conservative-repair-enabled
                                       nil)
-                                    (coordinated-repair-bundles-enabled nil))
+                                    (coordinated-repair-bundles-enabled nil)
+                                    (population-diversity-pulse-enabled nil))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -502,7 +503,9 @@ return their fixed configured addresses."
         *incumbent-conservative-repair-enabled*
           (not (null incumbent-conservative-repair-enabled))
         *coordinated-repair-bundles-enabled*
-          (not (null coordinated-repair-bundles-enabled)))
+          (not (null coordinated-repair-bundles-enabled))
+        *population-diversity-pulse-enabled*
+          (not (null population-diversity-pulse-enabled)))
 
   (when (and *teacher-guided-predicate-injection-enabled*
              *incumbent-conservative-repair-enabled*)
@@ -573,7 +576,8 @@ return their fixed configured addresses."
                                   (teacher-guided-predicate-injection-enabled
                                     nil)
                                   (incumbent-conservative-repair-enabled nil)
-                                  (coordinated-repair-bundles-enabled nil))
+                                  (coordinated-repair-bundles-enabled nil)
+                                  (population-diversity-pulse-enabled nil))
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -688,8 +692,11 @@ return their fixed configured addresses."
                         :test #'eq)
                 (plusp
                  (length
-                  (active-read-only-register-values
+                 (active-read-only-register-values
                    read-only-register-profile)))))
+       (or (not population-diversity-pulse-enabled)
+           (and (eq mode :official-guided)
+                (not recurrent-policy-enabled)))
        (or (not (and (member mode '(:teacher-forcing :official-guided)
                                     :test #'eq)
                      (eq teacher-backend :heuristic)))
@@ -790,6 +797,9 @@ return their fixed configured addresses."
         (coordinated-repair-bundles-enabled
           (eq (getf msg :coordinated-repair-bundles-enabled :disabled)
               :enabled))
+        (population-diversity-pulse-enabled
+          (eq (getf msg :population-diversity-pulse-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -802,7 +812,7 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A coordinated-bundles=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A coordinated-bundles=~A diversity-pulse=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              gym-environment-name
              dataset-name
@@ -815,6 +825,7 @@ return their fixed configured addresses."
              teacher-guided-predicate-injection-enabled
              incumbent-conservative-repair-enabled
              coordinated-repair-bundles-enabled
+             population-diversity-pulse-enabled
              effective-aware-mutation-enabled
              compression-reseed-enabled
              compression-reseed-force-next-event
@@ -892,7 +903,8 @@ return their fixed configured addresses."
          categorical-predicate-mutation-enabled
          teacher-guided-predicate-injection-enabled
          incumbent-conservative-repair-enabled
-         coordinated-repair-bundles-enabled)
+         coordinated-repair-bundles-enabled
+         population-diversity-pulse-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -944,7 +956,9 @@ return their fixed configured addresses."
            :incumbent-conservative-repair-enabled
              incumbent-conservative-repair-enabled
            :coordinated-repair-bundles-enabled
-             coordinated-repair-bundles-enabled)
+             coordinated-repair-bundles-enabled
+           :population-diversity-pulse-enabled
+             population-diversity-pulse-enabled)
 
           (push
            (bt:make-thread
@@ -1064,6 +1078,9 @@ return their fixed configured addresses."
         (coordinated-repair-bundles-enabled
           (eq (getf msg :coordinated-repair-bundles-enabled :disabled)
               :enabled))
+        (population-diversity-pulse-enabled
+          (eq (getf msg :population-diversity-pulse-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -1127,7 +1144,8 @@ return their fixed configured addresses."
          categorical-predicate-mutation-enabled
          teacher-guided-predicate-injection-enabled
          incumbent-conservative-repair-enabled
-         coordinated-repair-bundles-enabled)
+         coordinated-repair-bundles-enabled
+         population-diversity-pulse-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -1179,7 +1197,9 @@ return their fixed configured addresses."
            :incumbent-conservative-repair-enabled
              incumbent-conservative-repair-enabled
            :coordinated-repair-bundles-enabled
-             coordinated-repair-bundles-enabled)
+             coordinated-repair-bundles-enabled
+           :population-diversity-pulse-enabled
+             population-diversity-pulse-enabled)
 
           (push
            (bt:make-thread

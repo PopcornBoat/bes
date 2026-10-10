@@ -40,4 +40,5 @@
 	       (:file "incumbent-conservative-repair")
 	       (:file "coordinated-repair-bundles")
 	       (:file "compression-reseed")
+	       (:file "population-diversity-pulse")
 	       (:file "main")))

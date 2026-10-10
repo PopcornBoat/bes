@@ -140,6 +140,40 @@ scripts/bes-search submit experiments/effective-local-compression.sexp
 Monitor `compression-and-reseed` telemetry, instruction counts before/after,
 probe count, event generation, subsequent diversity, and official promotions.
 
+## Plateau-triggered population diversity pulse
+
+`experiments/population-diversity-pulse.sexp` tests whether the repeated
+post-warm-start improvements are caused by renewed population coverage. It
+starts from the independently validated evolved v13 incumbent and leaves all
+targeted repair and compression injections disabled.
+
+After 400 generations without an official promotion, the search temporarily
+adds one warm-start-sized cohort: one independent serialize/deserialize copy
+of the protected incumbent plus 159 fresh random roots at the default
+population of 160. The next generation therefore evaluates roughly 320 roots.
+The unchanged 0.5 selection gap contracts that evaluated population back to
+roughly 160 before ordinary reproduction. A promotion resets the plateau
+clock, and pulses have a 400-generation cooldown.
+
+The cohort uses a deterministic event-local RNG stream derived from the
+search seed. It does not consume the ordinary mutation RNG, overwrite the
+historical best, change official racing/promotion, or serialize the complete
+population. Checkpoint metadata records pulse provenance, while warm-start
+resume intentionally begins a new run-local pulse schedule because population
+reconstruction is itself a diversity event.
+
+Run with:
+
+```bash
+scripts/bes-runtime start
+scripts/bes-search submit experiments/population-diversity-pulse.sexp
+```
+
+Compare the first 400-generation baseline with each post-pulse interval. The
+primary outcomes are final official promotions per interval and independent
+full validation; imitation fitness, mixed return, and diversity diagnostics
+remain explanatory rather than promotion criteria.
+
 ## Evidence to monitor
 
 Do not judge a run from mixed return or imitation fitness alone. Record:

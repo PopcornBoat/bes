@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 30
-  "Checkpoint version recording coordinated repair-bundle provenance.")
+(defconstant +best-team-checkpoint-version+ 31
+  "Checkpoint version recording population-diversity pulse provenance.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -45,6 +45,8 @@
          "teacher-forcing"))
     ((eq *current-search-mode* :official-guided)
       (cond
+        (*population-diversity-pulse-enabled*
+         "official-guided-population-diversity-pulse")
         (*coordinated-repair-bundles-enabled*
          "official-guided-coordinated-repair-bundles")
         (*incumbent-conservative-repair-enabled*
@@ -146,6 +148,8 @@ checkpoint directory."
                              *incumbent-conservative-repair-enabled*)
                            (coordinated-repair-bundles-enabled
                              *coordinated-repair-bundles-enabled*)
+                           (population-diversity-pulse-enabled
+                             *population-diversity-pulse-enabled*)
                            (terminal-action-format *terminal-action-format*))
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   (unless (valid-instruction-set-profile-p instruction-set-profile)
@@ -214,6 +218,15 @@ checkpoint directory."
       ,(and coordinated-repair-bundles-enabled
             (fboundp 'coordinated-repair-bundle-state-copy)
             (coordinated-repair-bundle-state-copy))
+    :population-diversity-pulse-enabled
+      ,(not (null population-diversity-pulse-enabled))
+    :population-diversity-pulse-protocol
+      ,(and population-diversity-pulse-enabled
+            +population-diversity-pulse-protocol+)
+    :population-diversity-pulse-state
+      ,(and population-diversity-pulse-enabled
+            (fboundp 'population-diversity-pulse-state-copy)
+            (population-diversity-pulse-state-copy))
     :terminal-action-format ,terminal-action-format
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode
@@ -299,6 +312,8 @@ checkpoint directory."
                                   *incumbent-conservative-repair-enabled*)
                                 (coordinated-repair-bundles-enabled
                                   *coordinated-repair-bundles-enabled*)
+                                (population-diversity-pulse-enabled
+                                  *population-diversity-pulse-enabled*)
                                 (terminal-action-format
                                   *terminal-action-format*))
   "Write TEAM, FITNESS, and provenance metadata to PATH."
@@ -341,6 +356,8 @@ checkpoint directory."
              incumbent-conservative-repair-enabled
            :coordinated-repair-bundles-enabled
              coordinated-repair-bundles-enabled
+           :population-diversity-pulse-enabled
+             population-diversity-pulse-enabled
            :terminal-action-format terminal-action-format
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
@@ -386,6 +403,8 @@ checkpoint directory."
       *incumbent-conservative-repair-enabled*
     :coordinated-repair-bundles-enabled
       *coordinated-repair-bundles-enabled*
+    :population-diversity-pulse-enabled
+      *population-diversity-pulse-enabled*
     :terminal-action-format *terminal-action-format*
     :decoy-order-mode *decoy-order-mode*
     :cage2-opening-mode *cage2-opening-mode*

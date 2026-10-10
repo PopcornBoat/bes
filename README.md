@@ -269,6 +269,8 @@ scripts/bes-search submit experiments/categorical-predicate-mutation.sexp
 scripts/bes-search submit experiments/teacher-guided-predicate-injection.sexp
 # Incumbent-anchored two-predicate conservative repair:
 scripts/bes-search submit experiments/incumbent-conservative-repair.sexp
+# Plateau-triggered warm-start-sized diversity cohorts:
+scripts/bes-search submit experiments/population-diversity-pulse.sexp
 ```
 
 Monitor or stop a search with:
