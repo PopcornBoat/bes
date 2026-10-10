@@ -9,26 +9,20 @@ cd "$repo"
 if [[ "${1:-}" == --core ]]; then
   shift
   tests=(
+    tests/agreement.lisp
+    tests/controller.lisp
+    tests/semantic-36-action.lisp
+    tests/factored-action.lisp
+    tests/heuristic.lisp
+    tests/compiled-bline-heuristic.lisp
     tests/mutation.lisp
     tests/effective-code.lisp
     tests/instruction-set.lisp
     tests/read-only-registers.lisp
-    tests/categorical-predicate-mutation.lisp
-    tests/teacher-guided-predicate.lisp
-    tests/incumbent-conservative-repair.lisp
     tests/local-mutation-compression.lisp
-    tests/behavioral-locality.lisp
     tests/official-guided.lisp
-    tests/official-return-credit.lisp
-    tests/near-miss-lineages.lisp
-    tests/rare-failure-diagnostics.lisp
-    tests/counterfactual-credit.lisp
-    tests/teacher-directed-repair.lisp
     tests/grouped-selection.lisp
     tests/disagreement-audit.lisp
-    tests/routing-repair.lisp
-    tests/specialist-composition.lisp
-    tests/combined-repair.lisp
     tests/population-diversity-pulse.lisp
   )
 elif [[ $# -gt 0 ]]; then

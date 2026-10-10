@@ -645,6 +645,14 @@ return their fixed configured addresses."
        (valid-instruction-set-profile-p instruction-set-profile)
        (valid-read-only-register-profile-p read-only-register-profile)
        (valid-instruction-mutation-mode-p instruction-mutation-mode)
+       ;; The live worktree keeps legacy implementations loadable for old
+       ;; checkpoints, but refuses to start superseded experimental treatments.
+       (not (or compression-reseed-enabled
+                compression-reseed-force-next-event
+                categorical-predicate-mutation-enabled
+                teacher-guided-predicate-injection-enabled
+                incumbent-conservative-repair-enabled
+                coordinated-repair-bundles-enabled))
        (or (not compression-reseed-enabled)
            (and (eq mode :official-guided)
                 (eq instruction-mutation-mode :field-local)
@@ -812,8 +820,9 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A coordinated-bundles=~A diversity-pulse=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A profile=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A coordinated-bundles=~A diversity-pulse=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
+             +live-search-profile+
              gym-environment-name
              dataset-name
              num-observations

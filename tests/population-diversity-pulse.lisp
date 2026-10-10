@@ -45,6 +45,25 @@
     (getf request :read-only-register-profile) nil nil nil nil t)
    "the population-diversity request is server-valid"))
 
+(let ((cl-tpg::*behavioral-locality-enabled* t)
+      (cl-tpg::*semantic-locality-control-enabled* t)
+      (cl-tpg::*grouped-selection-enabled* nil)
+      (cl-tpg::*targeted-disagreement-audit-enabled* nil)
+      (cl-tpg::*compression-reseed-enabled* t)
+      (cl-tpg::*coordinated-repair-bundles-enabled* t))
+  (check-population-diversity-pulse
+   (eq (cl-tpg::configure-live-search-mechanisms :official-guided)
+       cl-tpg::+live-search-profile+)
+   "the maintained live search profile is explicit and versioned")
+  (check-population-diversity-pulse
+   (and cl-tpg::*grouped-selection-enabled*
+        cl-tpg::*targeted-disagreement-audit-enabled*
+        (not cl-tpg::*behavioral-locality-enabled*)
+        (not cl-tpg::*semantic-locality-control-enabled*)
+        (not cl-tpg::*compression-reseed-enabled*)
+        (not cl-tpg::*coordinated-repair-bundles-enabled*))
+   "the live profile retains selection diagnostics but disables failed treatments"))
+
 (let* ((cl-tpg::*population-diversity-pulse-enabled* t)
        (cl-tpg::*current-search-mode* :official-guided)
        (cl-tpg::*terminal-action-format* :target-response-36)

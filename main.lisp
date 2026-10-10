@@ -2265,21 +2265,23 @@ reference batch."
     (t
      (error "Neither GYM-ENVIRONMENT-NAME nor DATASET-NAME was supplied."))))
 
-(defun configure-fitness-function (mode gym-environment-name dataset-name)
-  "Configure *FITNESS-FN* according to MODE."
-  (setf *behavioral-locality-enabled* (eq mode :official-guided)
-        ;; These are the mechanisms retained by the measured mainline.
-        *semantic-locality-control-enabled* (eq mode :official-guided)
+(defun configure-live-search-mechanisms (mode)
+  "Install the maintained mechanism profile for MODE.
+
+Grouped selection and disagreement reporting remain active in official-guided
+search. Expensive locality sampling/control and unsuccessful repair treatments
+are deliberately dormant; their definitions remain loadable only for old
+checkpoint and branch archaeology."
+  (setf *behavioral-locality-enabled* nil
+        *semantic-locality-control-enabled* nil
         *grouped-selection-enabled* (eq mode :official-guided)
         *targeted-disagreement-audit-enabled* (eq mode :official-guided)
-        *coordinated-repair-bundles-enabled*
-          (and *coordinated-repair-bundles-enabled*
-               (eq mode :official-guided))
-        *teacher-guided-predicate-injection-enabled*
-          (and *teacher-guided-predicate-injection-enabled*
-               (eq mode :official-guided))
-        ;; Experimental repair/lineage mechanisms remain loadable for archived
-        ;; checkpoints but are not part of the active research configuration.
+        *categorical-predicate-mutation-enabled* nil
+        *teacher-guided-predicate-injection-enabled* nil
+        *incumbent-conservative-repair-enabled* nil
+        *coordinated-repair-bundles-enabled* nil
+        *compression-reseed-enabled* nil
+        *compression-reseed-force-next-event* nil
         *official-return-credit-enabled* nil
         *rare-failure-targeted-return-credit-enabled* nil
         *near-miss-lineages-enabled* nil
@@ -2287,6 +2289,11 @@ reference batch."
         *targeted-combined-repair-enabled* nil
         *targeted-routing-repair-enabled* nil
         *targeted-specialist-composition-enabled* nil)
+  +live-search-profile+)
+
+(defun configure-fitness-function (mode gym-environment-name dataset-name)
+  "Configure *FITNESS-FN* according to MODE."
+  (configure-live-search-mechanisms mode)
   (ecase mode
     (:online
      (make-fitness-function :gym-environment-name gym-environment-name))

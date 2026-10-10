@@ -157,6 +157,9 @@ checks remain mandatory.")
   :population-diversity-pulse-v1
   "Versioned plateau-triggered warm-start cohort injection protocol.")
 
+(defconstant +live-search-profile+ :live-diversity-v1
+  "Maintained search profile with failed experimental mechanisms dormant.")
+
 (defconstant +population-diversity-pulse-rng-salt+ 5404787
   "Independent deterministic salt for periodic diversity cohorts.")
 

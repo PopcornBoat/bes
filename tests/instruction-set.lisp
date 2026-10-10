@@ -135,8 +135,8 @@
         (instruction-set-test-read-request
          "experiments/effective-local-compression.sexp")))
   (check-instruction-set
-   (instruction-set-test-valid-request-p request)
-   "the field-local/effective/compression request passes server validation")
+   (not (instruction-set-test-valid-request-p request))
+   "the live profile rejects the superseded compression treatment")
   (setf (getf request :effective-aware-mutation-enabled) :disabled)
   (check-instruction-set
    (not (instruction-set-test-valid-request-p request))
@@ -146,8 +146,8 @@
         (instruction-set-test-read-request
          "experiments/categorical-equality.sexp")))
   (check-instruction-set
-   (instruction-set-test-valid-request-p request)
-   "the ROR+EQ controlled request passes server validation")
+   (not (instruction-set-test-valid-request-p request))
+   "the live profile rejects the superseded ROR+EQ treatment request")
   (check-instruction-set
    (and (eq (getf request :instruction-set-profile) :reduced-eq)
         (eq (getf request :read-only-register-profile)

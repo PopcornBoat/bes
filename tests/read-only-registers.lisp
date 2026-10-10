@@ -49,8 +49,8 @@
  "only versioned ROR profiles are accepted")
 
 (let ((request (ror-read-request)))
-  (check-ror (ror-valid-request-p request)
-             "the checked-in ROR warm-start request is server-valid")
+  (check-ror (not (ror-valid-request-p request))
+             "the live profile rejects the superseded ROR treatment request")
   (setf (getf request :read-only-register-profile) :unknown)
   (check-ror (not (ror-valid-request-p request))
              "server validation rejects an unknown ROR profile"))

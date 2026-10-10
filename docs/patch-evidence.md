@@ -81,3 +81,8 @@ the treatment isolates periodic diversity renewal, bounds sustained compute and
 memory, preserves the current population, and never relaxes official promotion.
 Its benefit is not yet established; it requires an official-guided run and
 independent full validation.
+
+The live treatment uses profile `LIVE-DIVERSITY-V1`: expensive behavioral-
+locality sampling/control and all unsuccessful repair injectors are dormant.
+This removes the observed per-generation locality-worker cost while retaining
+grouped selection, clean ranked DAgger, official comparison, and promotion.

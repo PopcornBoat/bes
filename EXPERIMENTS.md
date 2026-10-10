@@ -147,6 +147,13 @@ post-warm-start improvements are caused by renewed population coverage. It
 starts from the independently validated evolved v13 incumbent and leaves all
 targeted repair and compression injections disabled.
 
+The `LIVE-DIVERSITY-V1` search profile also leaves behavioral-locality worker
+sampling and semantic-locality retry control dormant. Grouped epsilon-lexicase,
+ranked clean DAgger, disagreement reporting, field-local/effective-aware
+mutation, Controller v2, and official staged promotion remain active. Legacy
+mechanism definitions stay loadable for checkpoint archaeology, but the live
+server rejects requests that attempt to reactivate those superseded treatments.
+
 After 400 generations without an official promotion, the search temporarily
 adds one warm-start-sized cohort: one independent serialize/deserialize copy
 of the protected incumbent plus 159 fresh random roots at the default
