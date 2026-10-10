@@ -21,6 +21,7 @@
 (let ((request (population-diversity-pulse-read-request)))
   (check-population-diversity-pulse
    (and (eq (getf request :population-diversity-pulse-enabled) :enabled)
+        (= (getf request :population-diversity-pulse-wipe-fraction) 0.5d0)
         (eq (getf request :coordinated-repair-bundles-enabled) :disabled)
         (eq (getf request :compression-reseed-enabled) :disabled))
    "the experiment isolates diversity pulses from other population injections")
@@ -69,7 +70,7 @@
        (cl-tpg::*terminal-action-format* :target-response-36)
        (cl-tpg::*recurrent-policy-enabled* nil)
        (cl-tpg::*population-size* 4)
-       (cl-tpg::*population-diversity-pulse-cohort-fraction* 1.0d0)
+       (cl-tpg::*population-diversity-pulse-wipe-fraction* 0.5d0)
        (cl-tpg::*population-diversity-pulse-plateau-generations* 4)
        (cl-tpg::*population-diversity-pulse-cooldown-generations* 4)
        (cl-tpg::*current-search-seed* 153)
@@ -87,9 +88,21 @@
        (cl-tpg::*best-team* nil)
        (cl-tpg::*random-state* (sb-ext:seed-random-state 9876)))
   (cl-tpg::make-initial-population)
-  (setf cl-tpg::*best-team*
-        (cl-tpg::deep-copy-team-via-serialization
-         (first (cl-tpg::root-teams))))
+  ;; Give the protected incumbent a real internal closure, then emulate the
+  ;; stale internal :ROOT tag observed in the evolved v13 checkpoint.
+  (let* ((source (first (cl-tpg::root-teams)))
+         (target (cl-tpg::make-team))
+         (source-learner (first (cl-tpg::team-learners source))))
+    (setf (cl-tpg::learner-action source-learner)
+          (cl-tpg::make-action :type :reference :action target))
+    (cl-tpg::add-reference target)
+    (setf cl-tpg::*best-team*
+          (cl-tpg::deep-copy-team-via-serialization source))
+    (let ((copied-internal
+            (find-if-not
+             (lambda (team) (eq team cl-tpg::*best-team*))
+             (cl-tpg::closure cl-tpg::*best-team*))))
+      (setf (cl-tpg::team-type copied-internal) :root)))
   (cl-tpg::reset-population-diversity-pulse-state)
   (let* ((roots-before (length (cl-tpg::root-teams)))
          (expected-next-random
@@ -99,11 +112,25 @@
          (record (cl-tpg::maybe-install-population-diversity-pulse)))
     (check-population-diversity-pulse
      (and record
-          (= (getf record :cohort-size) 4)
+          (= (getf record :roots-wiped) 2)
+          (= (getf record :roots-retained) 2)
           (= (getf record :incumbent-copies) 1)
-          (= (getf record :fresh-random-roots) 3)
-          (= (length (cl-tpg::root-teams)) (+ roots-before 4)))
-     "a due pulse temporarily adds one complete warm-start-sized cohort")
+          (= (getf record :fresh-random-roots) 1)
+          (= (length (cl-tpg::root-teams)) roots-before))
+     "a due pulse replaces exactly half the roots without changing population size")
+    (let* ((incumbent-copy
+             (find (getf record :incumbent-copy-id)
+                   cl-tpg::*teams* :key #'cl-tpg::team-id :test #'string=))
+           (internal-teams
+             (remove incumbent-copy (cl-tpg::closure incumbent-copy)
+                     :test #'eq)))
+      (check-population-diversity-pulse
+       (and incumbent-copy
+            (eq (cl-tpg::team-type incumbent-copy) :root)
+            (every (lambda (team)
+                     (eq (cl-tpg::team-type team) :internal))
+                   internal-teams))
+       "installing a copied graph exposes only its designated root"))
     (check-population-diversity-pulse
      (eq best-before cl-tpg::*best-team*)
      "installing the cohort does not replace or mutate the protected incumbent")
@@ -139,6 +166,7 @@
    (and (getf data :population-diversity-pulse-enabled)
         (eq (getf data :population-diversity-pulse-protocol)
             cl-tpg::+population-diversity-pulse-protocol+)
+        (= (getf data :population-diversity-pulse-wipe-fraction) 0.5d0)
         (getf data :population-diversity-pulse-state))
    "checkpoint metadata records pulse protocol and schedule provenance")
   (check-population-diversity-pulse

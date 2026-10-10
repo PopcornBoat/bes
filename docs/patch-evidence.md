@@ -70,19 +70,20 @@ operators frequently fail to produce a usable child even when the population
 still has moderate behavioral diversity. This supports testing search coverage
 directly, without weakening official promotion.
 
-`population-diversity-pulse-v1` therefore adds a warm-start-sized cohort after
-400 generations without official promotion. At population 160 it adds one
-independent incumbent copy and 159 fresh random roots for one roughly 320-root
-evaluation. The unchanged 0.5 selection gap contracts the population back to
-about 160. Pulses have a 400-generation cooldown and an independent RNG stream.
+`population-diversity-partial-restart-v2` therefore replaces a configurable
+fraction of the population after 400 generations without official promotion.
+At population 160, the default 50% treatment retains 80 roots and rebuilds 80
+slots from one independent incumbent copy plus 79 fresh random roots. The root
+population remains exactly 160. Pulses have a 400-generation cooldown and an
+independent RNG stream.
 
 This is intentionally different from permanently doubling population size:
 the treatment isolates periodic diversity renewal, bounds sustained compute and
-memory, preserves the current population, and never relaxes official promotion.
+memory, preserves half the evolved population, and never relaxes official promotion.
 Its benefit is not yet established; it requires an official-guided run and
 independent full validation.
 
-The live treatment uses profile `LIVE-DIVERSITY-V1`: expensive behavioral-
+The live treatment uses profile `LIVE-DIVERSITY-V2`: expensive behavioral-
 locality sampling/control and all unsuccessful repair injectors are dormant.
 This removes the observed per-generation locality-worker cost while retaining
 grouped selection, clean ranked DAgger, official comparison, and promotion.

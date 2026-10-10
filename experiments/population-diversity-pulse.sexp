@@ -13,6 +13,7 @@
  :incumbent-conservative-repair-enabled :disabled
  :coordinated-repair-bundles-enabled :disabled
  :population-diversity-pulse-enabled :enabled
+ :population-diversity-pulse-wipe-fraction 0.5d0
  :effective-aware-mutation-enabled :enabled
  :compression-reseed-enabled :disabled
  :decoy-order-mode :fixed
@@ -39,7 +40,7 @@
  :migration-interval 50
  :batch-size 1000
  :online-fitness-episodes 5
- :checkpoint-directory "/home/hardison/checkpoints/semantic36/population-diversity-pulse/"
+ :checkpoint-directory "/home/hardison/checkpoints/semantic36/population-partial-restart-50/"
  :hamming-space-enabled :disabled
  :hamming-dataset-name :none
  :seed 153)

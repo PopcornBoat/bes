@@ -410,7 +410,9 @@ return their fixed configured addresses."
                                     (incumbent-conservative-repair-enabled
                                       nil)
                                     (coordinated-repair-bundles-enabled nil)
-                                    (population-diversity-pulse-enabled nil))
+                                    (population-diversity-pulse-enabled nil)
+                                    (population-diversity-pulse-wipe-fraction
+                                      +population-diversity-pulse-default-wipe-fraction+))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -507,6 +509,14 @@ return their fixed configured addresses."
         *population-diversity-pulse-enabled*
           (not (null population-diversity-pulse-enabled)))
 
+  (unless (and (realp population-diversity-pulse-wipe-fraction)
+               (> population-diversity-pulse-wipe-fraction 0)
+               (<= population-diversity-pulse-wipe-fraction 1))
+    (error "Population diversity wipe fraction must be in (0,1], got ~S."
+           population-diversity-pulse-wipe-fraction))
+  (setf *population-diversity-pulse-wipe-fraction*
+        (coerce population-diversity-pulse-wipe-fraction 'double-float))
+
   (when (and *teacher-guided-predicate-injection-enabled*
              *incumbent-conservative-repair-enabled*)
     (error "Population-parent and incumbent-conservative guided repair are mutually exclusive."))
@@ -577,7 +587,9 @@ return their fixed configured addresses."
                                     nil)
                                   (incumbent-conservative-repair-enabled nil)
                                   (coordinated-repair-bundles-enabled nil)
-                                  (population-diversity-pulse-enabled nil))
+                                  (population-diversity-pulse-enabled nil)
+                                  (population-diversity-pulse-wipe-fraction
+                                    +population-diversity-pulse-default-wipe-fraction+))
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -704,7 +716,10 @@ return their fixed configured addresses."
                    read-only-register-profile)))))
        (or (not population-diversity-pulse-enabled)
            (and (eq mode :official-guided)
-                (not recurrent-policy-enabled)))
+                (not recurrent-policy-enabled)
+                (realp population-diversity-pulse-wipe-fraction)
+                (> population-diversity-pulse-wipe-fraction 0)
+                (<= population-diversity-pulse-wipe-fraction 1)))
        (or (not (and (member mode '(:teacher-forcing :official-guided)
                                     :test #'eq)
                      (eq teacher-backend :heuristic)))
@@ -808,6 +823,9 @@ return their fixed configured addresses."
         (population-diversity-pulse-enabled
           (eq (getf msg :population-diversity-pulse-enabled :disabled)
               :enabled))
+        (population-diversity-pulse-wipe-fraction
+          (getf msg :population-diversity-pulse-wipe-fraction
+                +population-diversity-pulse-default-wipe-fraction+))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -820,7 +838,7 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A profile=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A coordinated-bundles=~A diversity-pulse=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             "PARAM DEBUG: mode=~A profile=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A coordinated-bundles=~A diversity-pulse=~A diversity-wipe=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
              mode
              +live-search-profile+
              gym-environment-name
@@ -835,6 +853,7 @@ return their fixed configured addresses."
              incumbent-conservative-repair-enabled
              coordinated-repair-bundles-enabled
              population-diversity-pulse-enabled
+             population-diversity-pulse-wipe-fraction
              effective-aware-mutation-enabled
              compression-reseed-enabled
              compression-reseed-force-next-event
@@ -913,7 +932,8 @@ return their fixed configured addresses."
          teacher-guided-predicate-injection-enabled
          incumbent-conservative-repair-enabled
          coordinated-repair-bundles-enabled
-         population-diversity-pulse-enabled)
+         population-diversity-pulse-enabled
+         population-diversity-pulse-wipe-fraction)
 
         (progn
           (unless (begin-search-operation)
@@ -967,7 +987,9 @@ return their fixed configured addresses."
            :coordinated-repair-bundles-enabled
              coordinated-repair-bundles-enabled
            :population-diversity-pulse-enabled
-             population-diversity-pulse-enabled)
+             population-diversity-pulse-enabled
+           :population-diversity-pulse-wipe-fraction
+             population-diversity-pulse-wipe-fraction)
 
           (push
            (bt:make-thread
@@ -1090,6 +1112,9 @@ return their fixed configured addresses."
         (population-diversity-pulse-enabled
           (eq (getf msg :population-diversity-pulse-enabled :disabled)
               :enabled))
+        (population-diversity-pulse-wipe-fraction
+          (getf msg :population-diversity-pulse-wipe-fraction
+                +population-diversity-pulse-default-wipe-fraction+))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -1154,7 +1179,8 @@ return their fixed configured addresses."
          teacher-guided-predicate-injection-enabled
          incumbent-conservative-repair-enabled
          coordinated-repair-bundles-enabled
-         population-diversity-pulse-enabled)
+         population-diversity-pulse-enabled
+         population-diversity-pulse-wipe-fraction)
 
         (progn
           (unless (begin-search-operation)
@@ -1208,7 +1234,9 @@ return their fixed configured addresses."
            :coordinated-repair-bundles-enabled
              coordinated-repair-bundles-enabled
            :population-diversity-pulse-enabled
-             population-diversity-pulse-enabled)
+             population-diversity-pulse-enabled
+           :population-diversity-pulse-wipe-fraction
+             population-diversity-pulse-wipe-fraction)
 
           (push
            (bt:make-thread

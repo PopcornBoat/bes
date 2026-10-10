@@ -98,6 +98,11 @@ checkpoint graph is shared with the compact program."
   (setf (team-type root-team) :root
         (team-references root-team) 0)
   (dolist (graph-team (closure root-team))
+    ;; A referenced team is never an independently evaluated root.  Historical
+    ;; checkpoints can preserve stale :ROOT type tags inside an otherwise valid
+    ;; graph, so normalize the copied closure at its installation boundary.
+    (unless (eq graph-team root-team)
+      (setf (team-type graph-team) :internal))
     (pushnew graph-team *teams* :test #'eq))
   root-team)
 

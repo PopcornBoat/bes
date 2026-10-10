@@ -150,6 +150,8 @@ checkpoint directory."
                              *coordinated-repair-bundles-enabled*)
                            (population-diversity-pulse-enabled
                              *population-diversity-pulse-enabled*)
+                           (population-diversity-pulse-wipe-fraction
+                             *population-diversity-pulse-wipe-fraction*)
                            (terminal-action-format *terminal-action-format*))
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   (unless (valid-instruction-set-profile-p instruction-set-profile)
@@ -224,6 +226,9 @@ checkpoint directory."
     :population-diversity-pulse-protocol
       ,(and population-diversity-pulse-enabled
             +population-diversity-pulse-protocol+)
+    :population-diversity-pulse-wipe-fraction
+      ,(and population-diversity-pulse-enabled
+            population-diversity-pulse-wipe-fraction)
     :population-diversity-pulse-state
       ,(and population-diversity-pulse-enabled
             (fboundp 'population-diversity-pulse-state-copy)
@@ -315,6 +320,8 @@ checkpoint directory."
                                   *coordinated-repair-bundles-enabled*)
                                 (population-diversity-pulse-enabled
                                   *population-diversity-pulse-enabled*)
+                                (population-diversity-pulse-wipe-fraction
+                                  *population-diversity-pulse-wipe-fraction*)
                                 (terminal-action-format
                                   *terminal-action-format*))
   "Write TEAM, FITNESS, and provenance metadata to PATH."
@@ -359,6 +366,8 @@ checkpoint directory."
              coordinated-repair-bundles-enabled
            :population-diversity-pulse-enabled
              population-diversity-pulse-enabled
+           :population-diversity-pulse-wipe-fraction
+             population-diversity-pulse-wipe-fraction
            :terminal-action-format terminal-action-format
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
@@ -406,6 +415,8 @@ checkpoint directory."
       *coordinated-repair-bundles-enabled*
     :population-diversity-pulse-enabled
       *population-diversity-pulse-enabled*
+    :population-diversity-pulse-wipe-fraction
+      *population-diversity-pulse-wipe-fraction*
     :terminal-action-format *terminal-action-format*
     :decoy-order-mode *decoy-order-mode*
     :cage2-opening-mode *cage2-opening-mode*

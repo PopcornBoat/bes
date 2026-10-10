@@ -147,27 +147,31 @@ post-warm-start improvements are caused by renewed population coverage. It
 starts from the independently validated evolved v13 incumbent and leaves all
 targeted repair and compression injections disabled.
 
-The `LIVE-DIVERSITY-V1` search profile also leaves behavioral-locality worker
+The `LIVE-DIVERSITY-V2` search profile also leaves behavioral-locality worker
 sampling and semantic-locality retry control dormant. Grouped epsilon-lexicase,
 ranked clean DAgger, disagreement reporting, field-local/effective-aware
 mutation, Controller v2, and official staged promotion remain active. Legacy
 mechanism definitions stay loadable for checkpoint archaeology, but the live
 server rejects requests that attempt to reactivate those superseded treatments.
 
-After 400 generations without an official promotion, the search temporarily
-adds one warm-start-sized cohort: one independent serialize/deserialize copy
-of the protected incumbent plus 159 fresh random roots at the default
-population of 160. The next generation therefore evaluates roughly 320 roots.
-The unchanged 0.5 selection gap contracts that evaluated population back to
-roughly 160 before ordinary reproduction. A promotion resets the plateau
-clock, and pulses have a 400-generation cooldown.
+After 400 generations without an official promotion, the search performs a
+50% partial warm restart. At the default population of 160, it retains 80 live
+roots, removes the other 80 and their newly orphaned subgraphs, then fills the
+80 vacated slots with one independent serialize/deserialize copy of the
+protected incumbent plus 79 fresh random roots. Root population remains 160.
+A promotion resets the plateau clock, and pulses have a 400-generation
+cooldown. Setting the wipe fraction to 1.0 gives the originally considered
+complete warm-start reconstruction; smaller values preserve more evolved
+population diversity.
 
-The cohort uses a deterministic event-local RNG stream derived from the
-search seed. It does not consume the ordinary mutation RNG, overwrite the
-historical best, change official racing/promotion, or serialize the complete
-population. Checkpoint metadata records pulse provenance, while warm-start
-resume intentionally begins a new run-local pulse schedule because population
-reconstruction is itself a diversity event.
+Root selection and rebuilt roots use a deterministic event-local RNG stream
+derived from the search seed. They do not consume the ordinary mutation RNG,
+overwrite the historical best, change official racing/promotion, or serialize
+the complete population. Copied closures are normalized so only their intended
+top team is evaluated as a root. Checkpoint metadata records the wipe fraction
+and pulse provenance, while warm-start resume intentionally begins a new
+run-local pulse schedule because population reconstruction is itself a
+diversity event.
 
 Run with:
 
@@ -175,6 +179,10 @@ Run with:
 scripts/bes-runtime start
 scripts/bes-search submit experiments/population-diversity-pulse.sexp
 ```
+
+The v2 run writes to
+`/home/hardison/checkpoints/semantic36/population-partial-restart-50/` so its
+candidate records and seed-stream cursors cannot mix with the archived v1 run.
 
 Compare the first 400-generation baseline with each post-pulse interval. The
 primary outcomes are final official promotions per interval and independent

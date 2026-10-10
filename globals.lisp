@@ -154,17 +154,17 @@ checks remain mandatory.")
 (defvar *compression-reseed-last-record* nil)
 
 (defconstant +population-diversity-pulse-protocol+
-  :population-diversity-pulse-v1
-  "Versioned plateau-triggered warm-start cohort injection protocol.")
+  :population-diversity-partial-restart-v2
+  "Versioned plateau-triggered proportional warm-start restart protocol.")
 
-(defconstant +live-search-profile+ :live-diversity-v1
+(defconstant +live-search-profile+ :live-diversity-v2
   "Maintained search profile with failed experimental mechanisms dormant.")
 
 (defconstant +population-diversity-pulse-rng-salt+ 5404787
   "Independent deterministic salt for periodic diversity cohorts.")
 
 (defparameter *population-diversity-pulse-enabled* nil
-  "When true, add a fresh warm-start-sized cohort after a long official plateau.")
+  "When true, replace a population fraction after a long official plateau.")
 
 (defparameter *population-diversity-pulse-plateau-generations* 400
   "Official-incumbent plateau required before a diversity pulse.")
@@ -172,8 +172,12 @@ checks remain mandatory.")
 (defparameter *population-diversity-pulse-cooldown-generations* 400
   "Minimum generation distance between diversity pulses.")
 
-(defparameter *population-diversity-pulse-cohort-fraction* 1.0d0
-  "Fresh cohort size as a fraction of the configured root population.")
+(defconstant +population-diversity-pulse-default-wipe-fraction+ 0.50d0
+  "Default root-population fraction replaced by a partial restart.")
+
+(defparameter *population-diversity-pulse-wipe-fraction*
+  +population-diversity-pulse-default-wipe-fraction+
+  "Fraction of live roots removed and rebuilt by one diversity pulse.")
 
 (defvar *population-diversity-pulse-last-event-generation* nil)
 (defvar *population-diversity-pulse-last-improvement-generation* 1)

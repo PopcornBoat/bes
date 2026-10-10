@@ -3230,9 +3230,9 @@ through serialization/deserialization and save it to disk."
                    (near-miss-note-descendant parent child))
                  (when (grouped-selection-active-p)
                    (grouped-note-specialist-descendant parent child))))))
-  ;; A plateau pulse is deliberately installed only after ordinary reproduction
-  ;; has restored the configured population.  It temporarily enlarges the next
-  ;; evaluated generation; unchanged selection then contracts it again.
+  ;; A plateau pulse runs only after ordinary reproduction has restored the
+  ;; configured population. It replaces a fixed root fraction in place, so the
+  ;; next generation keeps the same evaluation and selection size.
   (maybe-install-population-diversity-pulse)
   (when (grouped-selection-active-p)
     (grouped-update-specialist-lifecycle :post-reproduction)
