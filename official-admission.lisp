@@ -33,16 +33,18 @@
 (defun official-admission-state-copy ()
   "Return serialization-safe cumulative admission diagnostics."
   (and *official-admission-enabled*
-       (list :version 1
+       (list :version 2
              :protocol +official-admission-protocol+
              :batch-count *official-admission-batch-count*
              :lane-statistics
-               (copy-tree *official-admission-lane-statistics*))))
+               (copy-tree *official-admission-lane-statistics*)
+             :evidence-state
+               (official-admission-evidence-state-copy))))
 
 (defun restore-official-admission-state (state)
   "Restore cumulative diagnostics; in-flight worker processes are never reused."
   (unless (and (listp state)
-               (= (getf state :version 0) 1)
+               (member (getf state :version 0) '(1 2))
                (eq (getf state :protocol) +official-admission-protocol+)
                (integerp (getf state :batch-count))
                (not (minusp (getf state :batch-count))))
@@ -50,6 +52,10 @@
   (setf *official-admission-batch-count* (getf state :batch-count)
         *official-admission-lane-statistics*
           (copy-tree (getf state :lane-statistics)))
+  (if (= (getf state :version) 2)
+      (restore-official-admission-evidence-state
+       (getf state :evidence-state))
+      (reset-official-admission-evidence-state))
   state)
 
 (defun reset-official-admission-runtime ()
@@ -63,7 +69,227 @@
         *official-admission-full-queue* nil
         *official-admission-batch-count* 0
         *official-admission-lane-statistics* nil
-        *online-staged-best-nomination-lanes* nil))
+        *online-staged-best-nomination-lanes* nil)
+  (reset-official-admission-evidence-state))
+
+(defun official-admission-evidence-serialize-anchor (record)
+  "Return the persistent portion of one official-evidence anchor RECORD."
+  (list :lineage-id (getf record :lineage-id)
+        :team-id (getf record :team-id)
+        :checkpoint-path (getf record :checkpoint-path)
+        :candidate-generation (getf record :candidate-generation)
+        :approved-generation (getf record :approved-generation)
+        :remaining-selection-cycles
+          (getf record :remaining-selection-cycles 0)
+        :evidence-episodes (getf record :evidence-episodes)
+        :paired-mean (getf record :paired-mean)
+        :paired-se (getf record :paired-se)
+        :parent-weight (getf record :parent-weight)
+        :lanes (copy-list (getf record :lanes))))
+
+(defun official-admission-evidence-state-copy ()
+  "Return serializable counters and bounded official-evidence anchors."
+  (list :version 1
+        :next-id *official-admission-evidence-next-id*
+        :admitted-count *official-admission-evidence-admitted-count*
+        :anchors
+          (mapcar #'official-admission-evidence-serialize-anchor
+                  *official-admission-evidence-anchors*)))
+
+(defun reset-official-admission-evidence-state ()
+  "Reset all run-local official-evidence lineage state."
+  (setf *official-admission-evidence-anchors* nil
+        *official-admission-evidence-team-lineages*
+          (make-hash-table :test #'eq)
+        *official-admission-evidence-next-id* 0
+        *official-admission-evidence-admitted-count* 0))
+
+(defun official-admission-evidence-load-anchor (path lineage-id)
+  "Load PATH as an independent live root owned by LINEAGE-ID."
+  (unless (probe-file path)
+    (error "Official-evidence anchor is missing: ~A" path))
+  (unless *official-admission-evidence-team-lineages*
+    (setf *official-admission-evidence-team-lineages*
+            (make-hash-table :test #'eq)))
+  (let ((anchor (load-best-team path)))
+    (ensure-team-observation-compatible anchor *num-observations*)
+    (setf (team-type anchor) :root
+          (team-references anchor) 0)
+    (dolist (team (closure anchor))
+      (pushnew team *teams* :test #'eq))
+    (setf (gethash anchor *official-admission-evidence-team-lineages*)
+            lineage-id)
+    anchor))
+
+(defun restore-official-admission-evidence-state (state)
+  "Restore bounded official-evidence anchors from a versioned STATE."
+  (reset-official-admission-evidence-state)
+  (when state
+    (unless (and (listp state) (= (getf state :version 0) 1))
+      (error "Invalid official-admission evidence state: ~S" state))
+    (setf *official-admission-evidence-next-id* (getf state :next-id 0)
+          *official-admission-evidence-admitted-count*
+            (getf state :admitted-count 0))
+    (dolist (saved (getf state :anchors))
+      (when (plusp (getf saved :remaining-selection-cycles 0))
+        (let* ((lineage-id (getf saved :lineage-id))
+               (anchor
+                 (official-admission-evidence-load-anchor
+                  (getf saved :checkpoint-path) lineage-id)))
+          (push (append (copy-tree saved) (list :team anchor))
+                *official-admission-evidence-anchors*))))
+    (setf *official-admission-evidence-anchors*
+            (nreverse *official-admission-evidence-anchors*)))
+  state)
+
+(defun official-admission-evidence-parent-weight (episode-count)
+  "Convert cumulative paired evidence into a bounded parent multiplicity."
+  (min +official-admission-evidence-max-parent-weight+
+       (cond ((>= episode-count 100) 4)
+             ((>= episode-count 40) 3)
+             (t 2))))
+
+(defun official-admission-evidence-next-lineage-id (generation)
+  "Return a deterministic identifier for one newly admitted lineage."
+  (incf *official-admission-evidence-next-id*)
+  (format nil "OFFICIAL-EVIDENCE-~D-G~D"
+          *official-admission-evidence-next-id* generation))
+
+(defun official-admission-evidence-trim-anchors ()
+  "Enforce the active-anchor budget without deleting ordinary live roots."
+  (loop while (> (length *official-admission-evidence-anchors*)
+                 +official-admission-evidence-max-active-anchors+)
+        do (let ((oldest
+                   (reduce
+                    (lambda (left right)
+                      (if (< (getf left :approved-generation 0)
+                             (getf right :approved-generation 0))
+                          left right))
+                    *official-admission-evidence-anchors*)))
+             (setf *official-admission-evidence-anchors*
+                     (remove oldest *official-admission-evidence-anchors*
+                             :test #'eq)))))
+
+(defun official-admission-install-evidence-anchor (record)
+  "Install RECORD as a bounded survival/reproduction anchor, never as best."
+  (let* ((generation (getf record :candidate-generation *generation*))
+         (last-stage (car (last (getf record :tournament-stages))))
+         (episodes (getf last-stage :episode-count))
+         (lineage-id
+           (official-admission-evidence-next-lineage-id generation))
+         (anchor
+           (official-admission-evidence-load-anchor
+            (getf record :candidate-path) lineage-id))
+         (anchor-record
+           (list :lineage-id lineage-id
+                 :team anchor
+                 :team-id (team-id anchor)
+                 :checkpoint-path (getf record :candidate-path)
+                 :candidate-generation generation
+                 :approved-generation *generation*
+                 :remaining-selection-cycles
+                   +official-admission-evidence-protection-generations+
+                 :evidence-episodes episodes
+                 :paired-mean (getf last-stage :paired-mean)
+                 :paired-se (getf last-stage :paired-se)
+                 :parent-weight
+                   (official-admission-evidence-parent-weight episodes)
+                 :lanes (copy-list (getf record :lanes)))))
+    (push anchor-record *official-admission-evidence-anchors*)
+    (incf *official-admission-evidence-admitted-count*)
+    (official-admission-increment-lanes
+     (getf record :lanes) :evidence-admitted)
+    (official-admission-evidence-trim-anchors)
+    anchor-record))
+
+(defun official-admission-evidence-eligible-p (record)
+  "Return true for non-negative evidence surviving at least twelve episodes."
+  (let ((last-stage (car (last (getf record :tournament-stages)))))
+    (and (getf record :keep)
+         last-stage
+         (getf last-stage :continue)
+         (>= (getf last-stage :episode-count 0)
+             +official-admission-evidence-minimum-episodes+)
+         (>= (getf last-stage :paired-mean most-negative-double-float)
+             0.0d0))))
+
+(defun official-admission-install-batch-evidence (candidate-records)
+  "Install at most two strongest non-negative records as live evidence anchors."
+  (let* ((eligible
+           (remove-if-not #'official-admission-evidence-eligible-p
+                          candidate-records))
+         (ranked
+           (stable-sort
+            (copy-list eligible)
+            (lambda (left right)
+              (let ((left-stage (car (last (getf left :tournament-stages))))
+                    (right-stage (car (last (getf right :tournament-stages)))))
+                (or (> (getf left-stage :episode-count)
+                       (getf right-stage :episode-count))
+                    (and (= (getf left-stage :episode-count)
+                            (getf right-stage :episode-count))
+                         (> (getf left-stage :paired-mean)
+                            (getf right-stage :paired-mean))))))))
+         (limit
+           (min (length ranked)
+                +official-admission-evidence-max-anchors-per-batch+)))
+    (mapcar #'official-admission-install-evidence-anchor
+            (subseq ranked 0 limit))))
+
+(defun official-admission-evidence-protected-teams ()
+  "Return active evidence anchors that must survive grouped selection."
+  (let ((roots (root-teams)))
+    (loop for record in *official-admission-evidence-anchors*
+          for team = (getf record :team)
+          when (and team
+                    (plusp (getf record :remaining-selection-cycles 0))
+                    (member team roots :test #'eq))
+            collect team)))
+
+(defun official-admission-evidence-note-selection (selected-teams)
+  "Spend one protection cycle and retire exhausted or deleted anchors."
+  (let ((roots (root-teams))
+        (retained nil))
+    (dolist (record *official-admission-evidence-anchors*)
+      (let ((team (getf record :team)))
+        (when (and team (member team selected-teams :test #'eq)
+                   (plusp (getf record :remaining-selection-cycles 0)))
+          (decf (getf record :remaining-selection-cycles)))
+        (when (and team (member team roots :test #'eq)
+                   (plusp (getf record :remaining-selection-cycles 0)))
+          (push record retained))))
+    (setf *official-admission-evidence-anchors* (nreverse retained))))
+
+(defun official-admission-weighted-parent-pool (roots)
+  "Return ROOTS plus bounded duplicate references for active evidence anchors."
+  (let ((weighted (copy-list roots)))
+    (dolist (record *official-admission-evidence-anchors* weighted)
+      (let ((anchor (getf record :team))
+            (weight (getf record :parent-weight 1)))
+        (when (and anchor (member anchor roots :test #'eq)
+                   (plusp (getf record :remaining-selection-cycles 0)))
+          (loop repeat (1- weight) do (push anchor weighted)))))))
+
+(defun official-admission-note-evidence-descendant (parent child)
+  "Propagate evidence lineage identity for diagnostics only."
+  (when *official-admission-evidence-team-lineages*
+    (multiple-value-bind (lineage-id present-p)
+        (gethash parent *official-admission-evidence-team-lineages*)
+      (when present-p
+        (setf (gethash child *official-admission-evidence-team-lineages*)
+                lineage-id))))
+  child)
+
+(defun official-admission-prune-evidence-lineages ()
+  "Retain descendant lineage tags only for roots still in the population."
+  (when *official-admission-evidence-team-lineages*
+    (let ((retained (make-hash-table :test #'eq)))
+      (dolist (team (root-teams))
+        (multiple-value-bind (lineage-id present-p)
+            (gethash team *official-admission-evidence-team-lineages*)
+          (when present-p
+            (setf (gethash team retained) lineage-id))))
+      (setf *official-admission-evidence-team-lineages* retained))))
 
 (defun official-admission-random-below (limit)
   "Draw a replayable integer below LIMIT from the isolated nomination stream."
@@ -287,22 +513,26 @@ This is nomination only; disjoint full confirmation remains authoritative."
                   (subseq (getf record :tournament-returns) 0 stage-count))
                 (incumbent-prefix
                   (subseq incumbent-returns 0 stage-count)))
-            (multiple-value-bind (continue-p mean margin)
-                (official-guided-continue-p
+            (multiple-value-bind
+                  (continue-p mean se upper-bound reason)
+                (official-admission-continue-p
                  candidate-prefix incumbent-prefix)
               (multiple-value-bind
-                    (ignored-mean se correlation paired-variance
+                    (ignored-mean ignored-se correlation paired-variance
                      unpaired-variance)
                   (official-guided-comparison-statistics
                    candidate-prefix incumbent-prefix)
-                (declare (ignore ignored-mean))
+                (declare (ignore ignored-mean ignored-se))
                 (setf (getf record :tournament-stages)
                       (append
                        (getf record :tournament-stages)
                        (list
                         (list :stage stage :episode-count stage-count
                               :continue continue-p :paired-mean mean
-                              :paired-se se :margin margin
+                              :paired-se se
+                              :margin
+                                (* +official-admission-standard-errors+ se)
+                              :upper-bound upper-bound :reason reason
                               :same-seed-correlation correlation
                               :paired-variance paired-variance
                               :unpaired-variance unpaired-variance)))))

@@ -636,7 +636,10 @@
       (official-guided-comparison-statistics
        candidate-returns incumbent-returns)
     (let ((margin (* +official-guided-comparison-standard-errors+ se)))
-      (values (> (+ mean margin) 0.0d0) mean margin))))
+      ;; Exact ties are uncertainty, not evidence of futility.  This matters
+      ;; when two policies share the 100-step behavior but differ on the final
+      ;; 30/50/100 multi-horizon deployment objective.
+      (values (>= (+ mean margin) 0.0d0) mean margin))))
 
 (defun official-guided-promote-p (candidate-returns incumbent-returns)
   "Promote only after a positive paired uncertainty margin."

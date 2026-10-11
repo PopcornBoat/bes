@@ -1307,7 +1307,8 @@ promotion still requires the stricter positive one-standard-error improvement."
   "Apply one completed batch tournament and queue only its unique winner."
   (let ((kept-count 0)
         (rejected 0)
-        (winner nil))
+        (winner nil)
+        (evidence-anchors nil))
     (cond
       ((eq (getf result :status) :error)
        (emit-message
@@ -1334,6 +1335,12 @@ promotion still requires the stricter positive one-standard-error improvement."
                  (incf rejected)
                  (official-admission-increment-lanes
                   lanes :cheap-rejected)))))
+       ;; Intermediate official evidence affects search only through bounded
+       ;; survival and parent-sampling credit.  It never overwrites the
+       ;; historical incumbent or bypasses fresh multi-horizon confirmation.
+       (setf evidence-anchors
+             (official-admission-install-batch-evidence
+              (getf result :candidate-results)))
        (when winner
          (setf *official-admission-full-queue*
                (list
@@ -1355,8 +1362,9 @@ promotion still requires the stricter positive one-standard-error improvement."
                 (copy-tree (getf result :candidate-results))))
        (emit-message
         (format nil
-                "Official admission tournament completed: cheap-kept=~D clearly-futile=~D winner=~A fresh-confirmation-queued=~D lane-stats=~S."
+                "Official admission tournament completed: cheap-kept=~D clearly-futile=~D evidence-anchors=~D winner=~A fresh-confirmation-queued=~D lane-stats=~S."
                 kept-count rejected
+                (length evidence-anchors)
                 (or (and winner (getf winner :candidate-id)) :none)
                 (length *official-admission-full-queue*)
                 (official-admission-summary))))))
@@ -3338,12 +3346,16 @@ return-credit lineage uses this bounded exception only for fresh official-credit
          (return-credit-protected
            (and (official-return-credit-active-p)
                 (official-return-credit-protected-teams)))
+         (official-evidence-protected
+           (and (official-admission-active-p)
+                (official-admission-evidence-protected-teams)))
          (guided-protected
            (and (teacher-guided-predicate-active-p)
                 (teacher-guided-protected-teams scores)))
          (forced-protected
            (remove-duplicates
-            (append return-credit-protected guided-protected)
+            (append return-credit-protected official-evidence-protected
+                    guided-protected)
             :test #'eq))
          (selected
            (grouped-lexicase-survivors
@@ -3404,6 +3416,8 @@ return-credit lineage uses this bounded exception only for fresh official-credit
                  :selected-evaluated-root-ids (mapcar #'team-id selected-teams)
                  :return-credit-protected-root-ids
                    (mapcar #'team-id return-credit-protected)
+                 :official-evidence-protected-root-ids
+                   (mapcar #'team-id official-evidence-protected)
                  :teacher-guided-protected-root-ids
                    (mapcar #'team-id guided-protected)
                  :old-scalar-survivor-ids
@@ -3414,6 +3428,8 @@ return-credit lineage uses this bounded exception only for fresh official-credit
       (setf (getf *grouped-selection-generation-record*
                   :return-credit-expired-lineage-ids)
               (official-return-credit-note-selection selected-teams)))
+    (when (official-admission-active-p)
+      (official-admission-evidence-note-selection selected-teams))
     (incf *grouped-selection-age*)
     unselected))
 
@@ -3670,7 +3686,9 @@ through serialization/deserialization and save it to disk."
     (when (behavioral-locality-active-p)
       (prune-behavioral-team-lineage))
     (when (official-return-credit-active-p)
-      (official-return-credit-prune-team-lineages))))
+      (official-return-credit-prune-team-lineages))
+    (when (official-admission-active-p)
+      (official-admission-prune-evidence-lineages))))
 
 (defun should-send-migrants-p ()
   "Returns T periodically when the generation matches the migration interval."
@@ -3731,7 +3749,11 @@ through serialization/deserialization and save it to disk."
             while (< (length (root-teams)) *population-size*)
             do (reproduce-native-child compressed-parent))))
   (loop while (< (length (root-teams)) *population-size*)
-        do (let* ((parents (root-teams))
+        do (let* ((roots (root-teams))
+                  (parents
+                    (if (official-admission-active-p)
+                        (official-admission-weighted-parent-pool roots)
+                        roots))
                   (bundle-p (coordinated-repair-bundle-active-p))
                   (bundle-slot-p
                     (and bundle-p (coordinated-repair-bundle-slot-p)))
@@ -3793,6 +3815,8 @@ through serialization/deserialization and save it to disk."
                             (reproduce-native-child parent))))
                  (when (official-return-credit-active-p)
                    (official-return-credit-note-descendant parent child))
+                 (when (official-admission-active-p)
+                   (official-admission-note-evidence-descendant parent child))
                  (when (and parent (near-miss-active-p))
                    (near-miss-note-descendant parent child))
                  (when (grouped-selection-active-p)

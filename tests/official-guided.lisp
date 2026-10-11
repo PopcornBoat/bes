@@ -157,6 +157,14 @@
    (and (not continue-p) (= mean -10.0d0) (= margin 0.0d0))
    "a clearly futile challenger is rejected before promotion"))
 
+(multiple-value-bind (continue-p mean margin)
+    (cl-tpg::official-guided-continue-p
+     '(-10.0d0 -10.0d0 -10.0d0)
+     '(-10.0d0 -10.0d0 -10.0d0))
+  (check-official-guided
+   (and continue-p (= mean 0.0d0) (= margin 0.0d0))
+   "an exact primary-horizon tie reaches the final multi-horizon audit"))
+
 (multiple-value-bind (promote-p mean margin)
     (cl-tpg::official-guided-promote-p
      '(2.0d0 2.0d0 2.0d0)

@@ -433,7 +433,7 @@ Stage 4 performs the final multi-horizon tail-aware promotion audit.")
   "Standard-error boundary used by racing futility and final promotion.")
 
 (defconstant +official-admission-protocol+
-  :evolved-multisource-batch-tournament-v2
+  :evolved-multisource-batch-tournament-v3
   "Version tag for donor-free multi-source official batch tournaments.")
 
 (defconstant +official-admission-episodes+ 2
@@ -460,6 +460,21 @@ a single challenger.  The winner still requires a disjoint full confirmation.")
 
 (defconstant +official-admission-max-policy-workers+ 4
   "Maximum independent policy-return processes used by one batch tournament.")
+
+(defconstant +official-admission-evidence-minimum-episodes+ 12
+  "Minimum common-seed evidence required before a candidate may influence reproduction.")
+
+(defconstant +official-admission-evidence-max-anchors-per-batch+ 2
+  "Maximum non-negative official-evidence anchors admitted from one tournament.")
+
+(defconstant +official-admission-evidence-protection-generations+ 12
+  "Selection cycles for which an admitted official-evidence anchor is protected.")
+
+(defconstant +official-admission-evidence-max-active-anchors+ 4
+  "Maximum independently protected official-evidence anchors.")
+
+(defconstant +official-admission-evidence-max-parent-weight+ 4
+  "Maximum parent-pool multiplicity assigned to an evidence anchor.")
 
 (defconstant +official-return-credit-protocol+
   :paired-parent-child-return-credit-return-credit-lineage-v2
@@ -984,6 +999,18 @@ ordinary full official-guided racing protocol.")
 
 (defvar *official-admission-lane-statistics* nil
   "Serializable alist of per-lane nomination and official outcome counts.")
+
+(defvar *official-admission-evidence-anchors* nil
+  "Records for official-supported roots with bounded reproductive credit.")
+
+(defvar *official-admission-evidence-team-lineages* nil
+  "EQ table mapping live descendants to official-evidence lineage identifiers.")
+
+(defvar *official-admission-evidence-next-id* 0
+  "Monotone identifier cursor for official-evidence lineages.")
+
+(defvar *official-admission-evidence-admitted-count* 0
+  "Number of batch candidates admitted as official-evidence anchors.")
 
 (defvar *online-staged-best-nomination-lanes* nil
   "Admission lanes associated with the staged full-racing challenger.")

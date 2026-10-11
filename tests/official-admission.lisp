@@ -80,7 +80,28 @@
             (= (length (getf rejected :tournament-stages)) 1)
             (equal returned-seeds seeds)
             (equal incumbent-returns incumbent))
-       "common-seed tournament is order-independent, staged, and selects one winner"))))
+      "common-seed tournament is order-independent, staged, and selects one winner"))))
+
+;; An exact early tie is not evidence of futility.  It must reach fresh
+;; multi-horizon confirmation because horizon-specific behavior can still differ.
+(let* ((seeds (loop for seed from 1 to 100 collect seed))
+       (returns (make-list 100 :initial-element -20.0d0))
+       (candidate
+         (list :candidate-id "tie" :candidate-imitation-score 1.0d0
+               :candidate-path "/tmp/tie.lisp"
+               :candidate-generation 1 :lanes '(:positive-control)
+               :keep t :tournament-returns (copy-list returns))))
+  (multiple-value-bind (records winner)
+      (cl-tpg::official-admission-tournament-select
+       (list candidate) returns seeds)
+    (declare (ignore records))
+    (check-official-admission
+     (and winner
+          (string= (getf winner :candidate-id) "tie")
+          (= (length (getf winner :tournament-stages)) 4)
+          (every (lambda (stage) (getf stage :continue))
+                 (getf winner :tournament-stages)))
+     "an exact tie survives negative-only stages for multi-horizon confirmation")))
 
 (let* ((teams (loop for index below 12 collect (intern (format nil "A~D" index))))
        (scores
@@ -265,14 +286,52 @@
                    (cl-tpg::*official-guided-incumbent-version* 7)
                    (cl-tpg::*official-admission-job* '(:generation 10))
                    (cl-tpg::*official-admission-full-queue* nil)
-                   (cl-tpg::*official-admission-lane-statistics* nil))
+                   (cl-tpg::*official-admission-lane-statistics* nil)
+                   (cl-tpg::*official-admission-evidence-anchors* nil)
+                   (cl-tpg::*official-admission-evidence-team-lineages*
+                     (make-hash-table :test #'eq))
+                   (cl-tpg::*official-admission-evidence-next-id* 0)
+                   (cl-tpg::*official-admission-evidence-admitted-count* 0)
+                   (cl-tpg::*teams* nil)
+                   (cl-tpg::*num-observations* 62))
                (cl-tpg::consume-official-admission-result result)
                (check-official-admission
                 (and (= (length cl-tpg::*official-admission-full-queue*) 1)
                      (equal (getf (first cl-tpg::*official-admission-full-queue*)
                                   :candidate-path)
                             (namestring mild-path)))
-                "the serialized coordinator winner reaches fresh confirmation")))
+                "the serialized coordinator winner reaches fresh confirmation")
+               (let* ((anchor-record
+                        (first cl-tpg::*official-admission-evidence-anchors*))
+                      (anchor (getf anchor-record :team))
+                      (roots (cl-tpg::root-teams))
+                      (weighted
+                        (cl-tpg::official-admission-weighted-parent-pool roots)))
+                 (check-official-admission
+                  (and (= cl-tpg::*official-admission-evidence-admitted-count* 1)
+                       (= (length cl-tpg::*official-admission-evidence-anchors*) 1)
+                       (member anchor roots :test #'eq)
+                       (> (count anchor weighted :test #'eq) 1)
+                       (member anchor
+                               (cl-tpg::official-admission-evidence-protected-teams)
+                               :test #'eq))
+                  "positive tournament evidence installs a protected, weighted anchor")
+                 (let ((state
+                         (cl-tpg::official-admission-evidence-state-copy)))
+                   (setf cl-tpg::*teams* nil)
+                   (cl-tpg::reset-official-admission-evidence-state)
+                   (cl-tpg::restore-official-admission-evidence-state state)
+                   (check-official-admission
+                    (and (= cl-tpg::*official-admission-evidence-admitted-count* 1)
+                         (= (length
+                             cl-tpg::*official-admission-evidence-anchors*)
+                            1)
+                         (= (getf
+                             (first
+                              cl-tpg::*official-admission-evidence-anchors*)
+                             :remaining-selection-cycles)
+                            cl-tpg::+official-admission-evidence-protection-generations+))
+                    "official-evidence anchors survive state round-trip")))))
            (setf corrupt-seeds t rollout-count 0)
            (cl-tpg::run-official-admission-evaluation request-path)
            (let ((result (cl-tpg::read-readable-object result-path)))

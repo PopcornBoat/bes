@@ -130,10 +130,23 @@ and with two episodes a policy is rejected only when
 
 Every retained policy and the frozen incumbent are then evaluated on the same
 100-seed block by at most four independent policy processes. Common-prefix
-checks at `5 / 12 / 40 / 100` episodes remove futile candidates. Because every
-return is indexed by the same seed, the surviving policies are directly
-comparable; the largest 100-episode paired mean produces one order-independent
-batch winner. A batch never writes the historical checkpoint itself.
+checks at `5 / 12 / 40 / 100` episodes remain negative-only: exact ties and
+uncertain results continue, while only a paired upper bound below the frozen
+futility floor is removed. Because every return is indexed by the same seed,
+the surviving policies are directly comparable; the largest 100-episode paired
+mean produces one order-independent batch winner. A batch never writes the
+historical checkpoint itself.
+
+Official evidence now also affects search rather than acting only as a
+checkpoint gate. At most two candidates per batch that survive at least 12
+episodes with a non-negative paired mean are reloaded as independent evidence
+anchors. An anchor is protected for 12 selection cycles and receives a bounded
+parent-pool multiplicity of two, three, or four after 12, 40, or 100 episodes.
+It is scored normally from the following generation, its descendants receive
+no automatic fitness, and it becomes an ordinary root when the budget expires.
+At most four evidence anchors can be active. This gives supported lineages a
+chance to accumulate improvements without allowing intermediate evidence to
+overwrite the historical best.
 
 Only that winner enters the existing full official protocol with completely
 fresh racing and promotion seeds. This confirmation controls selection of the
@@ -149,11 +162,12 @@ and is not evidence about promotion performance; the corrected experiment uses
 the separate `evolved-candidate-official-admission-fixed/` checkpoint directory.
 
 Admission and random nomination use separate deterministic seed streams. Their
-cursors and cumulative per-lane counters are journaled with the official-guided
-runtime state. The append-only `official-admission-history.lisp` records cheap
-outcomes and full-racing outcomes so aggregate, specialist, behavioral,
-critical, and random lanes can be compared by positive-return, Stage-1,
-Stage-4, and promotion rates.
+cursors, cumulative per-lane counters, and active evidence-anchor budgets are
+journaled with the official-guided runtime state. The append-only
+`official-admission-history.lisp` records cheap outcomes and full-racing
+outcomes so aggregate, specialist, behavioral, critical, and random lanes can
+be compared by positive-return, evidence-admission, Stage-1, Stage-4, and
+promotion rates.
 
 The old 400-generation proportional population restart remains loadable for
 archaeology but is forced off by the maintained live profile; it is not part of

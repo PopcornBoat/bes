@@ -64,26 +64,31 @@ policy. They remain part of the maintained baseline.
 
 ## Current hypothesis and next treatment
 
-Across many treatments, a warm-start reconstruction or new patch often finds
-one or two early improvements and then plateaus. At the same time, targeted
-operators frequently fail to produce a usable child even when the population
-still has moderate behavioral diversity. This supports testing search coverage
-directly, without weakening official promotion.
+The donor-free admission control ran for 1,363 generations and completed 76
+batches containing 608 candidates. Of these, 356 passed cheap admission, 88
+reached 12 episodes, 58 reached 40, 36 reached 100, and 22 won their batch.
+All 22 fresh confirmations were rejected and the incumbent remained v13. This
+shows that broader nomination and reliable evaluation can find and reject noisy
+challengers, but an evaluation-only gateway supplies no cumulative evolutionary
+pressure toward official return.
 
-`population-diversity-partial-restart-v2` therefore replaces a configurable
-fraction of the population after 400 generations without official promotion.
-At population 160, the default 50% treatment retains 80 roots and rebuilds 80
-slots from one independent incumbent copy plus 79 fresh random roots. The root
-population remains exactly 160. Pulses have a 400-generation cooldown and an
-independent RNG stream.
+The maintained next treatment therefore feeds bounded intermediate official
+evidence back into reproduction. At most two candidates per batch with at least
+12 common-seed episodes and a non-negative paired mean become evidence anchors.
+They receive 12 protected selection cycles and a bounded parent multiplicity of
+two to four. They are scored normally on the next generation, descendants get
+no automatic fitness, and only final fresh multi-horizon confirmation can write
+the historical checkpoint. At most four anchors are active, so imitation and
+grouped epsilon-lexicase remain the dominant population pressures.
 
-This is intentionally different from permanently doubling population size:
-the treatment isolates periodic diversity renewal, bounds sustained compute and
-memory, preserves half the evolved population, and never relaxes official promotion.
-Its benefit is not yet established; it requires an official-guided run and
-independent full validation.
+The positive control used the compiled one-team heuristic under the same
+reduced-EQ/ROR execution profile as v13. It survived negative-only admission,
+reached a 100-episode paired delta of `+2.344 +/- 0.825`, and passed a separate
+100-seed 30/50/100 tail-aware audit with aggregate paired delta
+`+6.921 +/- 1.508`. This establishes that the gateway and final decision can
+recognize a known better policy; it does not establish that evolution will
+discover one.
 
-The live treatment uses profile `LIVE-DIVERSITY-V2`: expensive behavioral-
-locality sampling/control and all unsuccessful repair injectors are dormant.
-This removes the observed per-generation locality-worker cost while retaining
-grouped selection, clean ranked DAgger, official comparison, and promotion.
+The old proportional population restart remains disabled because its tested
+form produced no official improvement. Expensive locality sampling/control and
+unsuccessful repair injectors also remain dormant.
