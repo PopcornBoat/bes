@@ -1229,6 +1229,9 @@ promotion still requires the stricter positive one-standard-error improvement."
          (seeds
            (official-guided-take-seeds
             :admission +official-admission-episodes+))
+         (tournament-seeds
+           (official-guided-take-seeds
+            :racing (car (last +official-admission-tournament-stages+))))
          (serialized-candidates nil))
     (write-official-guided-team-checkpoint
      *best-team* *best-fitness* *generation* incumbent-path)
@@ -1253,7 +1256,7 @@ promotion still requires the stricter positive one-standard-error improvement."
               serialized-candidates))
     (setf serialized-candidates (nreverse serialized-candidates))
     (write-readable-object-atomically
-     (list :version 1
+     (list :version 2
            :protocol +official-admission-protocol+
            :incumbent-path (namestring incumbent-path)
            :incumbent-version *official-guided-incumbent-version*
@@ -1265,6 +1268,10 @@ promotion still requires the stricter positive one-standard-error improvement."
            :cage2-opening-mode *cage2-opening-mode*
            :teacher-backend *teacher-backend*
            :seeds seeds
+           :tournament-seeds tournament-seeds
+           :tournament-stages
+             (copy-list +official-admission-tournament-stages+)
+           :max-policy-workers +official-admission-max-policy-workers+
            :candidates serialized-candidates)
      request-path)
     ;; Cursor reservations and the immutable request are durable before launch.
@@ -1289,15 +1296,18 @@ promotion still requires the stricter positive one-standard-error improvement."
             (+ *generation* +online-candidate-evaluation-interval+))
     (emit-message
      (format nil
-             "Official admission batch ~A launched: candidates=~D shared-seeds=~S lanes=~S."
+             "Official admission tournament ~A launched: candidates=~D cheap-seeds=~S shared-tournament-seeds=~D workers=~D lanes=~S."
              batch-id (length serialized-candidates) seeds
+             (length tournament-seeds)
+             +official-admission-max-policy-workers+
              (mapcar (lambda (entry) (getf entry :lanes))
                      serialized-candidates)))))
 
 (defun consume-official-admission-result (result)
-  "Apply one cheap negative-filter result and queue every non-futile policy."
-  (let ((kept nil)
-        (rejected 0))
+  "Apply one completed batch tournament and queue only its unique winner."
+  (let ((kept-count 0)
+        (rejected 0)
+        (winner nil))
     (cond
       ((eq (getf result :status) :error)
        (emit-message
@@ -1315,34 +1325,39 @@ promotion still requires the stricter positive one-standard-error improvement."
          (let ((lanes (getf record :lanes)))
            (if (getf record :keep)
                (progn
+                 (incf kept-count)
                  (official-admission-increment-lanes lanes :cheap-kept)
-                 (push
-                  (list :candidate-path (getf record :candidate-path)
-                        :candidate-generation
-                          (getf record :candidate-generation)
-                        :candidate-imitation-score
-                          (getf record :candidate-imitation-score)
-                        :lanes (copy-list lanes)
-                        :admission-evidence (copy-tree record))
-                  kept))
+                 (official-admission-note-tournament-outcome record)
+                 (when (getf record :tournament-selected)
+                   (setf winner record)))
                (progn
                  (incf rejected)
                  (official-admission-increment-lanes
                   lanes :cheap-rejected)))))
-       (setf kept (nreverse kept)
-             *official-admission-full-queue*
-               (nconc *official-admission-full-queue* kept))
+       (when winner
+         (setf *official-admission-full-queue*
+               (list
+                (list :candidate-path (getf winner :candidate-path)
+                      :candidate-generation
+                        (getf winner :candidate-generation)
+                      :candidate-imitation-score
+                        (getf winner :candidate-imitation-score)
+                      :lanes (copy-list (getf winner :lanes))
+                      :admission-evidence (copy-tree winner)))))
        (persist-official-admission-record
-        (list :type :cheap-batch
+        (list :type :batch-tournament
               :protocol +official-admission-protocol+
               :generation (getf *official-admission-job* :generation)
               :incumbent-version (getf result :incumbent-version)
+              :tournament-seeds (copy-list (getf result :tournament-seeds))
+              :winner-id (getf result :winner-id)
               :candidate-results
                 (copy-tree (getf result :candidate-results))))
        (emit-message
         (format nil
-                "Official admission completed: kept=~D clearly-futile=~D queued=~D lane-stats=~S."
-                (length kept) rejected
+                "Official admission tournament completed: cheap-kept=~D clearly-futile=~D winner=~A fresh-confirmation-queued=~D lane-stats=~S."
+                kept-count rejected
+                (or (and winner (getf winner :candidate-id)) :none)
                 (length *official-admission-full-queue*)
                 (official-admission-summary))))))
   (persist-official-guided-runtime-state))
@@ -1760,8 +1775,168 @@ promotion still requires the stricter positive one-standard-error improvement."
       (push (cl-gym:rollout incumbent environment-name seed) incumbent-scores))
     (values (nreverse candidate-scores) (nreverse incumbent-scores))))
 
+(defun run-official-policy-return-evaluation (request-path)
+  "Evaluate one frozen policy over an immutable common-seed block."
+  (let* ((request (read-readable-object request-path))
+         (result-path (pathname (getf request :result-path)))
+         (started (get-universal-time)))
+    (labels ((publish (result)
+               (write-readable-object-atomically
+                (append result
+                        (list :elapsed-seconds
+                              (- (get-universal-time) started)))
+                result-path)))
+      (handler-case
+          (let* ((*running* t)
+                 (*search-active* nil)
+                 (*current-search-mode* :official-guided)
+                 (*current-gym-environment-name*
+                   (getf request :gym-environment-name))
+                 (*num-observations* (getf request :num-observations))
+                 (*num-actions* (getf request :num-actions))
+                 (*decoy-order-mode* (getf request :decoy-order-mode))
+                 (*cage2-opening-mode* (getf request :cage2-opening-mode))
+                 (*teacher-backend* (getf request :teacher-backend :heuristic))
+                 (*recurrent-policy-enabled* nil)
+                 (*hamming-space-enabled* nil)
+                 (*factored-actions-enabled* t)
+                 (loaded-values
+                   (multiple-value-list
+                    (load-best-team (getf request :policy-path))))
+                 (policy (first loaded-values))
+                 (metadata (third loaded-values))
+                 (profile
+                   (checkpoint-execution-profile-list
+                    metadata "Official tournament policy"))
+                 (*terminal-action-format* (first profile))
+                 (*instruction-set-profile* (second profile))
+                 (*read-only-register-profile* (third profile))
+                 (returns nil))
+            (ensure-team-observation-compatible policy *num-observations*)
+            (dolist (seed (getf request :seeds))
+              (push (cl-gym:rollout
+                     policy *current-gym-environment-name* seed)
+                    returns))
+            (publish
+             (list :status :complete
+                   :policy-id (getf request :policy-id)
+                   :seeds (copy-list (getf request :seeds))
+                   :returns (nreverse returns))))
+        (error (condition)
+          (publish
+           (list :status :error
+                 :policy-id (getf request :policy-id)
+                 :message (princ-to-string condition)))))))
+  t)
+
+(defun official-admission-policy-artifact-path
+       (parent-request-path index kind type)
+  "Return one unique subworker artifact path beside PARENT-REQUEST-PATH."
+  (merge-pathnames
+   (make-pathname
+    :name (format nil "~A-policy-~D-~A"
+                  (pathname-name parent-request-path) index kind)
+    :type type)
+   (uiop:pathname-directory-pathname parent-request-path)))
+
+(defun official-admission-parallel-policy-returns
+       (parent-request-path parent-request policy-specs seeds max-workers)
+  "Evaluate POLICY-SPECS in bounded independent SBCL processes."
+  (unless (and (integerp max-workers) (plusp max-workers))
+    (error "Tournament worker limit must be positive, got ~S." max-workers))
+  (let ((pending (copy-list policy-specs))
+        (active nil)
+        (completed nil)
+        (next-index 0)
+        (worker-script
+          (merge-pathnames
+           "scripts/run-official-policy-return-evaluation.lisp"
+           (asdf:system-source-directory :cl-tpg))))
+    (labels
+        ((launch-one (spec)
+           (let* ((index (prog1 next-index (incf next-index)))
+                  (request-path
+                    (official-admission-policy-artifact-path
+                     parent-request-path index "request" "lisp"))
+                  (result-path
+                    (official-admission-policy-artifact-path
+                     parent-request-path index "result" "lisp"))
+                  (log-path
+                    (official-admission-policy-artifact-path
+                     parent-request-path index "worker" "log")))
+             (write-readable-object-atomically
+              (list :version 1
+                    :policy-id (getf spec :policy-id)
+                    :policy-path (getf spec :policy-path)
+                    :result-path (namestring result-path)
+                    :gym-environment-name
+                      (getf parent-request :gym-environment-name)
+                    :num-observations
+                      (getf parent-request :num-observations)
+                    :num-actions (getf parent-request :num-actions)
+                    :decoy-order-mode
+                      (getf parent-request :decoy-order-mode)
+                    :cage2-opening-mode
+                      (getf parent-request :cage2-opening-mode)
+                    :teacher-backend
+                      (getf parent-request :teacher-backend)
+                    :seeds (copy-list seeds))
+              request-path)
+             (push
+              (list :policy-id (getf spec :policy-id)
+                    :result-path result-path :log-path log-path
+                    :process
+                      (uiop:launch-program
+                       (list "sbcl" "--dynamic-space-size" "2048"
+                             "--noinform" "--non-interactive"
+                             "--load" (namestring worker-script)
+                             "--end-toplevel-options"
+                             (namestring request-path))
+                       :input nil :output log-path :error-output :output
+                       :if-output-exists :supersede
+                       :ignore-error-status t))
+              active))))
+      (unwind-protect
+           (progn
+             (loop while (or pending active)
+                   do
+                      (loop while (and pending
+                                       (< (length active) max-workers))
+                            do (launch-one (pop pending)))
+                      (let ((finished nil))
+                        (dolist (job active)
+                          (let ((result-path (getf job :result-path))
+                                (process (getf job :process)))
+                            (cond
+                              ((probe-file result-path)
+                               (let ((result
+                                       (read-readable-object result-path)))
+                                 (unless (eq (getf result :status) :complete)
+                                   (error
+                                    "Tournament policy worker ~S failed: ~A"
+                                    (getf job :policy-id)
+                                    (getf result :message)))
+                                 (push result completed))
+                               (ignore-errors (uiop:wait-process process))
+                               (push job finished))
+                              ((not (ignore-errors
+                                      (uiop:process-alive-p process)))
+                               (error
+                                "Tournament policy worker ~S exited without a result; see ~A"
+                                (getf job :policy-id)
+                                (namestring (getf job :log-path)))))))
+                        (dolist (job finished)
+                          (setf active (delete job active :test #'eq)))
+                        (when (and active (null finished))
+                          (sleep 0.10d0))))
+             (nreverse completed))
+        (dolist (job active)
+          (let ((process (getf job :process)))
+            (when (ignore-errors (uiop:process-alive-p process))
+              (ignore-errors (uiop:terminate-process process)))))))))
+
 (defun run-official-admission-evaluation (request-path)
-  "Worker entry point for one shared-seed multi-source cheap admission batch."
+  "Run negative admission, a common-seed tournament, and nominate one winner."
   (let* ((request (read-readable-object request-path))
          (result-path (pathname (getf request :result-path)))
          (started (get-universal-time)))
@@ -1802,7 +1977,9 @@ promotion still requires the stricter positive one-standard-error improvement."
                          collect
                          (cl-gym:rollout
                           incumbent *current-gym-environment-name* seed)))
-                 (candidate-results nil))
+                 (candidate-results nil)
+                 (tournament-seeds (getf request :tournament-seeds))
+                 (winner nil))
             (ensure-team-observation-compatible incumbent *num-observations*)
             (dolist (candidate-spec (getf request :candidates))
               (let* ((candidate-values
@@ -1836,12 +2013,77 @@ promotion still requires the stricter positive one-standard-error improvement."
                             :incumbent-returns
                               (copy-list incumbent-returns)))
                      candidate-results)))))
+            (setf candidate-results (nreverse candidate-results))
+            (when (and tournament-seeds
+                       (some (lambda (record) (getf record :keep))
+                             candidate-results))
+              (let* ((kept
+                       (remove-if-not
+                        (lambda (record) (getf record :keep))
+                        candidate-results))
+                     (policy-specs
+                       (cons
+                        (list :policy-id :incumbent
+                              :policy-path (getf request :incumbent-path))
+                        (mapcar
+                         (lambda (record)
+                           (list :policy-id (getf record :candidate-id)
+                                 :policy-path
+                                   (getf record :candidate-path)))
+                         kept)))
+                     (evaluations
+                       (official-admission-parallel-policy-returns
+                        request-path request policy-specs tournament-seeds
+                        (getf request :max-policy-workers
+                              +official-admission-max-policy-workers+)))
+                     (incumbent-evaluation
+                       (find :incumbent evaluations
+                             :key (lambda (record) (getf record :policy-id))
+                             :test #'equal))
+                     (incumbent-tournament-returns
+                       (getf incumbent-evaluation :returns)))
+                (unless incumbent-evaluation
+                  (error "Tournament incumbent worker returned no result."))
+                (dolist (record kept)
+                  (let ((evaluation
+                          (find (getf record :candidate-id) evaluations
+                                :key (lambda (entry)
+                                       (getf entry :policy-id))
+                                :test #'equal)))
+                    (unless evaluation
+                      (error "Tournament candidate ~S returned no result."
+                             (getf record :candidate-id)))
+                    (setf (getf record :tournament-returns)
+                          (copy-list (getf evaluation :returns)))))
+                (multiple-value-bind
+                      (records selected ignored-seeds ignored-incumbent)
+                    (official-admission-tournament-select
+                     kept incumbent-tournament-returns tournament-seeds)
+                  (declare (ignore ignored-seeds ignored-incumbent))
+                  ;; The selector normalizes each plist with explicit audit
+                  ;; fields.  Replace the retained source records so the main
+                  ;; process receives the selected flag and all stage evidence.
+                  (setf candidate-results
+                        (mapcar
+                         (lambda (record)
+                           (if (getf record :keep)
+                               (or (find
+                                    (getf record :candidate-id) records
+                                    :key (lambda (entry)
+                                           (getf entry :candidate-id))
+                                    :test #'equal)
+                                   record)
+                               record))
+                         candidate-results)
+                        winner selected))))
             (publish
              (list :status :complete
                    :protocol +official-admission-protocol+
                    :incumbent-version (getf request :incumbent-version)
                    :seeds (copy-list seeds)
-                   :candidate-results (nreverse candidate-results))))
+                   :tournament-seeds (copy-list tournament-seeds)
+                   :winner-id (and winner (getf winner :candidate-id))
+                   :candidate-results candidate-results)))
         (error (condition)
           (publish
            (list :status :error

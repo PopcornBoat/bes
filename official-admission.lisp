@@ -16,6 +16,8 @@
   "Return or create the mutable statistics plist for LANE."
   (or (cdr (assoc lane *official-admission-lane-statistics* :test #'eq))
       (let ((record (list :nominated 0 :cheap-kept 0 :cheap-rejected 0
+                          :tournament-evaluated 0 :tournament-positive 0
+                          :tournament-selected 0
                           :full-evaluated 0 :positive-official 0
                           :stage-1-reached 0 :stage-4-reached 0
                           :promoted 0)))
@@ -257,6 +259,99 @@ when mean + 2*SE is still more than five reward points below the incumbent."
                      (- +official-admission-futility-floor+)))))
       (values keep-p mean se upper-bound
               (if keep-p :uncertain-or-promising :clearly-futile)))))
+
+(defun official-admission-tournament-select
+       (candidate-records incumbent-returns seeds)
+  "Reduce CANDIDATE-RECORDS to one common-seed tournament winner.
+
+Every record must contain 100 tournament returns.  Existing staged futility
+rules reduce the field at 5/12/40/100 episodes.  Selection is order-independent:
+the survivor with the largest paired mean on the common 100-seed block wins.
+This is nomination only; disjoint full confirmation remains authoritative."
+  (let* ((records
+           (mapcar
+            (lambda (record)
+              (list* :tournament-stages nil
+                     :tournament-selected nil
+                     (copy-list record)))
+            candidate-records))
+         (survivors (copy-list records)))
+    (dolist (stage-count +official-admission-tournament-stages+)
+      (let ((stage
+              (if (= stage-count +official-guided-racing-episodes+)
+                  :racing
+                  (official-guided-promotion-stage-name stage-count)))
+            (next nil))
+        (dolist (record survivors)
+          (let ((candidate-prefix
+                  (subseq (getf record :tournament-returns) 0 stage-count))
+                (incumbent-prefix
+                  (subseq incumbent-returns 0 stage-count)))
+            (multiple-value-bind (continue-p mean margin)
+                (official-guided-continue-p
+                 candidate-prefix incumbent-prefix)
+              (multiple-value-bind
+                    (ignored-mean se correlation paired-variance
+                     unpaired-variance)
+                  (official-guided-comparison-statistics
+                   candidate-prefix incumbent-prefix)
+                (declare (ignore ignored-mean))
+                (setf (getf record :tournament-stages)
+                      (append
+                       (getf record :tournament-stages)
+                       (list
+                        (list :stage stage :episode-count stage-count
+                              :continue continue-p :paired-mean mean
+                              :paired-se se :margin margin
+                              :same-seed-correlation correlation
+                              :paired-variance paired-variance
+                              :unpaired-variance unpaired-variance)))))
+              (when continue-p
+                (push record next)))))
+        (setf survivors (nreverse next))
+        (when (null survivors)
+          (return))))
+    (let ((winner
+            (when survivors
+              (reduce
+               (lambda (left right)
+                 (let ((left-mean
+                         (getf (car (last (getf left :tournament-stages)))
+                               :paired-mean))
+                       (right-mean
+                         (getf (car (last (getf right :tournament-stages)))
+                               :paired-mean)))
+                   (cond
+                     ((> left-mean right-mean) left)
+                     ((< left-mean right-mean) right)
+                     ((> (getf left :candidate-imitation-score 0.0d0)
+                         (getf right :candidate-imitation-score 0.0d0))
+                      left)
+                     ((< (getf left :candidate-imitation-score 0.0d0)
+                         (getf right :candidate-imitation-score 0.0d0))
+                      right)
+                     ((string-lessp
+                       (princ-to-string (getf left :candidate-id))
+                       (princ-to-string (getf right :candidate-id)))
+                      left)
+                     (t right))))
+               survivors))))
+      (when winner
+        (setf (getf winner :tournament-selected) t))
+      (values records winner
+              (copy-list seeds) (copy-list incumbent-returns)))))
+
+(defun official-admission-note-tournament-outcome (record)
+  "Attribute common-seed tournament evidence to RECORD's provenance lanes."
+  (let* ((lanes (getf record :lanes))
+         (stages (getf record :tournament-stages))
+         (last-stage (car (last stages))))
+    (when stages
+      (official-admission-increment-lanes lanes :tournament-evaluated)
+      (when (> (getf last-stage :paired-mean 0.0d0) 0.0d0)
+        (official-admission-increment-lanes lanes :tournament-positive))
+      (when (getf record :tournament-selected)
+        (official-admission-increment-lanes lanes :tournament-selected)))))
 
 (defun official-admission-history-path ()
   "Return the append-only admission audit path."

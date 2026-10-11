@@ -126,10 +126,20 @@ protection merely because it was sampled.
 All nominations in a batch use the same two paired official seeds. This stage
 is a negative filter, not a noisy promotion test: one episode can never reject,
 and with two episodes a policy is rejected only when
-`paired mean + 2*SE < -5` reward relative to the incumbent. Every uncertain,
-mildly negative, or positive policy enters the unchanged
-`5 / 12 / 40 / 100 / 1000` official racing queue. Only final Stage-4 evidence
-may replace the protected historical best.
+`paired mean + 2*SE < -5` reward relative to the incumbent.
+
+Every retained policy and the frozen incumbent are then evaluated on the same
+100-seed block by at most four independent policy processes. Common-prefix
+checks at `5 / 12 / 40 / 100` episodes remove futile candidates. Because every
+return is indexed by the same seed, the surviving policies are directly
+comparable; the largest 100-episode paired mean produces one order-independent
+batch winner. A batch never writes the historical checkpoint itself.
+
+Only that winner enters the existing full official protocol with completely
+fresh racing and promotion seeds. This confirmation controls selection of the
+maximum noisy batch score and is the sole path to final Stage-4 promotion.
+Consequently each batch can promote at most once, and the main search process
+remains the only checkpoint writer.
 
 Admission and random nomination use separate deterministic seed streams. Their
 cursors and cumulative per-lane counters are journaled with the official-guided

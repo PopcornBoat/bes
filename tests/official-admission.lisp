@@ -49,6 +49,39 @@
    keep
    "one noisy episode can never reject a candidate"))
 
+(let* ((seeds (loop for seed from 1 to 100 collect seed))
+       (incumbent (make-list 100 :initial-element 0.0d0))
+       (candidate-a
+         (list :candidate-id "a" :candidate-imitation-score 0.5d0
+               :lanes '(:aggregate)
+               :tournament-returns
+                 (make-list 100 :initial-element 1.0d0)))
+       (candidate-b
+         (list :candidate-id "b" :candidate-imitation-score 0.9d0
+               :lanes '(:random-control)
+               :tournament-returns
+                 (make-list 100 :initial-element 0.5d0)))
+       (candidate-c
+         (list :candidate-id "c" :candidate-imitation-score 1.0d0
+               :lanes '(:specialist)
+               :tournament-returns
+                 (make-list 100 :initial-element -10.0d0))))
+  (multiple-value-bind (records winner returned-seeds incumbent-returns)
+      (cl-tpg::official-admission-tournament-select
+       (list candidate-c candidate-b candidate-a) incumbent seeds)
+    (let ((rejected
+            (find "c" records :test #'string=
+                              :key (lambda (record)
+                                     (getf record :candidate-id)))))
+      (check-official-admission
+       (and (string= (getf winner :candidate-id) "a")
+            (getf winner :tournament-selected)
+            (= (length (getf winner :tournament-stages)) 4)
+            (= (length (getf rejected :tournament-stages)) 1)
+            (equal returned-seeds seeds)
+            (equal incumbent-returns incumbent))
+       "common-seed tournament is order-independent, staged, and selects one winner"))))
+
 (let* ((teams (loop for index below 12 collect (intern (format nil "A~D" index))))
        (scores
          (loop for team in teams

@@ -433,8 +433,8 @@ Stage 4 performs the final multi-horizon tail-aware promotion audit.")
   "Standard-error boundary used by racing futility and final promotion.")
 
 (defconstant +official-admission-protocol+
-  :evolved-multisource-negative-filter-v1
-  "Version tag for donor-free multi-source official candidate admission.")
+  :evolved-multisource-batch-tournament-v2
+  "Version tag for donor-free multi-source official batch tournaments.")
 
 (defconstant +official-admission-episodes+ 2
   "Shared paired episodes used only to reject clearly futile nominations.")
@@ -453,6 +453,13 @@ more than this many reward points below the incumbent.")
     (:critical-error . 1)
     (:random-control . 2))
   "Maximum distinct nominations contributed by each admission lane.")
+
+(defparameter +official-admission-tournament-stages+ '(5 12 40 100)
+  "Cumulative common-seed episode counts used to reduce one admitted batch to
+a single challenger.  The winner still requires a disjoint full confirmation.")
+
+(defconstant +official-admission-max-policy-workers+ 4
+  "Maximum independent policy-return processes used by one batch tournament.")
 
 (defconstant +official-return-credit-protocol+
   :paired-parent-child-return-credit-return-credit-lineage-v2
