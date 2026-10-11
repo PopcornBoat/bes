@@ -39,7 +39,7 @@
  :migration-interval 50
  :batch-size 1000
  :online-fitness-episodes 5
- :checkpoint-directory "/home/hardison/checkpoints/semantic36/evolved-candidate-official-admission/"
+ :checkpoint-directory "/home/hardison/checkpoints/semantic36/evolved-candidate-official-admission-fixed/"
  :hamming-space-enabled :disabled
  :hamming-dataset-name :none
  :seed 153)

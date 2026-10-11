@@ -2044,17 +2044,30 @@ promotion still requires the stricter positive one-standard-error improvement."
                        (getf incumbent-evaluation :returns)))
                 (unless incumbent-evaluation
                   (error "Tournament incumbent worker returned no result."))
-                (dolist (record kept)
-                  (let ((evaluation
-                          (find (getf record :candidate-id) evaluations
-                                :key (lambda (entry)
-                                       (getf entry :policy-id))
-                                :test #'equal)))
-                    (unless evaluation
-                      (error "Tournament candidate ~S returned no result."
-                             (getf record :candidate-id)))
-                    (setf (getf record :tournament-returns)
-                          (copy-list (getf evaluation :returns)))))
+                (dolist (evaluation evaluations)
+                  (unless (and (equal (getf evaluation :seeds) tournament-seeds)
+                               (= (length (getf evaluation :returns))
+                                  (length tournament-seeds))
+                               (every #'realp (getf evaluation :returns)))
+                    (error "Tournament policy ~S returned invalid or misaligned episode data."
+                           (getf evaluation :policy-id))))
+                ;; Adding a missing GETF key changes the plist head.  Retain
+                ;; the rebuilt records in KEPT, rather than a DOLIST binding.
+                (setf kept
+                      (mapcar
+                       (lambda (record)
+                         (let ((evaluation
+                                 (find (getf record :candidate-id) evaluations
+                                       :key (lambda (entry)
+                                              (getf entry :policy-id))
+                                       :test #'equal)))
+                           (unless evaluation
+                             (error "Tournament candidate ~S returned no result."
+                                    (getf record :candidate-id)))
+                           (list* :tournament-returns
+                                  (copy-list (getf evaluation :returns))
+                                  (copy-list record))))
+                       kept))
                 (multiple-value-bind
                       (records selected ignored-seeds ignored-incumbent)
                     (official-admission-tournament-select

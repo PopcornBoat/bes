@@ -155,6 +155,9 @@
        (mild (cl-tpg::%make-team :id "admission-mild" :learners nil))
        (bad (cl-tpg::%make-team :id "admission-bad" :learners nil))
        (original-rollout (symbol-function 'cl-gym:rollout))
+       (original-parallel
+         (symbol-function 'cl-tpg::official-admission-parallel-policy-returns))
+       (corrupt-seeds nil)
        (rollout-count 0))
   (unwind-protect
        (progn
@@ -213,8 +216,73 @@
                  (equal (getf mild-record :lanes) '(:random-control)))
             (format nil
                     "batch worker shares incumbent seeds and applies only the negative filter: ~S"
-                    result))))
+                    result)))
+         ;; Exercise the full coordinator with candidates that do NOT already
+         ;; contain :TOURNAMENT-RETURNS.  Only simulator/process I/O is stubbed;
+         ;; result attachment, selection, serialization and consumption are real.
+         (let* ((request (cl-tpg::read-readable-object request-path))
+                (seeds (loop for seed from 101 to 200 collect seed)))
+           (setf (getf request :tournament-seeds) seeds
+                 rollout-count 0)
+           (cl-tpg::write-readable-object-atomically request request-path)
+           (setf (symbol-function
+                  'cl-tpg::official-admission-parallel-policy-returns)
+                 (lambda (path parent specs block workers)
+                   (declare (ignore path parent workers))
+                   (check-official-admission
+                    (and (equal block seeds) (= (length specs) 2))
+                    "only cheap keepers and incumbent enter the shared block")
+                   ;; Reverse completion order to test matching by policy ID.
+                   (reverse
+                    (mapcar
+                     (lambda (spec)
+                       (list :status :complete
+                             :policy-id (getf spec :policy-id)
+                             :seeds (if corrupt-seeds (reverse block)
+                                        (copy-list block))
+                             :returns
+                             (make-list 100 :initial-element
+                                        (if (eq (getf spec :policy-id)
+                                                :incumbent)
+                                            0.0d0 1.0d0))))
+                     specs))))
+           (cl-tpg::run-official-admission-evaluation request-path)
+           (let* ((result (cl-tpg::read-readable-object result-path))
+                  (winner (find "mild" (getf result :candidate-results)
+                                :test #'equal
+                                :key (lambda (x) (getf x :candidate-id)))))
+             (check-official-admission
+              (and (eq (getf result :status) :complete)
+                   (equal (getf result :winner-id) "mild")
+                   (getf winner :tournament-selected)
+                   (= (length (getf winner :tournament-returns)) 100)
+                   (equal (mapcar (lambda (x) (getf x :episode-count))
+                                  (getf winner :tournament-stages))
+                          '(5 12 40 100)))
+              (format nil "coordinator retains attached returns and winner: ~S"
+                      (getf result :message)))
+             (let ((cl-tpg::*checkpoint-directory* nil)
+                   (cl-tpg::*official-guided-incumbent-version* 7)
+                   (cl-tpg::*official-admission-job* '(:generation 10))
+                   (cl-tpg::*official-admission-full-queue* nil)
+                   (cl-tpg::*official-admission-lane-statistics* nil))
+               (cl-tpg::consume-official-admission-result result)
+               (check-official-admission
+                (and (= (length cl-tpg::*official-admission-full-queue*) 1)
+                     (equal (getf (first cl-tpg::*official-admission-full-queue*)
+                                  :candidate-path)
+                            (namestring mild-path)))
+                "the serialized coordinator winner reaches fresh confirmation")))
+           (setf corrupt-seeds t rollout-count 0)
+           (cl-tpg::run-official-admission-evaluation request-path)
+           (let ((result (cl-tpg::read-readable-object result-path)))
+             (check-official-admission
+              (and (eq (getf result :status) :error)
+                   (search "misaligned" (getf result :message)))
+              "coordinator rejects returns with incorrect seed alignment"))))
     (setf (symbol-function 'cl-gym:rollout) original-rollout)
+    (setf (symbol-function 'cl-tpg::official-admission-parallel-policy-returns)
+          original-parallel)
     (dolist (path (list incumbent-path mild-path bad-path
                         request-path result-path))
       (when (probe-file path)

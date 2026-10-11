@@ -141,6 +141,13 @@ maximum noisy batch score and is the sole path to final Stage-4 promotion.
 Consequently each batch can promote at most once, and the main search process
 remains the only checkpoint writer.
 
+The coordinator checks episode counts and exact seed alignment before comparing
+returns. Its regression test covers result attachment to candidate records,
+winner serialization, and insertion into the fresh-confirmation queue. The
+initial tournament run (stopped at generation 229) failed at result attachment
+and is not evidence about promotion performance; the corrected experiment uses
+the separate `evolved-candidate-official-admission-fixed/` checkpoint directory.
+
 Admission and random nomination use separate deterministic seed streams. Their
 cursors and cumulative per-lane counters are journaled with the official-guided
 runtime state. The append-only `official-admission-history.lisp` records cheap
