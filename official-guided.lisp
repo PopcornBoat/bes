@@ -34,7 +34,9 @@
     ;; it is not part of the four official-guided stream plists.
     (:locality 4)
     (:credit 5)
-    (:lineage 6)))
+    (:lineage 6)
+    (:admission 7)
+    (:nomination 8)))
 
 (defun official-guided-derived-root (search-seed salt)
   "Derive one reproducible stream root from SEARCH-SEED and SALT."
@@ -47,7 +49,7 @@
            search-seed))
   (setf *official-guided-seed-streams*
         (list
-         :version 3
+         :version 4
          :training
            (list :roots
                  (list (official-guided-derived-root search-seed 104729))
@@ -70,12 +72,21 @@
          :lineage
            (list :roots
                  (list (official-guided-derived-root search-seed 2609299))
+                 :cursor 0)
+         :admission
+           (list :roots
+                 (list (official-guided-derived-root search-seed 325663))
+                 :cursor 0)
+         :nomination
+           (list :roots
+                 (list (official-guided-derived-root search-seed 375899))
                  :cursor 0)))
   *official-guided-seed-streams*)
 
 (defun official-guided-seed-stream-valid-p (name stream)
   "Return true when STREAM is a valid serialized stream for NAME."
-  (and (member name '(:training :racing :promotion :reference :credit :lineage)
+  (and (member name '(:training :racing :promotion :reference :credit :lineage
+                      :admission :nomination)
                :test #'eq)
        (listp stream)
        (let ((roots (getf stream :roots))
@@ -88,14 +99,16 @@
 (defun official-guided-seed-streams-valid-p (state)
   "Return true when STATE contains every stream required by its version."
   (and (listp state)
-       (member (getf state :version 0) '(1 2 3))
+       (member (getf state :version 0) '(1 2 3 4))
        (every
         (lambda (name)
           (official-guided-seed-stream-valid-p name (getf state name)))
         (case (getf state :version)
           (1 '(:training :racing :promotion :reference))
           (2 '(:training :racing :promotion :reference :credit))
-          (3 '(:training :racing :promotion :reference :credit :lineage))))))
+          (3 '(:training :racing :promotion :reference :credit :lineage))
+          (4 '(:training :racing :promotion :reference :credit :lineage
+               :admission :nomination))))))
 
 (defun upgrade-official-guided-seed-streams (state)
   "Upgrade old stream state without changing any existing stream cursor."
@@ -118,6 +131,20 @@
                     (list (official-guided-derived-root
                            *current-search-seed* 2609299))
                     :cursor 0)))
+    (when (= (getf copy :version) 3)
+      (unless (integerp *current-search-seed*)
+        (error "Cannot derive official admission streams without a search seed."))
+      (setf (getf copy :version) 4
+            (getf copy :admission)
+              (list :roots
+                    (list (official-guided-derived-root
+                           *current-search-seed* 325663))
+                    :cursor 0)
+            (getf copy :nomination)
+              (list :roots
+                    (list (official-guided-derived-root
+                           *current-search-seed* 375899))
+                    :cursor 0)))
     copy))
 
 (defun restore-official-guided-seed-streams (state)
@@ -138,7 +165,8 @@
 
 (defun official-guided-take-seeds (name count)
   "Take COUNT seeds from one single-root stream and advance its cursor."
-  (unless (member name '(:training :racing :promotion :credit :lineage)
+  (unless (member name '(:training :racing :promotion :credit :lineage
+                         :admission :nomination)
                   :test #'eq)
     (error "~S is not a single-root official-guided seed stream." name))
   (unless (and (integerp count) (plusp count))
@@ -184,7 +212,7 @@
 
 (defun official-guided-runtime-state ()
   "Return the small recoverable state journaled beside the best checkpoint."
-  (list :version 11
+  (list :version 12
         :fitness-protocol +official-guided-fitness-protocol+
         :checkpoint-filename (best-team-checkpoint-filename)
         :generation *generation*
@@ -223,6 +251,10 @@
           (and *near-miss-lineages-enabled*
                (fboundp 'near-miss-summary)
                (near-miss-summary))
+        :official-admission-state
+          (and *official-admission-enabled*
+               (fboundp 'official-admission-state-copy)
+               (official-admission-state-copy))
         :incumbent-version *official-guided-incumbent-version*
         :best-evaluation (copy-tree *official-guided-best-evaluation*)
         :teacher-dagger-behavior-state
@@ -354,7 +386,12 @@
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
                (getf journal :near-miss-lineages-state)
-               (getf metadata :near-miss-lineages-state))))
+               (getf metadata :near-miss-lineages-state)))
+         (official-admission-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :official-admission-state)
+               (getf metadata :official-admission-state))))
     (when chosen-state
       (restore-official-guided-seed-streams chosen-state))
     (setf *official-guided-incumbent-version*
@@ -402,6 +439,8 @@
             (near-miss-restore-state near-miss-state incumbent-hash)
             (near-miss-initialize-state
              *current-search-seed* *loaded-best-team*))))
+    (when (and *official-admission-enabled* official-admission-state)
+      (restore-official-admission-state official-admission-state))
     (values chosen-state journal-matches-p)))
 
 (defun official-guided-teacher-mixing-rate ()

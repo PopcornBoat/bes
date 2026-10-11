@@ -804,7 +804,9 @@ promotion still requires the stricter positive one-standard-error improvement."
         *online-staged-best-credit-priority* nil
         *online-staged-best-credit-lineage-id* nil
         *online-staged-best-near-miss-lineage-id* nil
-        *online-staged-best-near-miss-head-version* nil))
+        *online-staged-best-near-miss-head-version* nil
+        *online-staged-best-nomination-lanes* nil)
+  (reset-official-admission-runtime))
 
 (defun online-candidate-directory ()
   "Return the private staged-evaluation directory for this checkpoint run."
@@ -1203,6 +1205,208 @@ promotion still requires the stricter positive one-standard-error improvement."
    :recurrent-policy-enabled nil
    :teacher-backend *teacher-backend*))
 
+(defun launch-official-admission-batch (nominations)
+  "Freeze one evolved multi-source batch and launch its cheap paired worker."
+  (unless (and nominations *best-team*)
+    (error "Cannot launch an empty official admission batch."))
+  (incf *official-admission-batch-count*)
+  (let* ((batch-id
+           (format nil "admission-~D-g~D-t~D"
+                   *official-admission-batch-count* *generation*
+                   (get-universal-time)))
+         (incumbent-path
+           (official-guided-candidate-path batch-id "incumbent" "lisp"))
+         (request-path
+           (official-guided-candidate-path batch-id "request" "lisp"))
+         (result-path
+           (official-guided-candidate-path batch-id "result" "lisp"))
+         (log-path
+           (official-guided-candidate-path batch-id "worker" "log"))
+         (worker-script
+           (merge-pathnames
+            "scripts/run-official-admission-evaluation.lisp"
+            (asdf:system-source-directory :cl-tpg)))
+         (seeds
+           (official-guided-take-seeds
+            :admission +official-admission-episodes+))
+         (serialized-candidates nil))
+    (write-official-guided-team-checkpoint
+     *best-team* *best-fitness* *generation* incumbent-path)
+    (loop for nomination in nominations
+          for index from 0
+          for candidate-id = (format nil "candidate-~D" index)
+          for candidate-path =
+            (official-guided-candidate-path
+             batch-id candidate-id "lisp")
+          do
+             (write-official-guided-team-checkpoint
+              (getf nomination :team)
+              (getf nomination :fitness)
+              (getf nomination :generation)
+              candidate-path)
+             (push
+              (list :candidate-id candidate-id
+                    :candidate-path (namestring candidate-path)
+                    :candidate-generation (getf nomination :generation)
+                    :candidate-imitation-score (getf nomination :fitness)
+                    :lanes (copy-list (getf nomination :lanes)))
+              serialized-candidates))
+    (setf serialized-candidates (nreverse serialized-candidates))
+    (write-readable-object-atomically
+     (list :version 1
+           :protocol +official-admission-protocol+
+           :incumbent-path (namestring incumbent-path)
+           :incumbent-version *official-guided-incumbent-version*
+           :result-path (namestring result-path)
+           :gym-environment-name *current-gym-environment-name*
+           :num-observations *num-observations*
+           :num-actions *num-actions*
+           :decoy-order-mode *decoy-order-mode*
+           :cage2-opening-mode *cage2-opening-mode*
+           :teacher-backend *teacher-backend*
+           :seeds seeds
+           :candidates serialized-candidates)
+     request-path)
+    ;; Cursor reservations and the immutable request are durable before launch.
+    (persist-official-guided-runtime-state)
+    (setf *official-admission-process*
+            (uiop:launch-program
+             (list "sbcl" "--dynamic-space-size" "4096"
+                   "--noinform" "--non-interactive"
+                   "--load" (namestring worker-script)
+                   "--end-toplevel-options" (namestring request-path))
+             :input nil :output log-path :error-output :output
+             :if-output-exists :supersede :ignore-error-status t)
+          *official-admission-job*
+            (list :batch-id batch-id
+                  :generation *generation*
+                  :request-path request-path
+                  :result-path result-path
+                  :log-path log-path
+                  :incumbent-version *official-guided-incumbent-version*
+                  :candidates (copy-tree serialized-candidates))
+          *online-candidate-next-submit-generation*
+            (+ *generation* +online-candidate-evaluation-interval+))
+    (emit-message
+     (format nil
+             "Official admission batch ~A launched: candidates=~D shared-seeds=~S lanes=~S."
+             batch-id (length serialized-candidates) seeds
+             (mapcar (lambda (entry) (getf entry :lanes))
+                     serialized-candidates)))))
+
+(defun consume-official-admission-result (result)
+  "Apply one cheap negative-filter result and queue every non-futile policy."
+  (let ((kept nil)
+        (rejected 0))
+    (cond
+      ((eq (getf result :status) :error)
+       (emit-message
+        (format nil "Official admission worker failed: ~A"
+                (getf result :message))))
+      ((/= (getf result :incumbent-version -1)
+           *official-guided-incumbent-version*)
+       (emit-message
+        (format nil
+                "Official admission batch discarded as stale: evaluated-incumbent=~D current=~D."
+                (getf result :incumbent-version -1)
+                *official-guided-incumbent-version*)))
+      (t
+       (dolist (record (getf result :candidate-results))
+         (let ((lanes (getf record :lanes)))
+           (if (getf record :keep)
+               (progn
+                 (official-admission-increment-lanes lanes :cheap-kept)
+                 (push
+                  (list :candidate-path (getf record :candidate-path)
+                        :candidate-generation
+                          (getf record :candidate-generation)
+                        :candidate-imitation-score
+                          (getf record :candidate-imitation-score)
+                        :lanes (copy-list lanes)
+                        :admission-evidence (copy-tree record))
+                  kept))
+               (progn
+                 (incf rejected)
+                 (official-admission-increment-lanes
+                  lanes :cheap-rejected)))))
+       (setf kept (nreverse kept)
+             *official-admission-full-queue*
+               (nconc *official-admission-full-queue* kept))
+       (persist-official-admission-record
+        (list :type :cheap-batch
+              :protocol +official-admission-protocol+
+              :generation (getf *official-admission-job* :generation)
+              :incumbent-version (getf result :incumbent-version)
+              :candidate-results
+                (copy-tree (getf result :candidate-results))))
+       (emit-message
+        (format nil
+                "Official admission completed: kept=~D clearly-futile=~D queued=~D lane-stats=~S."
+                (length kept) rejected
+                (length *official-admission-full-queue*)
+                (official-admission-summary))))))
+  (persist-official-guided-runtime-state))
+
+(defun poll-official-admission-evaluation ()
+  "Consume one completed cheap admission worker without blocking evolution."
+  (when *official-admission-job*
+    (let ((result-path (getf *official-admission-job* :result-path)))
+      (cond
+        ((probe-file result-path)
+         (handler-case
+             (consume-official-admission-result
+              (read-readable-object result-path))
+           (error (condition)
+             (emit-message
+              (format nil "Could not consume official admission result: ~A"
+                      condition))))
+         (setf *official-admission-process* nil
+               *official-admission-job* nil))
+        ((and *official-admission-process*
+              (not (ignore-errors
+                     (uiop:process-alive-p *official-admission-process*))))
+         (emit-message
+          (format nil "Official admission worker exited without a result; see ~A"
+                  (namestring (getf *official-admission-job* :log-path))))
+         (setf *official-admission-process* nil
+               *official-admission-job* nil))))))
+
+(defun maybe-launch-official-admission-batch (scores sorted)
+  "Launch a new current-generation batch when all prior official work is drained."
+  (when (and (official-admission-active-p)
+             (official-guided-candidate-evaluation-enabled-p)
+             (null *official-admission-job*)
+             (null *online-candidate-job*)
+             (null *official-admission-full-queue*)
+             (>= *generation* *online-candidate-next-submit-generation*))
+    (launch-official-admission-batch
+     (official-admission-nominate scores sorted))))
+
+(defun maybe-launch-next-admitted-candidate ()
+  "Send the next non-futile frozen nomination through the unchanged full protocol."
+  (when (and (official-admission-active-p)
+             (null *official-admission-job*)
+             (null *online-candidate-job*)
+             *official-admission-full-queue*)
+    (let* ((entry (pop *official-admission-full-queue*))
+           (candidate (load-best-team (getf entry :candidate-path))))
+      (ensure-team-observation-compatible candidate *num-observations*)
+      (setf *online-staged-best-team* candidate
+            *online-staged-best-fitness*
+              (getf entry :candidate-imitation-score)
+            *online-staged-best-generation*
+              (getf entry :candidate-generation)
+            *online-staged-best-lineage* nil
+            *online-staged-best-parent-team* nil
+            *online-staged-best-guided-priority* 0
+            *online-staged-best-credit-priority* 0
+            *online-staged-best-credit-lineage-id* nil
+            *online-staged-best-near-miss-lineage-id* nil
+            *online-staged-best-near-miss-head-version* nil
+            *online-staged-best-nomination-lanes*
+              (copy-list (getf entry :lanes)))
+      (launch-official-guided-candidate-evaluation))))
+
 (defun launch-official-guided-candidate-evaluation ()
   "Freeze candidate/incumbent graphs and launch official paired evaluation."
   (let* ((generation *online-staged-best-generation*)
@@ -1286,6 +1490,8 @@ promotion still requires the stricter positive one-standard-error improvement."
            :decoy-order-mode *decoy-order-mode*
            :cage2-opening-mode *cage2-opening-mode*
            :teacher-backend *teacher-backend*
+           :nomination-lanes
+             (copy-list *online-staged-best-nomination-lanes*)
            :behavioral-locality
              (copy-tree *online-staged-best-lineage*)
            :return-credit-priority credit-priority
@@ -1350,7 +1556,8 @@ promotion still requires the stricter positive one-standard-error improvement."
           *online-staged-best-credit-priority* nil
           *online-staged-best-credit-lineage-id* nil
           *online-staged-best-near-miss-lineage-id* nil
-          *online-staged-best-near-miss-head-version* nil)
+          *online-staged-best-near-miss-head-version* nil
+          *online-staged-best-nomination-lanes* nil)
     (when (and (official-return-credit-active-p)
                (<= 1 (or credit-priority 0) 2))
       (incf *official-return-credit-neutral-submissions*))
@@ -1389,6 +1596,9 @@ promotion still requires the stricter positive one-standard-error improvement."
          (installed-lineage-id nil)
          (evicted-lineage-ids nil))
     (setf *official-guided-last-evaluation* (copy-tree record))
+    (when (and (official-admission-active-p)
+               (eq (getf result :status) :complete))
+      (official-admission-note-full-outcome result))
     (persist-behavioral-official-outcome
      generation (getf record :behavioral-locality) record)
     ;; near-miss lineage evidence is consumed only after the worker completed against
@@ -1549,6 +1759,96 @@ promotion still requires the stricter positive one-standard-error improvement."
       (push (cl-gym:rollout candidate environment-name seed) candidate-scores)
       (push (cl-gym:rollout incumbent environment-name seed) incumbent-scores))
     (values (nreverse candidate-scores) (nreverse incumbent-scores))))
+
+(defun run-official-admission-evaluation (request-path)
+  "Worker entry point for one shared-seed multi-source cheap admission batch."
+  (let* ((request (read-readable-object request-path))
+         (result-path (pathname (getf request :result-path)))
+         (started (get-universal-time)))
+    (labels ((publish (result)
+               (write-readable-object-atomically
+                (append result
+                        (list :elapsed-seconds
+                              (- (get-universal-time) started)))
+                result-path)))
+      (handler-case
+          (let* ((*running* t)
+                 (*search-active* nil)
+                 (*current-search-mode* :official-guided)
+                 (*current-gym-environment-name*
+                   (getf request :gym-environment-name))
+                 (*num-observations* (getf request :num-observations))
+                 (*num-actions* (getf request :num-actions))
+                 (*decoy-order-mode* (getf request :decoy-order-mode))
+                 (*cage2-opening-mode* (getf request :cage2-opening-mode))
+                 (*teacher-backend* (getf request :teacher-backend :heuristic))
+                 (*recurrent-policy-enabled* nil)
+                 (*hamming-space-enabled* nil)
+                 (*factored-actions-enabled* t)
+                 (incumbent-values
+                   (multiple-value-list
+                    (load-best-team (getf request :incumbent-path))))
+                 (incumbent (first incumbent-values))
+                 (incumbent-metadata (third incumbent-values))
+                 (incumbent-profile
+                   (checkpoint-execution-profile-list
+                    incumbent-metadata "Official admission incumbent"))
+                 (*terminal-action-format* (first incumbent-profile))
+                 (*instruction-set-profile* (second incumbent-profile))
+                 (*read-only-register-profile* (third incumbent-profile))
+                 (seeds (getf request :seeds))
+                 (incumbent-returns
+                   (loop for seed in seeds
+                         collect
+                         (cl-gym:rollout
+                          incumbent *current-gym-environment-name* seed)))
+                 (candidate-results nil))
+            (ensure-team-observation-compatible incumbent *num-observations*)
+            (dolist (candidate-spec (getf request :candidates))
+              (let* ((candidate-values
+                       (multiple-value-list
+                        (load-best-team
+                         (getf candidate-spec :candidate-path))))
+                     (candidate (first candidate-values))
+                     (candidate-metadata (third candidate-values)))
+                (ensure-compatible-checkpoint-execution-profile
+                 incumbent-profile candidate-metadata
+                 "Official admission candidate")
+                (ensure-team-observation-compatible
+                 candidate *num-observations*)
+                (let ((candidate-returns
+                        (loop for seed in seeds
+                              collect
+                              (cl-gym:rollout
+                               candidate *current-gym-environment-name*
+                               seed))))
+                  (multiple-value-bind
+                        (keep mean se upper-bound reason)
+                      (official-admission-continue-p
+                       candidate-returns incumbent-returns)
+                    (push
+                     (append
+                      (copy-tree candidate-spec)
+                      (list :keep keep :reason reason
+                            :paired-mean mean :paired-se se
+                            :paired-upper-bound upper-bound
+                            :candidate-returns candidate-returns
+                            :incumbent-returns
+                              (copy-list incumbent-returns)))
+                     candidate-results)))))
+            (publish
+             (list :status :complete
+                   :protocol +official-admission-protocol+
+                   :incumbent-version (getf request :incumbent-version)
+                   :seeds (copy-list seeds)
+                   :candidate-results (nreverse candidate-results))))
+        (error (condition)
+          (publish
+           (list :status :error
+                 :protocol +official-admission-protocol+
+                 :incumbent-version (getf request :incumbent-version)
+                 :message (princ-to-string condition)))))))
+  t)
 
 (defun run-official-return-credit-evaluation
        (child parent environment-name seeds stages behavioral-locality)
@@ -1851,6 +2151,8 @@ promotion still requires the stricter positive one-standard-error improvement."
         ((publish (result)
            (write-readable-object-atomically
             (append result
+                    (list :nomination-lanes
+                          (copy-list (getf request :nomination-lanes)))
                     (list :return-credit-evaluation
                           (copy-tree return-credit-record))
                     (list :near-miss-lineage-evaluation
@@ -2288,7 +2590,11 @@ checkpoint and branch archaeology."
         *teacher-directed-repair-enabled* nil
         *targeted-combined-repair-enabled* nil
         *targeted-routing-repair-enabled* nil
-        *targeted-specialist-composition-enabled* nil)
+        *targeted-specialist-composition-enabled* nil
+        *official-admission-enabled* (eq mode :official-guided)
+        ;; The proportional 400-generation restart showed no useful effect.
+        ;; Keep its implementation loadable but inactive in this treatment.
+        *population-diversity-pulse-enabled* nil)
   +live-search-profile+)
 
 (defun configure-fitness-function (mode gym-environment-name dataset-name)
@@ -2955,16 +3261,22 @@ through serialization/deserialization and save it to disk."
     (cond
       (staged-guided-p
        (poll-official-guided-candidate-evaluation)
-       (when official-guided-submission-entry
-         (note-online-generation-candidate
-          (car official-guided-submission-entry)
-          (cdr official-guided-submission-entry)
-          :guided-priority
-            (if (eq official-guided-submission-entry
-                    guided-submission-entry)
-                1
-                0)))
-       (maybe-launch-official-guided-candidate-evaluation))
+       (if (official-admission-active-p)
+           (progn
+             (poll-official-admission-evaluation)
+             (maybe-launch-next-admitted-candidate)
+             (maybe-launch-official-admission-batch scores sorted))
+           (progn
+             (when official-guided-submission-entry
+               (note-online-generation-candidate
+                (car official-guided-submission-entry)
+                (cdr official-guided-submission-entry)
+                :guided-priority
+                  (if (eq official-guided-submission-entry
+                          guided-submission-entry)
+                      1
+                      0)))
+             (maybe-launch-official-guided-candidate-evaluation))))
       (staged-online-p
        (poll-online-candidate-evaluation)
        (note-online-generation-candidate

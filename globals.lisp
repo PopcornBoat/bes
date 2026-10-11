@@ -371,9 +371,10 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
   "Required paired standard-error margin for online best-team promotion.")
 
 (defconstant +official-guided-fitness-protocol+
-  :official-guided-dagger-tail-aware-promotion-v2
+  :official-guided-dagger-multisource-admission-v3
   "Official-guided protocol with ranked imitation, clean mixed DAgger,
-independent paired racing, and a multi-horizon tail-aware final audit.")
+donor-free multi-source admission, independent paired racing, and a
+multi-horizon tail-aware final audit.")
 
 (defconstant +official-guided-racing-episodes+ 5
   "Cheap paired official episodes used to reject a challenger before promotion.")
@@ -430,6 +431,28 @@ Stage 4 performs the final multi-horizon tail-aware promotion audit.")
 
 (defconstant +official-guided-comparison-standard-errors+ 1.0d0
   "Standard-error boundary used by racing futility and final promotion.")
+
+(defconstant +official-admission-protocol+
+  :evolved-multisource-negative-filter-v1
+  "Version tag for donor-free multi-source official candidate admission.")
+
+(defconstant +official-admission-episodes+ 2
+  "Shared paired episodes used only to reject clearly futile nominations.")
+
+(defconstant +official-admission-standard-errors+ 2.0d0
+  "Uncertainty allowance for the negative-only cheap admission filter.")
+
+(defconstant +official-admission-futility-floor+ 5.0d0
+  "A nomination is rejected only when its paired upper confidence bound is
+more than this many reward points below the incumbent.")
+
+(defparameter +official-admission-lane-counts+
+  '((:aggregate . 1)
+    (:specialist . 2)
+    (:behavioral-diversity . 2)
+    (:critical-error . 1)
+    (:random-control . 2))
+  "Maximum distinct nominations contributed by each admission lane.")
 
 (defconstant +official-return-credit-protocol+
   :paired-parent-child-return-credit-return-credit-lineage-v2
@@ -934,6 +957,29 @@ Larger values reduce fitness variance by averaging multiple rollouts.")
 (defvar *official-guided-seed-streams* nil
   "Serializable plist holding independent training, racing, promotion,
 reference, official return credit return-credit, and near-miss lineage lineage stream cursors.")
+
+(defvar *official-admission-enabled* nil
+  "When true, evolved roots enter official racing through multi-source,
+negative-only cheap admission.  No donor or teacher policy is admitted.")
+
+(defvar *official-admission-process* nil
+  "UIOP process information for the active cheap admission batch worker.")
+
+(defvar *official-admission-job* nil
+  "Metadata for the active cheap admission batch.")
+
+(defvar *official-admission-full-queue* nil
+  "Frozen evolved nominations that passed negative filtering and await the
+ordinary full official-guided racing protocol.")
+
+(defvar *official-admission-batch-count* 0
+  "Number of cheap admission batches launched in the current run lineage.")
+
+(defvar *official-admission-lane-statistics* nil
+  "Serializable alist of per-lane nomination and official outcome counts.")
+
+(defvar *online-staged-best-nomination-lanes* nil
+  "Admission lanes associated with the staged full-racing challenger.")
 
 (defvar *official-return-credit-enabled* nil
   "When true, positive paired child/direct-parent evidence may establish a

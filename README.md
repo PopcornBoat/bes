@@ -26,6 +26,7 @@ The maintained configuration is intentionally narrow:
 - ranked semantic imitation;
 - behavioral-locality measurement and bounded mutation locality;
 - grouped epsilon-lexicase survivor selection;
+- donor-free multi-source evolved-candidate admission;
 - paired official evaluation and fresh-seed staged promotion.
 
 The bridge may transport 142 values, but the policy reads only the first 62.
@@ -110,6 +111,36 @@ steps, where the standard deviation fell from about `65.04` to `11.25`.
 
 Mixed rollout return and ranked-imitation fitness are diagnostics. Neither can
 replace official paired promotion evidence.
+
+### Evolved-candidate official admission
+
+The maintained challenger gateway no longer assumes that the aggregate
+imitation champion is the only policy worth official inspection. Every drained
+admission cycle nominates up to eight evolved roots: one aggregate champion,
+two grouped specialists, two farthest-first behavioral variants, one
+late-trajectory critical candidate, and two random controls. Exact ranked-row
+behavior duplicates are merged before evaluation. The random lane is sampled
+from the remaining eligible pool and never receives survivor or reproduction
+protection merely because it was sampled.
+
+All nominations in a batch use the same two paired official seeds. This stage
+is a negative filter, not a noisy promotion test: one episode can never reject,
+and with two episodes a policy is rejected only when
+`paired mean + 2*SE < -5` reward relative to the incumbent. Every uncertain,
+mildly negative, or positive policy enters the unchanged
+`5 / 12 / 40 / 100 / 1000` official racing queue. Only final Stage-4 evidence
+may replace the protected historical best.
+
+Admission and random nomination use separate deterministic seed streams. Their
+cursors and cumulative per-lane counters are journaled with the official-guided
+runtime state. The append-only `official-admission-history.lisp` records cheap
+outcomes and full-racing outcomes so aggregate, specialist, behavioral,
+critical, and random lanes can be compared by positive-return, Stage-1,
+Stage-4, and promotion rates.
+
+The old 400-generation proportional population restart remains loadable for
+archaeology but is forced off by the maintained live profile; it is not part of
+this experiment.
 
 ## Research history
 
@@ -269,8 +300,8 @@ scripts/bes-search submit experiments/categorical-predicate-mutation.sexp
 scripts/bes-search submit experiments/teacher-guided-predicate-injection.sexp
 # Incumbent-anchored two-predicate conservative repair:
 scripts/bes-search submit experiments/incumbent-conservative-repair.sexp
-# Plateau-triggered warm-start-sized diversity cohorts:
-scripts/bes-search submit experiments/population-diversity-pulse.sexp
+# Multi-source evolved-candidate admission with random controls:
+scripts/bes-search submit experiments/evolved-candidate-official-admission.sexp
 ```
 
 Monitor or stop a search with:

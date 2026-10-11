@@ -32,6 +32,7 @@
 	       (:file "policy-disagreement-analysis")
 	       (:file "counterfactual-credit")
 	       (:file "official-guided")
+	       (:file "official-admission")
 	       (:file "official-return-credit")
 	       (:file "near-miss-lineages")
 	       (:file "targeted-repair")
