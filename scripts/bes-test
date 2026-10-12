@@ -22,6 +22,7 @@ if [[ "${1:-}" == --core ]]; then
     tests/local-mutation-compression.lisp
     tests/official-guided.lisp
     tests/official-admission.lisp
+    tests/robustness-validation.lisp
     tests/grouped-selection.lisp
     tests/disagreement-audit.lisp
     tests/population-diversity-pulse.lisp

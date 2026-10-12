@@ -33,6 +33,7 @@
 	       (:file "counterfactual-credit")
 	       (:file "official-guided")
 	       (:file "official-admission")
+	       (:file "robustness-validation")
 	       (:file "official-return-credit")
 	       (:file "near-miss-lineages")
 	       (:file "targeted-repair")

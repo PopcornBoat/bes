@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 4 || $# -gt 7 ]]; then
+  echo "Usage: $0 V13_CHECKPOINT V14_CHECKPOINT COMPILED_CHECKPOINT OUTPUT_DIRECTORY [ROOTS] [EPISODES_PER_ROOT] [HORIZONS]" >&2
+  echo "Defaults: 8 fresh roots, 100 episodes/root, horizon 100." >&2
+  exit 2
+fi
+
+v13_checkpoint=$1
+v14_checkpoint=$2
+compiled_checkpoint=$3
+output_directory=$4
+roots=${5:-314159,271828,161803,577215,141421,173205,223607,244949}
+episodes_per_root=${6:-100}
+horizons=${7:-100}
+repo=/home/hardison/bes
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+
+for checkpoint in "$v13_checkpoint" "$v14_checkpoint" "$compiled_checkpoint"; do
+  [[ -f "$checkpoint" ]] || { echo "Checkpoint not found: $checkpoint" >&2; exit 1; }
+done
+[[ "$episodes_per_root" =~ ^[1-9][0-9]*$ ]] || {
+  echo "EPISODES_PER_ROOT must be a positive integer." >&2
+  exit 2
+}
+
+mkdir -p "$output_directory"
+hash_file="$output_directory/input-sha256.txt"
+requested_hash=$(mktemp)
+trap 'rm -f "$requested_hash"' EXIT
+sha256sum "$v13_checkpoint" "$v14_checkpoint" "$compiled_checkpoint" \
+  > "$requested_hash"
+if [[ -f "$hash_file" ]] && ! cmp -s "$requested_hash" "$hash_file"; then
+  echo "Output directory belongs to different checkpoint inputs: $output_directory" >&2
+  exit 1
+fi
+cp "$requested_hash" "$hash_file"
+
+config_file="$output_directory/run-config.txt"
+if [[ -f "$config_file" ]]; then
+  grep -Fxq "roots=$roots" "$config_file" \
+    && grep -Fxq "episodes_per_root=$episodes_per_root" "$config_file" \
+    && grep -Fxq "horizons=$horizons" "$config_file" || {
+      echo "Output directory belongs to a different robustness plan: $output_directory" >&2
+      exit 1
+    }
+else
+  {
+    echo "protocol=official-robustness-validation-v1"
+    echo "git_commit=$(git -C "$repo" rev-parse HEAD)"
+    echo "git_branch=$(git -C "$repo" branch --show-current)"
+    echo "roots=$roots"
+    echo "episodes_per_root=$episodes_per_root"
+    echo "horizons=$horizons"
+    echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$config_file"
+fi
+
+cd "$repo"
+env \
+  "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+  "ROBUSTNESS_V13_CHECKPOINT=$v13_checkpoint" \
+  "ROBUSTNESS_V14_CHECKPOINT=$v14_checkpoint" \
+  "ROBUSTNESS_COMPILED_CHECKPOINT=$compiled_checkpoint" \
+  "ROBUSTNESS_OUTPUT_DIRECTORY=$output_directory" \
+  "ROBUSTNESS_ROOTS=$roots" \
+  "ROBUSTNESS_EPISODES_PER_ROOT=$episodes_per_root" \
+  "ROBUSTNESS_HORIZONS=$horizons" \
+  /usr/bin/sbcl \
+    --dynamic-space-size 4096 \
+    --non-interactive \
+    --eval '(require :asdf)' \
+    --eval '(asdf:load-system :cl-tpg)' \
+    --eval '(cl-tpg::run-robustness-validation-from-environment)'

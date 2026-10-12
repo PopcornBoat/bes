@@ -112,6 +112,29 @@ steps, where the standard deviation fell from about `65.04` to `11.25`.
 Mixed rollout return and ranked-imitation fitness are diagnostics. Neither can
 replace official paired promotion evidence.
 
+### Post-training robustness validation
+
+Important checkpoints are evaluated after training on a seed namespace that is
+disjoint from training, racing, promotion, reference, credit, lineage,
+admission, and nomination. The runner compares v13, v14, and the compiled
+heuristic on identical initial episode seeds, journals every completed rollout,
+and resumes safely after interruption:
+
+```bash
+scripts/robustness-validation \
+  /path/to/v13.lisp \
+  /path/to/v14.lisp \
+  /path/to/compiled-heuristic.lisp \
+  /path/to/output
+```
+
+The default screening protocol uses eight frozen fresh roots, 100 episodes per
+root, and B-line-100. Optional arguments select comma-separated roots, episode
+count, and horizons. `report.txt` includes mean, standard deviation, standard
+error, lower-tail CVaR, catastrophic counts, and paired v14 deltas. These
+results are external validation evidence and must not feed candidate selection
+or historical promotion.
+
 ### Evolved-candidate official admission
 
 The maintained challenger gateway no longer assumes that the aggregate
