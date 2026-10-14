@@ -61,9 +61,13 @@
    (cl-tpg::lisp-heuristic-controller-path-p "Cage2-b_line-30-v0")
    "B-line direct Semantic-36 dispatches to the Lisp teacher")
   (check-semantic36-rollout
-   (not (cl-tpg::lisp-heuristic-controller-path-p
-         "Cage2-meander-30-v0"))
-   "unsupported Meander does not enter the B-line Lisp teacher"))
+   (cl-tpg::lisp-heuristic-controller-path-p "Cage2-meander-30-v0")
+   "Meander direct Semantic-36 dispatches to its Lisp teacher")
+  (check-semantic36-rollout
+   (eq (cl-tpg::cage2-heuristic-controller-profile
+        "Cage2-meander-30-v0")
+       :meander-heuristic)
+   "Meander dispatch selects its independent Controller profile"))
 
 (format t "Semantic-36 rollout checks passed (~D checks).~%"
         *semantic36-rollout-checks*)

@@ -119,7 +119,11 @@
             entries "decoy_order" target-count decoy-count))
          (heuristic-orders
            (load-decoy-order-section
-            entries "decoy_order_heuristic" target-count decoy-count)))
+            entries "decoy_order_heuristic" target-count decoy-count))
+         (meander-heuristic-orders
+           (load-decoy-order-section
+            entries "decoy_order_meander_heuristic"
+            target-count decoy-count)))
     (setf *action-agreement*
           (make-action-agreement
            :schema (agreement-value entries "agreement" "schema")
@@ -137,7 +141,8 @@
            :decoy-orders orders
            :decoy-order-profiles
              (list (cons :model orders)
-                   (cons :heuristic heuristic-orders))
+                   (cons :heuristic heuristic-orders)
+                   (cons :meander-heuristic meander-heuristic-orders))
            :source-path (namestring source)))))
 
 (defun default-cage2-action-agreement-path ()

@@ -95,11 +95,12 @@
   (string-downcase (symbol-name *teacher-backend*)))
 
 (defun lisp-heuristic-controller-path-p (environment-name)
-  "Return true when the direct Semantic-36 B-line stack is active."
+  "Return true when an opponent-specific direct Semantic-36 teacher is active."
   (and (eq *terminal-action-format* :target-response-36)
        (eq *teacher-backend* :heuristic)
        (stringp environment-name)
-       (search "b_line" environment-name)))
+       (or (search "b_line" (string-downcase environment-name))
+           (search "meander" (string-downcase environment-name)))))
 
 (defun semantic-actions-to-pairs (actions)
   "Return primitive target/response pairs for semantic ACTIONS."
@@ -110,7 +111,9 @@
   (py4cl2:pyexec "import gymnasium as gym; import cage2_bridge")
   (let* ((env (cl-gym::make environment-name))
          (controller
-           (make-cage2-controller :decoy-order-profile :heuristic))
+           (make-cage2-controller
+            :decoy-order-profile
+            (cage2-heuristic-controller-profile environment-name)))
          (include-opening-p (eq *cage2-opening-mode* :policy))
          (rows nil))
     (cl-gym::configure-cage2-controller-option-orders env controller)
@@ -134,8 +137,9 @@
                                          for action =
                                            (cage2-semantic-pair-action pair)
                                          when action collect action)
-                                   (cage2-bline-heuristic-ranking
-                                    controller policy-observation)))
+                                   (cage2-heuristic-ranking
+                                    controller policy-observation
+                                    environment-name)))
                              (decision
                                (cage2-controller-resolve-ranking
                                 controller ranking))
@@ -644,7 +648,9 @@ updated only from the observation and concrete action that actually occurred."
   (py4cl2:pyexec "import gymnasium as gym; import cage2_bridge")
   (let* ((env (cl-gym::make environment-name))
          (controller
-           (make-cage2-controller :decoy-order-profile :heuristic))
+           (make-cage2-controller
+            :decoy-order-profile
+            (cage2-heuristic-controller-profile environment-name)))
          (teacher-rate
            (if (official-guided-mode-p)
                (official-guided-teacher-mixing-rate)
@@ -695,8 +701,9 @@ updated only from the observation and concrete action that actually occurred."
                                   (cl-gym::cage2-fixed-opening-action
                                    environment-name timestep))
                                 (teacher-ranking
-                                  (cage2-bline-heuristic-ranking
-                                   controller policy-observation))
+                                  (cage2-heuristic-ranking
+                                   controller policy-observation
+                                   environment-name))
                                 (teacher-decision
                                   (cage2-controller-resolve-ranking
                                    controller teacher-ranking))
@@ -1009,9 +1016,11 @@ updated only from the observation and concrete action that actually occurred."
            *teacher-forcing-rollout-mode*))
   (unless (valid-teacher-backend-p *teacher-backend*)
     (error "Invalid local teacher backend: ~S." *teacher-backend*))
-  (when (and (eq *teacher-backend* :heuristic)
-             (not (search "b_line" environment-name)))
-    (error "The heuristic teacher currently supports only b_line environments."))
+  (when (eq *teacher-backend* :heuristic)
+    ;; Validate the environment and persist the exact deployment profile in
+    ;; checkpoint provenance before any reference episodes are generated.
+    (setf *cage2-controller-decoy-order-profile*
+          (cage2-heuristic-controller-profile environment-name)))
   (setf *factored-actions-enabled* t
         *offline-training-dataset* nil
         *offline-reference-dataset* nil

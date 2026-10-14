@@ -614,7 +614,9 @@ return their fixed configured addresses."
                (not (eq gym-environment-name :none))
                (eq dataset-name :none)
                (cl-gym:cage2-environment-p gym-environment-name)
-               (search "b_line" gym-environment-name)
+               (let ((name (string-downcase gym-environment-name)))
+                 (or (search "b_line" name)
+                     (search "meander" name)))
                (integerp num-observations)
                (integerp num-actions)
                (= num-observations +cage2-scan-observation-size+)
@@ -724,7 +726,9 @@ return their fixed configured addresses."
                                     :test #'eq)
                      (eq teacher-backend :heuristic)))
            (and (stringp gym-environment-name)
-                (search "b_line" gym-environment-name)))
+                (let ((name (string-downcase gym-environment-name)))
+                  (or (search "b_line" name)
+                      (search "meander" name)))))
        ;; The semantic bridge transports all 142 values. BES may expose either
        ;; the complete vector or only its 62-value raw-plus-scan prefix.
        (or (not (and (stringp gym-environment-name)
@@ -736,7 +740,10 @@ return their fixed configured addresses."
                 (or (/= num-actions +num-semantic-36-actions+)
                     (and (= num-observations
                             +cage2-scan-observation-size+)
-                         (search "b_line" gym-environment-name)))))))
+                         (let ((name
+                                 (string-downcase gym-environment-name)))
+                           (or (search "b_line" name)
+                               (search "meander" name)))))))))
 
 (defun who-am-i ()
   "Returns the island ID of the currently running server."

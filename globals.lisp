@@ -250,12 +250,21 @@ head.  Thirty-six selects the direct two-field target/response genotype."
 (defparameter +cage2-heuristic-decoy-schedule+
   '((8 1) (8 6) (2 2) (3 1) (4 1) (2 6) (2 7)
     (5 2) (5 6) (5 0) (9 7) (9 4) (5 7) (10 7))
-  "Global cross-target Decoy schedule used by the heuristic Controller profile.
+  "Global cross-target Decoy schedule used by the B-line heuristic profile.
 
 Each entry is (TARGET OPTION). Repeated targets are intentional. This is
 controller state, not policy input: the TPG proposes ranked target/response
 categories and the Controller chooses the first still-available scheduled
 concrete Decoy whose target is represented in that ranking.")
+
+(defparameter +cage2-meander-heuristic-decoy-schedule+
+  '((8 1) (2 2) (8 6) (4 1) (3 1) (2 0) (2 6) (7 0)
+    (9 7) (7 6) (7 3) (10 7) (2 7) (8 0) (9 4) (7 5)
+    (8 4) (1 0))
+  "Exact cross-target Decoy schedule used by BlueMeanderHeuristic.
+
+The pairs are the Semantic-36 translations of concrete actions
+51,55,116,44,43,29,107,37,130,115,76,131,120,38,91,102,90,28.")
 
 (defparameter *cage2-controller-decoy-order-profile* :heuristic
   "Fixed, versioned Decoy order used by the Lisp controller.
@@ -282,8 +291,8 @@ trajectories; :DAGGER also labels states visited by the current best TPG policy.
 
 (defparameter *teacher-backend* :model
   "Local ranked teacher used by teacher forcing and its fixed Decoy profile.
-:MODEL preserves the packaged neural teacher; :HEURISTIC uses the deterministic
-BlueBLineHeuristicSimple-compatible teacher.")
+:MODEL preserves the packaged neural teacher; :HEURISTIC selects the
+deterministic opponent-specific B-line or Meander Lisp teacher.")
 
 (defparameter *recurrent-policy-enabled* nil
   "When true, each learner keeps its own register vector for one episode.")

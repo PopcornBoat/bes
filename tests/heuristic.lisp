@@ -106,5 +106,92 @@
   (check-heuristic signaled
                    "wrong Decoy-order profile is rejected explicitly"))
 
-(format t "Lisp B-line heuristic checks passed (~D checks).~%"
+;;; Meander blank states expose the unique target order of its exact 18-action
+;;; Decoy schedule.  Proposal queries remain pure.
+(let* ((controller
+         (cl-tpg:make-cage2-controller
+          :decoy-order-profile :meander-heuristic))
+       (observation
+         (cl-tpg:cage2-controller-observe
+          controller (blank-raw-observation)))
+       (ranking
+         (cl-tpg:cage2-meander-heuristic-ranking controller observation)))
+  (check-heuristic
+   (equal (heuristic-pairs ranking)
+          '((8 3) (2 3) (4 3) (3 3) (7 3) (9 3) (10 3) (1 3)))
+   "Meander blank-state ranking preserves global Decoy target priority")
+  (check-heuristic
+   (and (zerop (cl-tpg::cage2-controller-decoy-mask controller))
+        (zerop (cl-tpg::cage2-controller-step controller)))
+   "Meander heuristic query has no Controller side effects"))
+
+;;; Resolve and commit all exact Meander Decoys.  The resulting concrete action
+;;; sequence must equal BlueMeanderHeuristic.py byte-for-byte.
+(let* ((controller
+         (cl-tpg:make-cage2-controller
+          :decoy-order-profile :meander-heuristic))
+       (observation
+         (cl-tpg:cage2-controller-observe
+          controller (blank-raw-observation)))
+       (concrete-actions nil))
+  (loop repeat 18
+        do (let* ((ranking
+                    (cl-tpg:cage2-meander-heuristic-ranking
+                     controller observation))
+                  (decision
+                    (cl-tpg:cage2-controller-resolve-ranking
+                     controller ranking)))
+             (push
+              (cl-tpg:cage2-controller-decision-concrete-action decision)
+              concrete-actions)
+             (cl-tpg:cage2-controller-commit-decision
+              controller decision)))
+  (check-heuristic
+   (equal (nreverse concrete-actions)
+          '(51 55 116 44 43 29 107 37 130 115 76 131 120 38 91 102 90 28))
+   "Meander Controller reproduces the exact Python Decoy schedule")
+  (let* ((ranking
+           (cl-tpg:cage2-meander-heuristic-ranking controller observation))
+         (decision
+           (cl-tpg:cage2-controller-resolve-ranking controller ranking)))
+    (check-heuristic
+     (= (cl-tpg:cage2-controller-decision-concrete-action decision) 2)
+     "exhausted Meander Decoys use deterministic Defender Analyse fallback")))
+
+;;; Preserve both original host loops and their distinct Analyse patterns.
+(let* ((controller
+         (cl-tpg:make-cage2-controller
+          :decoy-order-profile :meander-heuristic))
+       (raw (blank-raw-observation)))
+  (setf (aref raw 4) 1.0d0)
+  (check-heuristic
+   (equal
+    (first
+     (heuristic-pairs
+      (cl-tpg:cage2-meander-heuristic-ranking
+       controller (cl-tpg:cage2-controller-observe controller raw))))
+    '(2 0))
+   "Meander primary-loop 1000 pattern produces Enterprise0 Analyse")
+  (fill raw 0.0d0)
+  (setf (aref raw 2) 1.0d0)
+  (check-heuristic
+   (equal
+    (first
+     (heuristic-pairs
+      (cl-tpg:cage2-meander-heuristic-ranking
+       controller (cl-tpg:cage2-controller-observe controller raw))))
+    '(1 0))
+   "Meander secondary-loop 0010 pattern produces Defender Analyse")
+  (fill raw 0.0d0)
+  (setf (aref raw 7) 1.0d0)
+  (check-heuristic
+   (equal
+    (first
+     (heuristic-pairs
+      (cl-tpg:cage2-meander-heuristic-ranking
+       controller (cl-tpg:cage2-controller-observe controller raw))))
+    '(2 2))
+   "Meander primary-loop compromise pattern produces Enterprise0 Restore"))
+
+(format t "Lisp B-line/Meander heuristic checks passed (~D checks).~%"
         *heuristic-checks*)

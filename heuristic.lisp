@@ -26,13 +26,13 @@ Controller resolves it to the next listed concrete option.")
     (1 0) (1 1) (7 1) (8 1) (9 1) (10 1))
   "Deterministic replacement for the original heuristic's random fallback.")
 
-(defun bline-heuristic-observation-pattern (observation raw-host-offset)
+(defun cage2-heuristic-observation-pattern (observation raw-host-offset)
   "Return the four-value raw host pattern at RAW-HOST-OFFSET."
   (let ((start (* raw-host-offset 4)))
     (loop for index from start below (+ start 4)
           collect (round (elt observation index)))))
 
-(defun bline-heuristic-append-category (target response seen ranking)
+(defun cage2-heuristic-append-category (target response seen ranking)
   "Append one unique Semantic-36 category, returning the new RANKING."
   (let ((pair (list target response)))
     (if (gethash pair seen)
@@ -46,7 +46,7 @@ Controller resolves it to the next listed concrete option.")
                    :response (aref *semantic-response-types* response)
                    :option nil)))))))
 
-(defun bline-heuristic-scheduled-decoy-available-p
+(defun cage2-heuristic-scheduled-decoy-available-p
        (controller target option)
   "Return true when one exact heuristic-scheduled Decoy remains available."
   (not (cage2-controller-decoy-used-p controller target option)))
@@ -77,7 +77,7 @@ categories; concrete Decoy selection remains exclusively in the Controller."
             (raw-host-offset target scan-index restore-patterns)
           rule
         (let ((pattern
-                (bline-heuristic-observation-pattern
+                (cage2-heuristic-observation-pattern
                  observation raw-host-offset))
               (scan-value
                 (round
@@ -85,24 +85,120 @@ categories; concrete Decoy selection remains exclusively in the Controller."
                        scan-index))))
           (when (equal pattern '(1 0 0 0))
             (setf ranking
-                  (bline-heuristic-append-category
+                  (cage2-heuristic-append-category
                    target 0 seen ranking)))
           (when (and (member scan-value '(1 2))
                      (member pattern restore-patterns :test #'equal))
             (setf ranking
-                  (bline-heuristic-append-category
+                  (cage2-heuristic-append-category
                    target 2 seen ranking))))))
     ;; Availability is read from canonical Controller state.  Repeated
     ;; concrete options collapse to one target/Decoy semantic proposal.
     (dolist (entry +bline-heuristic-decoy-schedule+)
       (destructuring-bind (target option) entry
-        (when (bline-heuristic-scheduled-decoy-available-p
+        (when (cage2-heuristic-scheduled-decoy-available-p
                controller target option)
           (setf ranking
-                (bline-heuristic-append-category
+                (cage2-heuristic-append-category
                  target 3 seen ranking)))))
     (dolist (pair +bline-heuristic-fallback-ranking+)
       (setf ranking
-            (bline-heuristic-append-category
+            (cage2-heuristic-append-category
              (first pair) (second pair) seen ranking)))
     (subseq ranking 0 (min +semantic-ranking-limit+ (length ranking)))))
+
+(defparameter +meander-heuristic-primary-hosts+
+  '((1 2) (2 3) (3 4) (7 5))
+  "BlueMeanderHeuristic's first priority loop as (RAW-OFFSET TARGET).")
+
+(defparameter +meander-heuristic-secondary-hosts+
+  '((0 1) (9 7) (10 8) (11 9) (12 10))
+  "BlueMeanderHeuristic's second priority loop as (RAW-OFFSET TARGET).")
+
+(defparameter +meander-heuristic-fallback-ranking+
+  '((1 0) (2 0) (3 0) (4 0) (5 0) (7 0) (8 0) (9 0) (10 0))
+  "Deterministic ordering of the Python heuristic's random Analyse fallback.")
+
+(defun cage2-meander-heuristic-ranking (controller observation)
+  "Return the pure ranked Semantic-36 proposal for one Meander state.
+
+This is a direct Lisp translation of BlueMeanderHeuristic.  It preserves the
+two host-priority loops and exact concrete Decoy schedule while replacing only
+the exhausted-Decoy random Analyse fallback with a deterministic ranking.
+Neither this query nor ranking resolution mutates controller state."
+  (unless (cage2-controller-p controller)
+    (error "Meander Lisp heuristic requires a CAGE2 controller, got ~S."
+           controller))
+  (unless (eq (cage2-controller-decoy-order-profile controller)
+              :meander-heuristic)
+    (error
+     "Meander Lisp heuristic requires the :MEANDER-HEURISTIC Decoy profile."))
+  (unless (and (typep observation 'sequence)
+               (= (length observation) +cage2-scan-observation-size+))
+    (error "Meander Lisp heuristic expected ~D observations, got ~S."
+           +cage2-scan-observation-size+
+           (and (typep observation 'sequence) (length observation))))
+  (let ((seen (make-hash-table :test #'equal))
+        (ranking nil))
+    (dolist (rule +meander-heuristic-primary-hosts+)
+      (destructuring-bind (raw-host-offset target) rule
+        (let ((pattern
+                (cage2-heuristic-observation-pattern
+                 observation raw-host-offset)))
+          (cond
+            ((equal pattern '(1 0 0 0))
+             (setf ranking
+                   (cage2-heuristic-append-category
+                    target 0 seen ranking)))
+            ((member pattern
+                     '((0 0 0 1) (1 1 0 1) (0 0 1 1) (1 1 1 1))
+                     :test #'equal)
+             (setf ranking
+                   (cage2-heuristic-append-category
+                    target 2 seen ranking)))))))
+    (dolist (rule +meander-heuristic-secondary-hosts+)
+      (destructuring-bind (raw-host-offset target) rule
+        (let ((pattern
+                (cage2-heuristic-observation-pattern
+                 observation raw-host-offset)))
+          (cond
+            ((equal pattern '(0 0 1 0))
+             (setf ranking
+                   (cage2-heuristic-append-category
+                    target 0 seen ranking)))
+            ((member pattern '((0 0 0 1) (0 0 1 1) (1 1 1 1))
+                     :test #'equal)
+             (setf ranking
+                   (cage2-heuristic-append-category
+                    target 2 seen ranking)))))))
+    (dolist (entry +cage2-meander-heuristic-decoy-schedule+)
+      (destructuring-bind (target option) entry
+        (when (cage2-heuristic-scheduled-decoy-available-p
+               controller target option)
+          (setf ranking
+                (cage2-heuristic-append-category
+                 target 3 seen ranking)))))
+    (dolist (pair +meander-heuristic-fallback-ranking+)
+      (setf ranking
+            (cage2-heuristic-append-category
+             (first pair) (second pair) seen ranking)))
+    (subseq ranking 0 (min +semantic-ranking-limit+ (length ranking)))))
+
+(defun cage2-heuristic-controller-profile (environment-name)
+  "Return the fixed Lisp heuristic Controller profile for ENVIRONMENT-NAME."
+  (let ((name (and (stringp environment-name)
+                   (string-downcase environment-name))))
+    (cond
+      ((and name (search "b_line" name)) :heuristic)
+      ((and name (search "meander" name)) :meander-heuristic)
+      (t
+       (error "No Lisp heuristic Controller profile for environment ~S."
+              environment-name)))))
+
+(defun cage2-heuristic-ranking (controller observation environment-name)
+  "Dispatch a pure opponent-specific Lisp heuristic query."
+  (ecase (cage2-heuristic-controller-profile environment-name)
+    (:heuristic
+     (cage2-bline-heuristic-ranking controller observation))
+    (:meander-heuristic
+     (cage2-meander-heuristic-ranking controller observation))))

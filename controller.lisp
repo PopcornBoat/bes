@@ -41,8 +41,11 @@ teacher switch from silently changing deployment behavior. The :HEURISTIC
 profile includes both its per-target option orders and its exact cross-target
 global schedule."
   (let* ((schedule
-           (and (eq decoy-order-profile :heuristic)
-                +cage2-heuristic-decoy-schedule+))
+           (case decoy-order-profile
+             (:heuristic +cage2-heuristic-decoy-schedule+)
+             (:meander-heuristic
+              +cage2-meander-heuristic-decoy-schedule+)
+             (otherwise nil)))
          (orders
           (action-agreement-decoy-orders-for-profile
            decoy-order-profile agreement)))

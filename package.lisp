@@ -26,6 +26,7 @@
                      :cage2-controller-decision-option
                      :cage2-controller-decision-fallback-p
                      :cage2-bline-heuristic-ranking
+                     :cage2-meander-heuristic-ranking
                      :analyze-program-effective-code
                      :analyze-team-effective-code
                      :write-effective-code-report

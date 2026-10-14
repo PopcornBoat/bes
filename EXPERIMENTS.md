@@ -48,6 +48,27 @@ Request a graceful stop with:
 scripts/bes-search stop
 ```
 
+## Meander heuristic-guided training
+
+`experiments/meander-heuristic-official-guided.sexp` starts a fresh
+Semantic-36 search against `Cage2-meander-100-v0`.  It uses the deterministic
+Lisp translation of `BlueMeanderHeuristic`: the original two host-priority
+loops, the exact 18-action global Decoy schedule, and a deterministic ranked
+Analyse fallback after Decoy exhaustion.  Controller state advances only from
+the concrete action confirmed by the environment.
+
+Run it independently from B-line checkpoints:
+
+```bash
+scripts/bes-runtime start
+scripts/bes-search submit experiments/meander-heuristic-official-guided.sexp
+```
+
+The fresh checkpoint directory is
+`/home/hardison/checkpoints/semantic36/meander-heuristic-official-guided/`.
+Do not warm-start it from a B-line policy: the opponent, heuristic rules, and
+fixed cross-target Decoy schedule are different.
+
 ## Instruction-set ablation
 
 Task B compares fresh searches under the historical opcode catalogue and the
