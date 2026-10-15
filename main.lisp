@@ -1087,6 +1087,17 @@ promotion still requires the stricter positive one-standard-error improvement."
                  (seeds
                    (make-online-fitness-episode-seeds
                     +cage2-evaluation-seed+ reference-count)))
+            ;; The worker is a fresh Lisp process.  Its default terminal and
+            ;; ROR profiles may differ from those used to evolve the frozen
+            ;; candidate, so restore the checkpoint's execution contract.
+            (multiple-value-bind
+                  (terminal-format instruction-profile ror-profile)
+                (checkpoint-execution-profile
+                 *loaded-checkpoint-metadata*
+                 "Independent online candidate")
+              (setf *terminal-action-format* terminal-format
+                    *instruction-set-profile* instruction-profile
+                    *read-only-register-profile* ror-profile))
             (unless (= reference-count (length incumbent-scores))
               (error "Incumbent score count ~D does not match reference count ~D."
                      (length incumbent-scores) reference-count))
