@@ -135,9 +135,10 @@ error, lower-tail CVaR, catastrophic counts, and paired v14 deltas. These
 results are external validation evidence and must not feed candidate selection
 or historical promotion.
 
-The validated evolved BLine v14 checkpoint and its frozen robustness evidence are
-versioned under `validated-checkpoints/bline-v14/`. This preserves the policy used
-for the reported v14 results independently of mutable runtime checkpoint directories.
+Validated evolved policies and their frozen evaluation evidence are versioned
+under `validated-checkpoints/`. This includes BLine v14 and Meander v8 and
+preserves the policies used for reported results independently of mutable runtime
+checkpoint directories.
 
 ### Evolved-candidate official admission
 
