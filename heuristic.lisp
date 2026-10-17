@@ -195,6 +195,15 @@ Neither this query nor ranking resolution mutates controller state."
        (error "No Lisp heuristic Controller profile for environment ~S."
               environment-name)))))
 
+(defun cage2-rollout-controller-decoy-order-profile (environment-name)
+  "Return the Controller profile used by a CAGE2 rollout in this configuration."
+  (if (and (eq *teacher-backend* :heuristic)
+           (stringp environment-name)
+           (or (search "b_line" (string-downcase environment-name))
+               (search "meander" (string-downcase environment-name))))
+      (cage2-heuristic-controller-profile environment-name)
+      *cage2-controller-decoy-order-profile*))
+
 (defun cage2-heuristic-ranking (controller observation environment-name)
   "Dispatch a pure opponent-specific Lisp heuristic query."
   (ecase (cage2-heuristic-controller-profile environment-name)

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 4 || $# -gt 7 ]]; then
+  echo "Usage: $0 INCUMBENT_CHECKPOINT CHALLENGER_CHECKPOINT RED_AGENT OUTPUT_DIRECTORY [ROOTS] [EPISODES_PER_ROOT] [HORIZONS]" >&2
+  exit 2
+fi
+
+incumbent_checkpoint=$1
+challenger_checkpoint=$2
+red_agent=$3
+output_directory=$4
+roots=${5:-314159,271828,161803,577215,141421,173205,223607,244949}
+episodes_per_root=${6:-100}
+horizons=${7:-30,50,100}
+repo=/home/hardison/bes
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+
+[[ -f "$incumbent_checkpoint" && -f "$challenger_checkpoint" ]] || {
+  echo "Both checkpoint files must exist." >&2
+  exit 1
+}
+[[ "$red_agent" == b_line || "$red_agent" == meander ]] || {
+  echo "RED_AGENT must be b_line or meander." >&2
+  exit 2
+}
+[[ "$episodes_per_root" =~ ^[1-9][0-9]*$ ]] || {
+  echo "EPISODES_PER_ROOT must be a positive integer." >&2
+  exit 2
+}
+
+mkdir -p "$output_directory"
+hash_file="$output_directory/input-sha256.txt"
+requested_hash=$(mktemp)
+trap 'rm -f "$requested_hash"' EXIT
+sha256sum "$incumbent_checkpoint" "$challenger_checkpoint" > "$requested_hash"
+if [[ -f "$hash_file" ]] && ! cmp -s "$requested_hash" "$hash_file"; then
+  echo "Output directory belongs to different checkpoint inputs: $output_directory" >&2
+  exit 1
+fi
+cp "$requested_hash" "$hash_file"
+
+config_file="$output_directory/run-config.txt"
+if [[ -f "$config_file" ]]; then
+  grep -Fxq "red_agent=$red_agent" "$config_file" \
+    && grep -Fxq "roots=$roots" "$config_file" \
+    && grep -Fxq "episodes_per_root=$episodes_per_root" "$config_file" \
+    && grep -Fxq "horizons=$horizons" "$config_file" || {
+      echo "Output directory belongs to a different paired-validation plan." >&2
+      exit 1
+    }
+else
+  {
+    echo "protocol=official-paired-robustness-validation-v1"
+    echo "git_commit=$(git -C "$repo" rev-parse HEAD)"
+    echo "red_agent=$red_agent"
+    echo "roots=$roots"
+    echo "episodes_per_root=$episodes_per_root"
+    echo "horizons=$horizons"
+    echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$config_file"
+fi
+
+cd "$repo"
+env \
+  "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+  "PAIRED_INCUMBENT_CHECKPOINT=$incumbent_checkpoint" \
+  "PAIRED_CHALLENGER_CHECKPOINT=$challenger_checkpoint" \
+  "PAIRED_RED_AGENT=$red_agent" \
+  "PAIRED_OUTPUT_DIRECTORY=$output_directory" \
+  "PAIRED_ROOTS=$roots" \
+  "PAIRED_EPISODES_PER_ROOT=$episodes_per_root" \
+  "PAIRED_HORIZONS=$horizons" \
+  /usr/bin/sbcl --dynamic-space-size 4096 --noinform --non-interactive \
+    --eval '(require :asdf)' \
+    --eval '(asdf:load-system :cl-tpg)' \
+    --eval '(cl-tpg::run-paired-robustness-validation-from-environment)'

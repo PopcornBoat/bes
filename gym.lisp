@@ -236,14 +236,8 @@ Supports:
                 (cage2-controller-rollout-p)
                 (cl-tpg:make-cage2-controller
                  :decoy-order-profile
-                 (if (and (eq cl-tpg::*teacher-backend* :heuristic)
-                          (or (search "b_line"
-                                      (string-downcase environment-name))
-                              (search "meander"
-                                      (string-downcase environment-name))))
-                     (cl-tpg::cage2-heuristic-controller-profile
-                      environment-name)
-                     cl-tpg::*cage2-controller-decoy-order-profile*)))))
+                 (cl-tpg::cage2-rollout-controller-decoy-order-profile
+                  environment-name)))))
     (when (cage2-environment-p environment-name)
       (if controller
           (configure-cage2-controller-option-orders env controller)

@@ -2780,7 +2780,11 @@ reference batch."
            *teacher-dagger-random-state* nil
            *current-dataset-fingerprint* nil)
      (when (cl-gym:cage2-environment-p gym-environment-name)
-       (configure-cage2-terminal-action-format))
+       (configure-cage2-terminal-action-format)
+       ;; Persist the same opponent-specific profile that Gym will execute.
+       (setf *cage2-controller-decoy-order-profile*
+             (cage2-rollout-controller-decoy-order-profile
+              gym-environment-name)))
      (configure-hamming-observation-space)
      (setf *fitness-fn*
            (lambda (team)

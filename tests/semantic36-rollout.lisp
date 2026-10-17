@@ -69,5 +69,31 @@
        :meander-heuristic)
    "Meander dispatch selects its independent Controller profile"))
 
+(let ((cl-tpg::*teacher-backend* :heuristic)
+      (cl-tpg::*cage2-controller-decoy-order-profile* :heuristic)
+      (cl-tpg::*num-actions* 36)
+      (cl-tpg::*num-observations* 62)
+      (cl-tpg::*hamming-space-enabled* nil))
+  (cl-tpg::make-fitness-function
+   :gym-environment-name "Cage2-meander-100-v0")
+  (check-semantic36-rollout
+   (eq cl-tpg::*cage2-controller-decoy-order-profile* :meander-heuristic)
+   "online Meander saves the Controller profile used by Gym")
+  (let* ((team (cl-tpg::%make-team :id "meander-profile-checkpoint"
+                                    :learners nil :option-orders nil))
+         (data (cl-tpg::make-best-team-checkpoint-data team 0.0d0)))
+    (check-semantic36-rollout
+     (eq (getf data :cage2-controller-decoy-order-profile)
+         :meander-heuristic)
+     "Meander checkpoint records its actual rollout profile")))
+
+(let ((cl-tpg::*teacher-backend* :model)
+      (cl-tpg::*cage2-controller-decoy-order-profile* :model))
+  (check-semantic36-rollout
+   (eq (cl-tpg::cage2-rollout-controller-decoy-order-profile
+        "Cage2-meander-100-v0")
+       :model)
+   "non-heuristic controller profiles remain unchanged"))
+
 (format t "Semantic-36 rollout checks passed (~D checks).~%"
         *semantic36-rollout-checks*)

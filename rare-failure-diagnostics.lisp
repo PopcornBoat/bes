@@ -212,8 +212,8 @@ normal rare-failure diagnostics call is unchanged."
                             (cl-gym::cage2-fixed-opening-action
                              environment-name timestep))
                           (teacher-ranking
-                            (cage2-bline-heuristic-ranking
-                             controller policy-observation))
+                            (cage2-heuristic-ranking
+                             controller policy-observation environment-name))
                           (teacher-decision
                             (cage2-controller-resolve-ranking
                              controller teacher-ranking))

@@ -11,10 +11,15 @@ only the extensions and research controls used by the current system.
 
 ## Current policy contract
 
-The maintained configuration is intentionally narrow:
+The maintained configuration is intentionally narrow. A success-only summary
+and frozen results for both opponents are in
+[validated-checkpoints/README.md](validated-checkpoints/README.md).
+
+The shared policy contract is:
 
 - official CAGE2 environment;
-- B-line opponent;
+- B-line or Meander opponent, with separate heuristic teachers and fixed
+  controller Decoy schedules;
 - 62 policy inputs: 52 raw observations plus 10 scan-state values;
 - 36 direct `(target, response)` terminals;
 - responses: `ANALYSE`, `REMOVE`, `RESTORE`, and `DECOY`;
