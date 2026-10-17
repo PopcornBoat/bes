@@ -10,6 +10,18 @@
 (defconstant +bid-register+ 0
   "Register used as a learner's bid during team execution.")
 
+(defconstant +peer-nomination-register+ 1
+  "Select one of a learner's two peer nominations in election mode.")
+
+(defconstant +peer-confidence-register+ 2
+  "Bounded support strength for a learner's nominated peer.")
+
+(defparameter *team-selection-mode* :bid
+  "Choose :BID (historical winner-take-all) or :PEER-ELECTION per team.")
+
+(defun valid-team-selection-mode-p (mode)
+  (member mode '(:bid :peer-election) :test #'eq))
+
 (defparameter +cage2-categorical-read-only-register-values+
   #(0.0d0 1.0d0 2.0d0 3.0d0)
   "Fixed categorical constants exposed by the CAGE2 ROR profile.")

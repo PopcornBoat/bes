@@ -9,8 +9,8 @@
 (defvar *loaded-checkpoint-metadata* nil
   "Metadata plist from the most recently loaded versioned checkpoint.")
 
-(defconstant +best-team-checkpoint-version+ 31
-  "Checkpoint version recording population-diversity pulse provenance.")
+(defconstant +best-team-checkpoint-version+ 32
+  "Checkpoint version recording peer-election selection and nominations.")
 
 (defun checkpoint-path (directory filename)
   "Return pathname for FILENAME under DIRECTORY."
@@ -87,7 +87,7 @@ A configuration keeps overwriting its own immediate-best file, while agent,
 observation/action shape, mode, and Hamming variants can coexist in one
 checkpoint directory."
   (format nil
-          "~A-~D-~D-~A-operators-~A~A~A~A-order-~A-teacher-~A-opening-~A-hamming-~A-memory-~A.lisp"
+          "~A-~D-~D-~A-operators-~A~A~A~A-order-~A-teacher-~A-opening-~A-hamming-~A-memory-~A~A.lisp"
           (checkpoint-agent-type)
           *num-observations*
           *num-actions*
@@ -115,7 +115,9 @@ checkpoint directory."
           (string-downcase (symbol-name *teacher-backend*))
           (string-downcase (symbol-name *cage2-opening-mode*))
           (if *hamming-space-enabled* "on" "off")
-          (if *recurrent-policy-enabled* "recurrent" "stateless")))
+          (if *recurrent-policy-enabled* "recurrent" "stateless")
+          (if (eq *team-selection-mode* :peer-election)
+              "-peer-election" "")))
 
 (defun best-team-checkpoint-path (&optional (directory *checkpoint-directory*))
   "Return the default best-team checkpoint file path."
@@ -174,6 +176,7 @@ checkpoint directory."
     :dataset-fingerprint ,dataset-fingerprint
     :action-agreement-signature ,action-agreement-signature
     :search-mechanism-profile ,+live-search-profile+
+    :team-selection-mode ,*team-selection-mode*
     :cage2-controller-protocol ,+cage2-controller-protocol+
     :cage2-controller-decoy-order-profile
       ,*cage2-controller-decoy-order-profile*

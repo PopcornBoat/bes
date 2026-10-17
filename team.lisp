@@ -10,6 +10,54 @@
   (learners (loop repeat *init-num-learners*
 		  collect (make-learner))))
 
+(defun ensure-team-peer-nominations (team)
+  "Give TEAM stable local seats and repair only invalid peer nominations.
+
+Legacy teams have no seats.  Initializing them deterministically makes their
+first election reproducible, while later learner additions do not renumber
+existing nominations.  A voter never nominates itself."
+  (let* ((learners (team-learners team))
+         (used (make-hash-table :test #'eql))
+         (next-seat
+           (loop for learner in learners
+                 for seat = (learner-peer-seat learner)
+                 when (and (integerp seat) (>= seat 0))
+                   maximize seat into maximum
+                 finally (return (1+ (or maximum -1))))))
+    (dolist (learner learners)
+      (let ((seat (learner-peer-seat learner)))
+        (if (and (integerp seat) (>= seat 0)
+                 (not (gethash seat used)))
+            (setf (gethash seat used) t)
+            (progn
+              (setf (learner-peer-seat learner) next-seat
+                    (gethash next-seat used) t)
+              (incf next-seat)))))
+    (loop for voter in learners
+          for index fixnum from 0
+          for peers = (loop for offset from 1 below (length learners)
+                            collect (nth (mod (+ index offset)
+                                              (length learners))
+                                         learners))
+          do (if (null peers)
+                 (setf (learner-peer-nominees voter) nil)
+                 (let* ((peer-seats (mapcar #'learner-peer-seat peers))
+                        (saved (learner-peer-nominees voter))
+                        (first-seat
+                          (if (member (first saved) peer-seats :test #'eql)
+                              (first saved)
+                              (first peer-seats)))
+                        (second-seat
+                          (if (member (second saved) peer-seats :test #'eql)
+                              (second saved)
+                              (or (find-if (lambda (seat)
+                                             (/= seat first-seat))
+                                           peer-seats)
+                                  first-seat))))
+                   (setf (learner-peer-nominees voter)
+                         (list first-seat second-seat)))))
+    team))
+
 (defun serialize-team (team &optional (seen (make-hash-table)))
   (let ((id (team-id team)))
     (if (gethash id seen)
@@ -56,12 +104,29 @@
 	     (setf (team-learners new-team)
 		   (mapcar (lambda (l) (deserialize-learner l registry))
 			   (getf data :learners)))
-	     new-team)))))
+	     (ensure-team-peer-nominations new-team))))))
 
 (defun make-team (&rest args)
   "The primary team factory. Ensures every team is globally tracked."
-  (let ((team (apply #'%make-team args)))
+  (let* ((team (apply #'%make-team args))
+         (fresh-peers-p
+           (and (eq *team-selection-mode* :peer-election)
+                (every (lambda (learner)
+                         (null (learner-peer-seat learner)))
+                       (team-learners team)))))
     (push team *teams*)
+    (ensure-team-peer-nominations team)
+    (when fresh-peers-p
+      (dolist (voter (team-learners team))
+        (let ((peers (remove voter (team-learners team) :test #'eq)))
+          (when peers
+            (let* ((first-peer (random-choice peers))
+                   (second-peer (random-choice
+                                 (or (remove first-peer peers :test #'eq)
+                                     peers))))
+              (setf (learner-peer-nominees voter)
+                    (list (learner-peer-seat first-peer)
+                          (learner-peer-seat second-peer))))))))
     team))
 
 (defun effective-team-option-orders (team)
@@ -120,6 +185,96 @@ legacy table from the same agreement defaults."
     (setf (team-references target-team) 0)
     (setf (team-type target-team) :root)))
 
+(defun bounded-peer-confidence (value)
+  "Map an arbitrary register value to finite support in [0,1]."
+  (handler-case
+      (cond ((not (realp value)) 0.5d0)
+            ((>= value 20.0d0) 1.0d0)
+            ((<= value -20.0d0) 0.0d0)
+            (t (/ 1.0d0 (+ 1.0d0 (exp (- value))))))
+    (arithmetic-error () 0.5d0)
+    (type-error () 0.5d0)))
+
+(defun learner-nominated-peer-seat (learner registers)
+  "Choose one of LEARNER's stable peer seats from its program output."
+  (let ((second-p
+          (handler-case
+              (< (aref registers +peer-nomination-register+) 0.0d0)
+            (arithmetic-error () nil)
+            (type-error () nil))))
+    (if second-p
+        (second (learner-peer-nominees learner))
+        (first (learner-peer-nominees learner)))))
+
+(defun team-ordered-evaluations (team observation)
+  "Execute each learner once and return (LEARNER BID REGISTERS) in policy order.
+
+:BID preserves the historical strict-max winner and stable bid ties.
+:PEER-ELECTION counts one non-self nomination per voter, uses bounded support
+only to break vote-count ties, then uses stable team-local seats for an exact
+tie. A lone learner wins without a vote. Its action can still reference a team."
+  (let ((evaluations nil)
+        (winner nil)
+        (winning-bid nil)
+        (register-buffer
+          (make-array +num-registers+ :element-type 'double-float)))
+    (when (and (eq *team-selection-mode* :peer-election)
+               (some (lambda (learner)
+                       (or (null (learner-peer-seat learner))
+                           (and (rest (team-learners team))
+                                (null (learner-peer-nominees learner)))))
+                     (team-learners team)))
+      (ensure-team-peer-nominations team))
+    (dolist (learner (team-learners team))
+      (multiple-value-bind (learner-bid registers)
+          (bid learner observation register-buffer)
+        (let ((entry (list learner learner-bid (copy-seq registers))))
+          (push entry evaluations)
+          (when (and (eq *team-selection-mode* :bid)
+                     (or (null winner) (> learner-bid winning-bid)))
+            (setf winner entry winning-bid learner-bid)))))
+    (unless evaluations
+      (error "Cannot execute empty team ~A." (team-id team)))
+    (setf evaluations (nreverse evaluations))
+    (ecase *team-selection-mode*
+      (:bid
+       (cons winner
+             (stable-sort
+              (remove winner evaluations :test #'eq :count 1)
+              #'> :key #'second)))
+      (:peer-election
+       (let ((by-seat (make-hash-table :test #'eql))
+             (votes (make-hash-table :test #'eq))
+             (support (make-hash-table :test #'eq)))
+         (dolist (entry evaluations)
+           (setf (gethash (learner-peer-seat (first entry)) by-seat)
+                 (first entry)))
+         (dolist (entry evaluations)
+           (let* ((voter (first entry))
+                  (seat (learner-nominated-peer-seat voter (third entry)))
+                  (candidate (gethash seat by-seat)))
+             (when (and candidate (not (eq candidate voter)))
+               (incf (gethash candidate votes 0))
+               (incf (gethash candidate support 0.0d0)
+                     (bounded-peer-confidence
+                      (aref (third entry)
+                            +peer-confidence-register+))))))
+         (stable-sort
+          evaluations
+          (lambda (left right)
+            (let* ((left-learner (first left))
+                   (right-learner (first right))
+                   (left-votes (gethash left-learner votes 0))
+                   (right-votes (gethash right-learner votes 0))
+                   (left-support (gethash left-learner support 0.0d0))
+                   (right-support (gethash right-learner support 0.0d0)))
+              (or (> left-votes right-votes)
+                  (and (= left-votes right-votes)
+                       (or (> left-support right-support)
+                           (and (= left-support right-support)
+                                (< (learner-peer-seat left-learner)
+                                   (learner-peer-seat right-learner))))))))))))))
+
 (defun execute-team-to-terminal (team observation)
   "Traverse TEAM and return the terminal winner and its registers.
 
@@ -134,6 +289,19 @@ to the semantic policy output; intermediate winners' registers are discarded."
              (when (member current visited :test #'eq)
                (error "Cycle encountered while executing TPG at team ~A."
                       (team-id current)))
+             (when (eq *team-selection-mode* :peer-election)
+               (let* ((entry
+                        (first (team-ordered-evaluations
+                                current observation)))
+                      (winner (first entry))
+                      (registers (third entry))
+                      (act (learner-action winner)))
+                 (return-from traverse
+                   (if (eq (action-type act) :atomic)
+                       (values winner registers)
+                       (traverse (action-action act)
+                                 (cons current visited)
+                                 (1+ depth))))))
              (let ((winner nil)
                    (winning-bid nil)
                    (winning-registers
@@ -188,10 +356,10 @@ team-reference winners never contribute registers."
 
 (defun execute-team-semantic-ranked
        (team observation &optional (limit +semantic-ranking-limit+))
-  "Return up to LIMIT unique semantic candidates in hierarchical bid order.
+  "Return up to LIMIT unique semantic candidates in hierarchical selection order.
 
 The first result follows exactly the existing winner-at-each-team traversal.
-Alternatives are explored depth-first in descending local bid order. Every
+Alternatives are explored depth-first in the active local selection order. Every
 candidate is decoded from its own terminal learner and saved register state;
 registers from team-reference learners are never reused. Team evaluations are
 cached for this call so shared subgraphs do not execute their programs twice."
@@ -205,37 +373,8 @@ cached for this call so shared subgraphs do not execute their programs twice."
     (labels
         ((evaluate-team (current)
            (or (gethash current evaluation-cache)
-               (let ((evaluations nil)
-                     (winner nil)
-                     (winning-bid nil)
-                     (register-buffer
-                       (make-array +num-registers+
-                                   :element-type 'double-float)))
-                 (dolist (learner (team-learners current))
-                   (multiple-value-bind (learner-bid registers)
-                       (bid learner observation register-buffer)
-                     (let ((entry
-                             (list learner
-                                   learner-bid
-                                   (copy-seq registers))))
-                       (push entry evaluations)
-                       ;; This is intentionally the same strict comparison as
-                       ;; EXECUTE-TEAM-TO-TERMINAL, including stable bid ties.
-                       (when (or (null winner)
-                                 (> learner-bid winning-bid))
-                         (setf winner entry
-                               winning-bid learner-bid)))))
-                 (unless winner
-                   (error "Cannot execute empty team ~A." (team-id current)))
-                 (setf evaluations (nreverse evaluations))
-                 (let ((ordered
-                         (cons winner
-                               (stable-sort
-                                (remove winner evaluations :test #'eq :count 1)
-                                #'>
-                                :key #'second))))
-                   (setf (gethash current evaluation-cache) ordered)
-                   ordered))))
+               (setf (gethash current evaluation-cache)
+                     (team-ordered-evaluations current observation))))
          (record-terminal (entry)
            (let* ((learner (first entry))
                   (registers (third entry))

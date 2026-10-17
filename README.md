@@ -45,6 +45,28 @@ Controller protocol `CAGE2-LISP-CONTROLLER-V2` fixes an earlier mismatch: the
 heuristic uses one global ordered list of `(target, Decoy option)` pairs, not a
 separate option order for every target.
 
+### Experimental team selection: peer election
+
+The default remains `:bid` and preserves existing checkpoints. The `peer-election`
+branch adds a selectable `:peer-election` mode to test whether selecting a
+learner by its peers preserves more useful specialists than self-bidding. Use
+`E` in the Emacs TPG menu **before** starting, resuming, or validating; the
+same mode must be selected when validating an election checkpoint. This is an
+experimental mechanism, not a measured performance improvement.
+
+Within each team, every learner still executes its program once. Each learner
+has two team-local peer nominees; register 1 selects between them by sign and
+register 2 supplies bounded tie-breaking support. A learner casts one vote for
+another learner, never itself. The learner with most votes wins; ties use total
+support, then the lowest stable seat number. Register 0 still computes the
+historical bid, but does not decide an election. The elected learner retains
+its existing terminal `(target, response)` action or recursively follows its
+existing team reference. Ranked controller fallbacks follow the same election
+order. Nominations evolve by local rewiring alongside the existing program,
+action, learner, and graph mutations. Election checkpoints preserve nominees
+and use a separate filename suffix; old checkpoints default to `:bid` and
+their stored fitness is not reused when warm-started in election mode.
+
 ## Measured reference results
 
 All values below are official `SINGLE-RED-FULL` validation with 1000 episodes

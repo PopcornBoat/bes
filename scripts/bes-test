@@ -11,6 +11,7 @@ if [[ "${1:-}" == --core ]]; then
   tests=(
     tests/agreement.lisp
     tests/controller.lisp
+    tests/peer-election.lisp
     tests/semantic-36-action.lisp
     tests/factored-action.lisp
     tests/heuristic.lisp

@@ -399,7 +399,14 @@ the operator supplies representation reachability, not a hand-coded rule."
 (defun add-learner (team)
   "Add a new learner to a team."
   (when (< (length (team-learners team)) *max-num-learners*)
-    (push (make-learner) (team-learners team))
+    (let ((existing (team-learners team)))
+      (push (make-learner) (team-learners team))
+      (ensure-team-peer-nominations team)
+      ;; A new candidate needs at least one incoming nomination to compete.
+      (when (and (eq *team-selection-mode* :peer-election) existing)
+        (setf (learner-peer-nominees (random-choice existing))
+              (make-list 2 :initial-element
+                         (learner-peer-seat (first (team-learners team)))))))
     (note-mutation-event :learner-add))
   team)
 
@@ -413,7 +420,29 @@ the operator supplies representation reachability, not a hand-coded rule."
       (when (eq (action-type (learner-action learner)) :reference)
 	(delete-reference (action-action (learner-action learner))))
       (setf (team-learners team) (delete learner learners :count 1 :test #'eq))
+      (ensure-team-peer-nominations team)
       (note-mutation-event :learner-delete)))
+  team)
+
+(defun mutate-peer-nomination (team)
+  "Redirect one voter's nomination to another peer; never create a self vote."
+  (let ((learners (team-learners team)))
+    (when (> (length learners) 2)
+      (ensure-team-peer-nominations team)
+      (let* ((voter (random-choice learners))
+             (slot (random 2))
+             (nominees (learner-peer-nominees voter))
+             (other-seat (nth (- 1 slot) nominees))
+             (choices (remove-if
+                       (lambda (peer)
+                         (or (eq peer voter)
+                             (= (learner-peer-seat peer) other-seat)
+                             (= (learner-peer-seat peer) (nth slot nominees))))
+                       learners)))
+        (if choices
+            (setf (nth slot nominees)
+                  (learner-peer-seat (random-choice choices)))
+            (rotatef (first nominees) (second nominees))))))
   team)
 
 (defun swap-learners (team)
@@ -601,6 +630,9 @@ the decoded semantic pair and then maps the result back to its stable index."
     (mutate-learner team))
   (when (mutate-action-p)
     (mutate-action team))
+  (when (and (eq *team-selection-mode* :peer-election)
+             (mutate-action-p))
+    (mutate-peer-nomination team))
   ;; The policy's ordered-option table evolves independently from its terminal
   ;; target/response action, using the existing action-mutation probability.
   (when (and *factored-actions-enabled*

@@ -3989,6 +3989,8 @@ the same train/reference file fingerprint."
                 (or (getf metadata :instruction-set-profile) :full))
               (saved-terminal-action-format
                 (or (getf metadata :terminal-action-format) :factored))
+              (saved-team-selection-mode
+                (or (getf metadata :team-selection-mode) :bid))
               (saved-decoy-order-mode
                 (getf metadata :decoy-order-mode))
               (saved-opening-mode
@@ -4007,6 +4009,7 @@ the same train/reference file fingerprint."
                (eq saved-instruction-set-profile
                    *instruction-set-profile*)
                (eq saved-terminal-action-format *terminal-action-format*)
+               (eq saved-team-selection-mode *team-selection-mode*)
                (or (null saved-decoy-order-mode)
                    (eq saved-decoy-order-mode *decoy-order-mode*))
                (or (not (or *recurrent-policy-enabled*

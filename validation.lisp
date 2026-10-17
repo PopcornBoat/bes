@@ -196,6 +196,12 @@ CAGE3 MODE:
                (if *recurrent-policy-enabled* :recurrent :stateless))))
 
     (let ((team (load-best-team best-team-path)))
+      (let ((saved-mode
+              (or (getf *loaded-checkpoint-metadata* :team-selection-mode)
+                  :bid)))
+        (unless (eq saved-mode *team-selection-mode*)
+          (error "Checkpoint uses ~S team selection but validation requested ~S."
+                 saved-mode *team-selection-mode*)))
       (when cage2-p
         (report-checkpoint-controller-protocol
          *loaded-checkpoint-metadata* "Validation")

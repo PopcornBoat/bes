@@ -3,6 +3,12 @@
 (defconstant +effective-code-analysis-protocol+ :effective-code-v1
   "Version identifier for non-mutating program liveness analysis.")
 
+(defun policy-effective-output-registers ()
+  "Return the registers that determine the active team's policy selection."
+  (if (eq *team-selection-mode* :peer-election)
+      (list +peer-nomination-register+ +peer-confidence-register+)
+      (list +bid-register+)))
+
 (defun normalize-effective-output-registers (output-registers)
   "Return validated, duplicate-free internal register indices."
   (let ((registers
@@ -42,7 +48,7 @@
            t))))
 
 (defun analyze-program-effective-code
-       (program &key (output-registers (list +bid-register+)))
+       (program &key (output-registers (policy-effective-output-registers)))
   "Return a non-mutating backward-slice analysis of PROGRAM.
 
 An instruction is effective when its destination is live while traversing the
@@ -106,7 +112,7 @@ output. No instructions or programs are modified."
                when (= bit 1) collect register)))))
 
 (defun effective-program-record
-       (team learner &key (output-registers (list +bid-register+)))
+       (team learner &key (output-registers (policy-effective-output-registers)))
   "Return one serialization-safe effective-code record for LEARNER."
   (let* ((analysis
            (analyze-program-effective-code
@@ -125,13 +131,12 @@ output. No instructions or programs are modified."
        (copy-list (getf analysis :initial-register-indices)))))
 
 (defun analyze-team-effective-code
-       (root-team &key (output-registers (list +bid-register+)))
+       (root-team &key (output-registers (policy-effective-output-registers)))
   "Return a non-mutating effective-code summary for ROOT-TEAM's closure.
 
-The default output is the bid register only, which is correct for stateless
-Semantic-36 target/response checkpoints. Callers auditing legacy terminal
-register decoding or another policy contract must explicitly include every
-register that contributes to policy output."
+The default output follows the active selection mode: bid register 0 or
+peer nomination/confidence registers 1 and 2. Callers auditing another policy
+contract must explicitly include every register that contributes to output."
   (let* ((outputs (normalize-effective-output-registers output-registers))
          (teams (closure root-team))
          (records
@@ -201,7 +206,7 @@ register that contributes to policy output."
 
 (defun write-effective-code-report
        (root-team &key (stream *standard-output*) checkpoint-path fitness
-                       metadata (output-registers (list +bid-register+))
+                       metadata (output-registers (policy-effective-output-registers))
                        (top-programs 20))
   "Write a deterministic human-readable effective-code report for ROOT-TEAM.
 

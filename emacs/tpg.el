@@ -29,6 +29,20 @@
 (defvar tpg-recurrent-registers-enabled nil
   "Whether the next CAGE2 operation preserves learner registers per episode.")
 
+(defvar tpg-team-selection-mode :bid
+  "Team selection for the next run: :bid or :peer-election.")
+
+(defun tpg-toggle-team-selection-mode ()
+  "Toggle learner bidding versus peer election for the next operation."
+  (interactive)
+  (setq tpg-team-selection-mode
+        (if (eq tpg-team-selection-mode :bid) :peer-election :bid))
+  (message "[LOCAL] Next operation uses %s team selection"
+           tpg-team-selection-mode))
+
+(defun tpg-team-selection-menu-description ()
+  (format "Team Selection: %s" tpg-team-selection-mode))
+
 
 (defun plist-to-cl-sexp (plist)
   "Format a plist as a Common Lisp readable s-expression with keywords."
@@ -328,6 +342,7 @@ selected yet."
       :instruction-set-profile ,instruction-set-profile
       :read-only-register-profile ,read-only-register-profile
       :instruction-mutation-mode ,instruction-mutation-mode
+      :team-selection-mode ,tpg-team-selection-mode
       :categorical-predicate-mutation-enabled
       ,categorical-predicate-mutation-enabled
       :effective-aware-mutation-enabled ,effective-aware-mutation-enabled
@@ -864,6 +879,7 @@ selected yet."
             :instruction-set-profile ,instruction-set-profile
             :read-only-register-profile ,read-only-register-profile
             :instruction-mutation-mode ,instruction-mutation-mode
+            :team-selection-mode ,tpg-team-selection-mode
             :categorical-predicate-mutation-enabled
             ,(if categorical-predicate-mutation-enabled :enabled :disabled)
             :effective-aware-mutation-enabled
@@ -955,7 +971,10 @@ selected yet."
    ("p" "Set Python Interpreter" tpg-configure-python-interpreter)]
 
   ["Policy Memory (offline/teacher/online)"
-   ("M" tpg-recurrent-menu-description tpg-toggle-recurrent-registers)])
+   ("M" tpg-recurrent-menu-description tpg-toggle-recurrent-registers)]
+
+  ["Team Selection (next operation)"
+   ("E" tpg-team-selection-menu-description tpg-toggle-team-selection-mode)])
 
 
 (defvar tpg-mode-map
@@ -1405,6 +1424,7 @@ selected yet."
              :decoy-order-mode ,decoy-order-mode
              :cage2-opening-mode ,cage2-opening-mode
              :teacher-backend ,teacher-backend
+             :team-selection-mode ,tpg-team-selection-mode
              :recurrent-policy-enabled
              ,(if tpg-recurrent-registers-enabled :enabled :disabled)
              :hamming-space-enabled

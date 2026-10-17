@@ -397,6 +397,7 @@ return their fixed configured addresses."
                                     (recurrent-policy-enabled nil)
                                     (teacher-forcing-rollout-mode :dagger)
                                     (teacher-backend :model)
+                                    (team-selection-mode :bid)
                                     (instruction-set-profile :full)
                                     (instruction-mutation-mode :legacy)
                                     (effective-aware-mutation-enabled nil)
@@ -477,6 +478,12 @@ return their fixed configured addresses."
     (error "Teacher backend must be :MODEL or :HEURISTIC, got ~S."
            teacher-backend))
   (setf *teacher-backend* teacher-backend)
+
+  (unless (valid-team-selection-mode-p team-selection-mode)
+    (error "Team selection mode must be :BID or :PEER-ELECTION, got ~S."
+           team-selection-mode))
+  (setf *team-selection-mode* team-selection-mode)
+  (emit-message (format nil "Team selection mode: ~A" team-selection-mode))
 
   (unless (valid-instruction-set-profile-p instruction-set-profile)
     (error "Instruction-set profile must be :FULL, :REDUCED, or :REDUCED-EQ, got ~S."
@@ -800,6 +807,8 @@ return their fixed configured addresses."
           (getf msg :teacher-forcing-rollout-mode :dagger))
         (teacher-backend
           (getf msg :teacher-backend :model))
+        (team-selection-mode
+          (getf msg :team-selection-mode :bid))
         (instruction-set-profile
           (getf msg :instruction-set-profile :full))
         (instruction-mutation-mode
@@ -834,6 +843,10 @@ return their fixed configured addresses."
           (getf msg :population-diversity-pulse-wipe-fraction
                 +population-diversity-pulse-default-wipe-fraction+))
         (seed (getf msg :seed)))
+
+    (unless (valid-team-selection-mode-p team-selection-mode)
+      (emit-error "Team selection mode must be BID or PEER-ELECTION.")
+      (return-from handle-start-search))
 
     (format t "~S~%" msg)
 
@@ -977,6 +990,7 @@ return their fixed configured addresses."
            :recurrent-policy-enabled recurrent-policy-enabled
            :teacher-forcing-rollout-mode teacher-forcing-rollout-mode
            :teacher-backend teacher-backend
+           :team-selection-mode team-selection-mode
            :instruction-set-profile instruction-set-profile
            :instruction-mutation-mode instruction-mutation-mode
            :effective-aware-mutation-enabled
@@ -1089,6 +1103,8 @@ return their fixed configured addresses."
           (getf msg :teacher-forcing-rollout-mode :dagger))
         (teacher-backend
           (getf msg :teacher-backend :model))
+        (team-selection-mode
+          (getf msg :team-selection-mode :bid))
         (instruction-set-profile
           (getf msg :instruction-set-profile :full))
         (instruction-mutation-mode
@@ -1128,6 +1144,10 @@ return their fixed configured addresses."
 
     (unless best-team-path
       (emit-error "No best-team-path provided for resume-search.")
+      (return-from handle-resume-search))
+
+    (unless (valid-team-selection-mode-p team-selection-mode)
+      (emit-error "Team selection mode must be BID or PEER-ELECTION.")
       (return-from handle-resume-search))
 
     (when (or (eq max-num-learners :inf)
@@ -1224,6 +1244,7 @@ return their fixed configured addresses."
            :recurrent-policy-enabled recurrent-policy-enabled
            :teacher-forcing-rollout-mode teacher-forcing-rollout-mode
            :teacher-backend teacher-backend
+           :team-selection-mode team-selection-mode
            :instruction-set-profile instruction-set-profile
            :instruction-mutation-mode instruction-mutation-mode
            :effective-aware-mutation-enabled
@@ -1395,6 +1416,8 @@ return their fixed configured addresses."
           (eq (getf msg :recurrent-policy-enabled :disabled) :enabled))
         (teacher-backend
           (getf msg :teacher-backend :model))
+        (team-selection-mode
+          (getf msg :team-selection-mode :bid))
         (hamming-space-enabled
           (eq (getf msg :hamming-space-enabled :disabled) :enabled))
         (hamming-dataset-name
@@ -1437,6 +1460,10 @@ return their fixed configured addresses."
       (emit-error "Teacher backend must be MODEL or HEURISTIC.")
       (return-from handle-validate-best-team))
 
+    (unless (valid-team-selection-mode-p team-selection-mode)
+      (emit-error "Team selection mode must be BID or PEER-ELECTION.")
+      (return-from handle-validate-best-team))
+
     (unless (begin-validation-operation)
       (emit-error "This node became busy before validation could start.")
       (return-from handle-validate-best-team))
@@ -1445,6 +1472,7 @@ return their fixed configured addresses."
           *hamming-dataset-name* hamming-dataset-name
           *recurrent-policy-enabled* recurrent-policy-enabled
           *teacher-backend* teacher-backend)
+    (setf *team-selection-mode* team-selection-mode)
     (when (eq environment :cage2)
       (setf *num-observations* num-observations
             *decoy-order-mode* decoy-order-mode
