@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo=/home/hardison/bes
+repo=${BES_REPO:-/home/hardison/bes}
 bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
 default_artifacts=/home/hardison/bes-artifacts/runtime
 
@@ -38,7 +38,7 @@ case "${1:-}" in
     tmux new-session -d -s "$session" -c "$repo" \
       env \
       "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-      'CL_SOURCE_REGISTRY=(:source-registry (:tree "/home/hardison/bes/") :ignore-inherited-configuration)' \
+      "CL_SOURCE_REGISTRY=(:source-registry (:tree \"$repo/\") :ignore-inherited-configuration)" \
       /usr/bin/sbcl \
       --dynamic-space-size 4096 \
       --eval '(require :asdf)' \

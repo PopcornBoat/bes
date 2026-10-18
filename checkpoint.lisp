@@ -37,6 +37,9 @@
 (defun checkpoint-training-mode ()
   "Return the active search mode as a filename component."
   (cond
+    ((and (eq *current-search-mode* :online)
+          *online-return-finetuning-enabled*)
+     "online-return")
     ((and (eq *current-search-mode* :online) *mixed-training-lineage*)
      "mix")
     ((eq *current-search-mode* :teacher-forcing)
@@ -169,6 +172,15 @@ checkpoint directory."
     :gym-environment-name ,gym-environment-name
     :online-fitness-episodes ,online-fitness-episodes
     :search-seed ,search-seed
+    :online-return-incumbent-version
+      ,(and *online-return-finetuning-enabled*
+            *online-return-incumbent-version*)
+    :online-return-seed-streams
+      ,(and *online-return-finetuning-enabled*
+            (official-guided-seed-state-copy))
+    :online-return-best-evaluation
+      ,(and *online-return-finetuning-enabled*
+            (copy-tree *online-return-best-evaluation*))
     :fitness-evaluation-protocol ,fitness-evaluation-protocol
     :dataset-name ,dataset-name
     :dataset-fingerprint ,dataset-fingerprint
@@ -428,6 +440,9 @@ checkpoint directory."
      (and *factored-actions-enabled* (action-agreement-signature))
    :fitness-evaluation-protocol
    (cond
+     ((and (eq *current-search-mode* :online)
+           *online-return-finetuning-enabled*)
+      +online-return-finetuning-protocol+)
      ((eq *current-search-mode* :teacher-forcing)
       (teacher-forcing-fitness-protocol))
      ((eq *current-search-mode* :official-guided)

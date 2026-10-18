@@ -668,6 +668,7 @@ Any other launch value remains fixed for controlled comparison runs."
 (defun update-online-fitness-stage ()
   "Apply and report the episode stage used by this online CAGE2 generation."
   (when (and (eq *current-search-mode* :online)
+             (not *online-return-finetuning-enabled*)
              (cl-gym:cage2-environment-p *current-gym-environment-name*))
     (let ((episodes (online-fitness-episodes-for-generation *generation*)))
       (unless (= episodes *online-fitness-episodes*)
@@ -806,6 +807,8 @@ promotion still requires the stricter positive one-standard-error improvement."
         *online-staged-best-near-miss-lineage-id* nil
         *online-staged-best-near-miss-head-version* nil
         *online-staged-best-nomination-lanes* nil)
+  (when (fboundp 'online-return-reset-runtime)
+    (online-return-reset-runtime))
   (reset-official-admission-runtime))
 
 (defun online-candidate-directory ()
@@ -830,7 +833,10 @@ promotion still requires the stricter positive one-standard-error improvement."
    :gym-environment-name *current-gym-environment-name*
    :online-fitness-episodes *online-fitness-episodes*
    :search-seed *current-search-seed*
-   :fitness-evaluation-protocol +cage2-online-fitness-protocol+
+   :fitness-evaluation-protocol
+     (if *online-return-finetuning-enabled*
+         +online-return-finetuning-protocol+
+         +cage2-online-fitness-protocol+)
    :dataset-name *current-dataset-name*
    :dataset-fingerprint *current-dataset-fingerprint*
    :action-agreement-signature (action-agreement-signature)
@@ -2436,23 +2442,32 @@ promotion still requires the stricter positive one-standard-error improvement."
             result-path))
          (make-record (stage seeds candidate-scores incumbent-scores accepted
                        &optional horizon)
-           (append
-            (make-official-guided-evaluation-record
-             :stage stage
-             :imitation-score (getf request :candidate-imitation-score)
-             :seeds seeds
-             :candidate-returns candidate-scores
-             :incumbent-returns incumbent-scores
-             :accepted accepted
-             :horizon horizon)
-            (list :behavioral-locality
-                    (copy-tree (getf request :behavioral-locality))
-                  :parent-child-evaluation
-                    (copy-tree parent-child-record)))))
+           (let ((record
+                   (append
+                    (make-official-guided-evaluation-record
+                     :stage stage
+                     :imitation-score
+                       (getf request :candidate-imitation-score)
+                     :seeds seeds
+                     :candidate-returns candidate-scores
+                     :incumbent-returns incumbent-scores
+                     :accepted accepted
+                     :horizon horizon)
+                    (list :behavioral-locality
+                            (copy-tree (getf request :behavioral-locality))
+                          :parent-child-evaluation
+                            (copy-tree parent-child-record)))))
+             (when (eq (getf request :worker-mode) :online-return)
+               (setf (getf record :protocol)
+                     +online-return-finetuning-protocol+))
+             record)))
       (handler-case
           (let* ((*running* t)
                  (*search-active* nil)
-                 (*current-search-mode* :official-guided)
+                 (*current-search-mode*
+                   (if (eq (getf request :worker-mode) :online-return)
+                       :online
+                       :official-guided))
                  (*current-gym-environment-name*
                    (getf request :gym-environment-name))
                  (*num-observations* (getf request :num-observations))
@@ -2750,12 +2765,21 @@ reference batch."
     (error "*ONLINE-FITNESS-EPISODES* must be a positive integer."))
 
   (if (cl-gym:cage2-environment-p gym-environment-name)
-      (cage2-fitness-on-seeds
-       team
-       gym-environment-name
-       (or *online-fitness-episode-seeds*
-           (setf *online-fitness-episode-seeds*
-                 (make-online-fitness-episode-seeds))))
+      (let* ((seeds
+               (or *online-fitness-episode-seeds*
+                   (setf *online-fitness-episode-seeds*
+                         (if *online-return-finetuning-enabled*
+                             (official-guided-take-seeds
+                              :training *online-fitness-episodes*)
+                             (make-online-fitness-episode-seeds)))))
+             (returns
+               (loop for episode-seed in seeds
+                     do (abort-search-if-requested)
+                     collect (cl-gym:rollout team gym-environment-name
+                                             episode-seed))))
+        (when *online-return-finetuning-enabled*
+          (setf (gethash team *online-return-case-returns*) returns))
+        (arithmetic-mean returns))
       (arithmetic-mean
        (loop repeat *online-fitness-episodes*
              do (abort-search-if-requested)
@@ -2924,6 +2948,8 @@ checkpoint and branch archaeology."
   (setf *online-fitness-episode-seeds* nil
         *offline-fitness-batch-indices* nil
         *offline-fitness-batch-episode-indices* nil)
+  (when *online-return-finetuning-enabled*
+    (setf *online-return-case-returns* (make-hash-table :test #'eq)))
   (when (member *current-search-mode*
                 '(:teacher-forcing :official-guided)
                 :test #'eq)
@@ -3527,10 +3553,15 @@ through serialization/deserialization and save it to disk."
                    :initial-value
                    most-positive-double-float))
          (staged-online-p
-           (online-candidate-evaluation-enabled-p))
+           (and (not *online-return-finetuning-enabled*)
+                (online-candidate-evaluation-enabled-p)))
+         (staged-return-p
+           (and *online-return-finetuning-enabled*
+                (eq *current-search-mode* :online)))
          (staged-guided-p
            (official-guided-candidate-evaluation-enabled-p))
-         (staged-candidate-p (or staged-online-p staged-guided-p))
+         (staged-candidate-p
+           (or staged-online-p staged-guided-p staged-return-p))
          (internal-teams-before-selection
            (remove-if-not (lambda (team)
                             (eq (team-type team) :internal))
@@ -3567,7 +3598,10 @@ through serialization/deserialization and save it to disk."
        (poll-online-candidate-evaluation)
        (note-online-generation-candidate
         generation-best-team generation-best)
-       (maybe-launch-online-candidate-evaluation)))
+       (maybe-launch-online-candidate-evaluation))
+      (staged-return-p
+       (online-return-poll)
+       (online-return-maybe-submit scores sorted)))
 
     (unless staged-candidate-p
       (multiple-value-setq
@@ -3674,10 +3708,14 @@ through serialization/deserialization and save it to disk."
     ;; Selection
     ;; ------------------------------------------------------------
 
-    (when (grouped-selection-active-p)
-      (setf worst-entries
-            (grouped-selection-delete-entries
-             scores sorted generation-best-team n-remove)))
+    (cond
+      ((grouped-selection-active-p)
+       (setf worst-entries
+             (grouped-selection-delete-entries
+              scores sorted generation-best-team n-remove)))
+      (staged-return-p
+       (setf worst-entries
+             (online-return-diverse-unselected scores sorted n-remove))))
     (dolist (entry worst-entries)
       (delete-team (car entry)))
     (teacher-guided-finish-selection)
@@ -3877,10 +3915,14 @@ through serialization/deserialization and save it to disk."
       (near-miss-advance-generation))
     (maybe-run-behavioral-locality-sampling)
     (when (official-guided-mode-p)
-      (persist-official-guided-runtime-state))))
+      (persist-official-guided-runtime-state))
+    (when *online-return-finetuning-enabled*
+      (online-return-persist-runtime))))
 
 (defun run-search (mode gym-environment-name dataset-name seed)
   "Search the solution space with a tangled program graph."
+  (when *online-return-finetuning-enabled*
+    (error "Teacher-free return fine-tuning requires a protected warm-start checkpoint."))
   (let* ((seed (seed-or-random-seed seed))
          (captured-state (sb-ext:seed-random-state seed)))
     (setf *random-state* captured-state
@@ -3905,7 +3947,8 @@ through serialization/deserialization and save it to disk."
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
-      (when (official-guided-mode-p)
+      (when (or (official-guided-mode-p)
+                *online-return-finetuning-enabled*)
         (initialize-official-guided-seed-streams seed))
 
       (configure-fitness-function mode gym-environment-name dataset-name)
@@ -4025,6 +4068,12 @@ the same train/reference file fingerprint."
                 ((eq *current-search-mode* :official-guided)
                  (and (eq saved-protocol
                           +official-guided-fitness-protocol+)
+                      (equal saved-agreement-signature
+                             (action-agreement-signature))))
+                ((and (eq *current-search-mode* :online)
+                      *online-return-finetuning-enabled*)
+                 (and (eq saved-protocol
+                          +online-return-finetuning-protocol+)
                       (equal saved-agreement-signature
                              (action-agreement-signature))))
                 ((eq *current-search-mode* :teacher-forcing)
@@ -4263,7 +4312,8 @@ normal evolution."
       (setf *best-team* nil)
       (setf *best-fitness* nil)
 
-      (when (official-guided-mode-p)
+      (when (or (official-guided-mode-p)
+                *online-return-finetuning-enabled*)
         (initialize-official-guided-seed-streams seed))
 
       ;; Configure the action contract before creating random learners.
@@ -4295,6 +4345,9 @@ normal evolution."
          loaded-best-team *num-observations*)
         (when (official-guided-mode-p)
           (restore-official-guided-runtime-state
+           checkpoint-metadata best-team-path))
+        (when *online-return-finetuning-enabled*
+          (online-return-restore-runtime
            checkpoint-metadata best-team-path))
         (inject-loaded-best-team-into-population loaded-best-team)
         (emit-policy-limit-warning loaded-best-team)
@@ -4331,14 +4384,19 @@ normal evolution."
 
           ;; Official-guided resume must never let imitation alone replace the
           ;; official incumbent. Other modes retain the historical behavior.
-          (if (official-guided-mode-p)
-              (initialize-official-guided-best-from-current-population
-               loaded-best-team
-               (or saved-best-fitness comparable-fitness)
-               checkpoint-metadata)
-              (initialize-best-from-current-population
-               loaded-best-team
-               comparable-fitness))))
+          (cond
+            (*online-return-finetuning-enabled*
+             (online-return-initialize-incumbent
+              loaded-best-team saved-best-fitness))
+            ((official-guided-mode-p)
+             (initialize-official-guided-best-from-current-population
+              loaded-best-team
+              (or saved-best-fitness comparable-fitness)
+              checkpoint-metadata))
+            (t
+             (initialize-best-from-current-population
+              loaded-best-team
+              comparable-fitness)))))
 
       ;; Warm start intentionally reconstructs a fresh population. Compression
       ;; counters are therefore run-local even though prior event provenance is

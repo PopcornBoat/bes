@@ -412,7 +412,8 @@ return their fixed configured addresses."
                                     (coordinated-repair-bundles-enabled nil)
                                     (population-diversity-pulse-enabled nil)
                                     (population-diversity-pulse-wipe-fraction
-                                      +population-diversity-pulse-default-wipe-fraction+))
+                                      +population-diversity-pulse-default-wipe-fraction+)
+                                    (online-return-finetuning-enabled nil))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -559,7 +560,9 @@ return their fixed configured addresses."
                  (zerop (active-read-only-register-count))))
     (error "Coordinated repair bundles require FIELD-LOCAL, EQ, and active RORs."))
 
-  (setf *checkpoint-directory* checkpoint-directory))
+  (setf *online-return-finetuning-enabled*
+          (not (null online-return-finetuning-enabled))
+        *checkpoint-directory* checkpoint-directory))
 
 (defun valid-search-parameters-p (mode gym-environment-name dataset-name
 				  num-observations num-actions
@@ -589,7 +592,8 @@ return their fixed configured addresses."
                                   (coordinated-repair-bundles-enabled nil)
                                   (population-diversity-pulse-enabled nil)
                                   (population-diversity-pulse-wipe-fraction
-                                    +population-diversity-pulse-default-wipe-fraction+))
+                                    +population-diversity-pulse-default-wipe-fraction+)
+                                  (online-return-finetuning-enabled nil))
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -722,6 +726,15 @@ return their fixed configured addresses."
                 (realp population-diversity-pulse-wipe-fraction)
                 (> population-diversity-pulse-wipe-fraction 0)
                 (<= population-diversity-pulse-wipe-fraction 1)))
+       (or (not online-return-finetuning-enabled)
+           (and (eq mode :online)
+                (cl-gym:cage2-environment-p gym-environment-name)
+                (= num-observations +cage2-scan-observation-size+)
+                (= num-actions +num-semantic-36-actions+)
+                (eq decoy-order-mode :fixed)
+                (eq cage2-opening-mode :fixed)
+                (not recurrent-policy-enabled)
+                (not hamming-space-enabled)))
        (or (not (and (member mode '(:teacher-forcing :official-guided)
                                     :test #'eq)
                      (eq teacher-backend :heuristic)))
@@ -756,6 +769,10 @@ return their fixed configured addresses."
 
 (defun handle-start-search (msg)
   "Validate a start-search request, configure globals, and begin searching."
+  (when (eq (getf msg :online-return-finetuning-enabled :disabled)
+            :enabled)
+    (emit-error "Return fine-tuning requires :RESUME-SEARCH from a protected checkpoint.")
+    (return-from handle-start-search))
   (when (node-operation-busy-p)
     (emit-error "This node is already running or stopping a search, or running validation.")
     (return-from handle-start-search))
@@ -833,6 +850,9 @@ return their fixed configured addresses."
         (population-diversity-pulse-wipe-fraction
           (getf msg :population-diversity-pulse-wipe-fraction
                 +population-diversity-pulse-default-wipe-fraction+))
+        (online-return-finetuning-enabled
+          (eq (getf msg :online-return-finetuning-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -940,7 +960,8 @@ return their fixed configured addresses."
          incumbent-conservative-repair-enabled
          coordinated-repair-bundles-enabled
          population-diversity-pulse-enabled
-         population-diversity-pulse-wipe-fraction)
+         population-diversity-pulse-wipe-fraction
+         online-return-finetuning-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -996,7 +1017,9 @@ return their fixed configured addresses."
            :population-diversity-pulse-enabled
              population-diversity-pulse-enabled
            :population-diversity-pulse-wipe-fraction
-             population-diversity-pulse-wipe-fraction)
+             population-diversity-pulse-wipe-fraction
+           :online-return-finetuning-enabled
+             online-return-finetuning-enabled)
 
           (push
            (bt:make-thread
@@ -1122,6 +1145,9 @@ return their fixed configured addresses."
         (population-diversity-pulse-wipe-fraction
           (getf msg :population-diversity-pulse-wipe-fraction
                 +population-diversity-pulse-default-wipe-fraction+))
+        (online-return-finetuning-enabled
+          (eq (getf msg :online-return-finetuning-enabled :disabled)
+              :enabled))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -1187,7 +1213,8 @@ return their fixed configured addresses."
          incumbent-conservative-repair-enabled
          coordinated-repair-bundles-enabled
          population-diversity-pulse-enabled
-         population-diversity-pulse-wipe-fraction)
+         population-diversity-pulse-wipe-fraction
+         online-return-finetuning-enabled)
 
         (progn
           (unless (begin-search-operation)
@@ -1243,7 +1270,9 @@ return their fixed configured addresses."
            :population-diversity-pulse-enabled
              population-diversity-pulse-enabled
            :population-diversity-pulse-wipe-fraction
-             population-diversity-pulse-wipe-fraction)
+             population-diversity-pulse-wipe-fraction
+           :online-return-finetuning-enabled
+             online-return-finetuning-enabled)
 
           (push
            (bt:make-thread

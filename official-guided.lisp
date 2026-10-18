@@ -653,7 +653,9 @@
   "Return the frozen stage name associated with EPISODE-COUNT."
   (ecase episode-count
     (12 :promotion-stage-1)
+    (30 :promotion-stage-1)
     (40 :promotion-stage-2)
+    (50 :promotion-stage-2)
     (100 :promotion-stage-3)
     (1000 :promotion-stage-4)))
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo=/home/hardison/bes
+repo=${BES_REPO:-/home/hardison/bes}
 python=/home/hardison/venv-base/cage2_bridge/.venv/bin/python
 sender="$repo/scripts/bes-send-command.py"
 
@@ -31,4 +31,3 @@ case "${1:-}" in
     ;;
   *) usage ;;
 esac
-

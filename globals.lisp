@@ -373,6 +373,25 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
   :ranked-semantic-next-best-staged-robust-reference-v8
   "Version tag for staged online fitness and robust best-team promotion.")
 
+(defconstant +online-return-finetuning-protocol+
+  :teacher-free-paired-return-finetuning-v1
+  "Official-return selection with fresh staged incumbent comparisons.")
+
+(defparameter +online-return-promotion-stages+ '(30 50 100 1000)
+  "Cumulative fresh paired episodes after the five-episode admission screen.")
+
+(defconstant +online-return-screen-episodes+ 5)
+(defconstant +online-return-diversity-fraction+ 0.15d0)
+
+(defvar *online-return-finetuning-enabled* nil
+  "Enable teacher-free online return selection and independent promotion.")
+(defvar *online-return-case-returns* nil
+  "Episode return vectors for roots evaluated on the current shared seed block.")
+(defvar *online-return-incumbent-version* 0)
+(defvar *online-return-submission-count* 0)
+(defvar *online-return-best-evaluation* nil
+  "Frozen official paired evidence for the protected online incumbent.")
+
 (defconstant +cage2-online-reference-episodes+ 100
   "Fixed episode count used to protect the online historical best from noise.")
 
