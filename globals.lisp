@@ -697,6 +697,23 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
   "Generations accumulated before submitting one online generation-best
 candidate to the independent reference evaluator.")
 
+(defparameter *online-feedback-racing-enabled* nil
+  "Use fresh paired official racing and signed constant probes in online CAGE2.")
+
+(defconstant +online-feedback-protocol+ :paired-online-feedback-v1)
+(defparameter +online-feedback-racing-stages+ '(3 10 30))
+(defconstant +online-feedback-promotion-episodes+ 100)
+(defconstant +online-feedback-nomination-limit+ 5)
+(defconstant +online-feedback-constant-step+ 0.1d0)
+
+(defvar *online-feedback-racing-cursor* 0)
+(defvar *online-feedback-promotion-cursor* 0)
+(defvar *online-feedback-seed-root* nil)
+(defvar *online-feedback-incumbent-version* 0)
+(defvar *online-feedback-nominations* nil)
+(defvar *online-feedback-random-seen* 0)
+(defvar *online-feedback-probes* nil)
+
 (defconstant +online-candidate-screen-episodes+ 20
   "Prefix of the fixed reference bank used for the cheap candidate screen.")
 

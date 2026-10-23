@@ -32,6 +32,7 @@
 	       (:file "policy-disagreement-analysis")
 	       (:file "counterfactual-credit")
 	       (:file "official-guided")
+	       (:file "online-feedback")
 	       (:file "official-admission")
 	       (:file "robustness-validation")
 	       (:file "paired-robustness-validation")

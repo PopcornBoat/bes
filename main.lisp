@@ -806,7 +806,8 @@ promotion still requires the stricter positive one-standard-error improvement."
         *online-staged-best-near-miss-lineage-id* nil
         *online-staged-best-near-miss-head-version* nil
         *online-staged-best-nomination-lanes* nil)
-  (reset-official-admission-runtime))
+  (reset-official-admission-runtime)
+  (reset-online-feedback-state))
 
 (defun online-candidate-directory ()
   "Return the private staged-evaluation directory for this checkpoint run."
@@ -970,6 +971,9 @@ promotion still requires the stricter positive one-standard-error improvement."
 
 (defun consume-online-candidate-result (result)
   "Apply one completed worker RESULT on the main search thread."
+  (when (eq (getf result :protocol) +online-feedback-protocol+)
+    (return-from consume-online-candidate-result
+      (consume-online-feedback-result result)))
   (let ((generation (getf result :candidate-generation))
         (candidate-path (getf *online-candidate-job* :candidate-path)))
     (cond
@@ -1044,6 +1048,14 @@ promotion still requires the stricter positive one-standard-error improvement."
 
 (defun maybe-launch-online-candidate-evaluation ()
   "Submit the accumulated window when its deadline arrives and no worker runs."
+  (when (online-feedback-active-p)
+    (when (and (online-candidate-evaluation-enabled-p)
+               (null *online-candidate-job*)
+               *online-feedback-nominations*
+               (>= *generation*
+                   *online-candidate-next-submit-generation*))
+      (launch-online-feedback-batch))
+    (return-from maybe-launch-online-candidate-evaluation nil))
   (when (and (online-candidate-evaluation-enabled-p)
              (null *online-candidate-job*)
              *online-staged-best-team*
@@ -1053,6 +1065,10 @@ promotion still requires the stricter positive one-standard-error improvement."
 
 (defun run-online-candidate-evaluation (request-path)
   "Worker entry point for a staged online candidate evaluation REQUEST-PATH."
+  (let ((request (read-readable-object request-path)))
+    (when (eq (getf request :protocol) +online-feedback-protocol+)
+      (return-from run-online-candidate-evaluation
+        (run-online-feedback-batch request))))
   (let* ((request (read-readable-object request-path))
          (result-path (pathname (getf request :result-path)))
          (started (get-universal-time)))
@@ -3565,8 +3581,10 @@ through serialization/deserialization and save it to disk."
              (maybe-launch-official-guided-candidate-evaluation))))
       (staged-online-p
        (poll-online-candidate-evaluation)
-       (note-online-generation-candidate
-        generation-best-team generation-best)
+       (if (online-feedback-active-p)
+           (online-feedback-nominate-generation scores sorted)
+           (note-online-generation-candidate
+            generation-best-team generation-best))
        (maybe-launch-online-candidate-evaluation)))
 
     (unless staged-candidate-p
@@ -3763,6 +3781,7 @@ through serialization/deserialization and save it to disk."
       (loop repeat variant-count
             while (< (length (root-teams)) *population-size*)
             do (reproduce-native-child compressed-parent))))
+  (maybe-create-online-feedback-probes)
   (loop while (< (length (root-teams)) *population-size*)
         do (let* ((roots (root-teams))
                   (parents
@@ -4088,7 +4107,8 @@ checkpoint remains replayable while training continues on changing batches."
         (current-reference-evaluation
          loaded-best-team
          loaded-current-fitness))
-      (if (eq generation-best-team loaded-best-team)
+      (if (or (eq generation-best-team loaded-best-team)
+              (online-feedback-active-p))
           (setf generation-reference-fitness loaded-reference-fitness
                 generation-reference-detail loaded-reference-detail)
           (multiple-value-setq
@@ -4108,13 +4128,14 @@ checkpoint remains replayable while training continues on changing batches."
       (let* ((loaded-baseline
                (or saved-best-fitness loaded-reference-fitness))
              (generation-won-p
-               (if (and (eq *current-search-mode* :online)
-                        (cl-gym:cage2-environment-p
-                         *current-gym-environment-name*))
-                   (online-reference-promotion-p
-                    generation-reference-detail
-                    loaded-reference-detail)
-                   (> generation-reference-fitness loaded-baseline)))
+             (cond
+               ((online-feedback-active-p) nil)
+               ((and (eq *current-search-mode* :online)
+                     (cl-gym:cage2-environment-p
+                      *current-gym-environment-name*))
+                (online-reference-promotion-p
+                 generation-reference-detail loaded-reference-detail))
+               (t (> generation-reference-fitness loaded-baseline))))
              (chosen-team
                (if generation-won-p
                    generation-best-team
@@ -4296,6 +4317,9 @@ normal evolution."
         (when (official-guided-mode-p)
           (restore-official-guided-runtime-state
            checkpoint-metadata best-team-path))
+        (when (online-feedback-active-p)
+          (restore-online-feedback-runtime-state
+           checkpoint-metadata))
         (inject-loaded-best-team-into-population loaded-best-team)
         (emit-policy-limit-warning loaded-best-team)
 

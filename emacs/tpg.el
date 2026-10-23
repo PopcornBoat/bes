@@ -443,7 +443,6 @@ selected yet."
 
 (transient-define-prefix start-search-menu ()
   "Menu for configuring TPG hyperparameters before starting a run."
-  :refresh-suffixes t
   ;; These are the default values for the entire prefix
     :value '("*p-add=0.2" 
             "*p-del=0.1"

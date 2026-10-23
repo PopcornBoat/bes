@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+exec env DISPLAY=:0 emacs -Q \
+  -l /home/hardison/bes-artifacts/worktrees/online-feedback-racing/emacs/tpg.el \
+  --eval '(progn (server-start) (tpg) (tpg-start-auto-refresh))'

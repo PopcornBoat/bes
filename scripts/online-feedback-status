@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+emacsclient --eval \
+  '(with-current-buffer "*tpg*" (buffer-substring-no-properties (point-min) (point-max)))'
+emacsclient --eval \
+  '(with-current-buffer "*tpg-log*" (buffer-substring-no-properties (max (point-min) (- (point-max) 3000)) (point-max)))'

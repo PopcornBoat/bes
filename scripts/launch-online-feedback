@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+kind=${1:-train}
+case "$kind" in
+  smoke) session=bes-online-feedback-smoke; population=16; output_name=meander-online-feedback-smoke ;;
+  train) session=bes-online-feedback; population=160; output_name=meander-online-feedback-train-v2 ;;
+  *) echo "Usage: $0 smoke|train" >&2; exit 2 ;;
+esac
+
+repo=/home/hardison/bes-artifacts/worktrees/online-feedback-racing
+checkpoint=/home/hardison/checkpoints/semantic36/$output_name
+source_checkpoint=/home/hardison/bes/validated-checkpoints/meander-v8/meander-62-36-v8.lisp
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+source_registry='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/online-feedback-racing/") :ignore-inherited-configuration)'
+
+if ss -ltn | grep -qE 'LISTEN.+:8080([[:space:]]|$)'; then
+  echo 'Port 8080 is already in use.' >&2
+  exit 1
+fi
+if tmux has-session -t "=$session" 2>/dev/null; then
+  echo "tmux session already exists: $session" >&2
+  exit 1
+fi
+if [[ -d "$checkpoint" ]] && [[ -n "$(find "$checkpoint" -mindepth 1 -print -quit)" ]]; then
+  echo "Refusing to reuse checkpoint directory: $checkpoint" >&2
+  exit 1
+fi
+
+mkdir -p "$checkpoint"
+tmux new-session -d -s "$session" -c "$repo" \
+  env "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  "CL_SOURCE_REGISTRY=$source_registry" \
+  /usr/bin/sbcl --dynamic-space-size 4096 \
+    --eval '(require :asdf)' \
+    --eval '(asdf:load-system :cl-tpg)' \
+    --eval '(setf cl-tpg::*online-feedback-racing-enabled* t)' \
+    --eval '(cl-tpg:start-server)' \
+    --eval '(loop (sleep 3600))'
+printf -v pipe_command 'tee -a %q >/dev/null' "$checkpoint/server.log"
+tmux pipe-pane -o -t "$session" "$pipe_command"
+
+for _ in {1..60}; do
+  if ss -ltn | grep -qE 'LISTEN.+:8080([[:space:]]|$)'; then
+    break
+  fi
+  sleep 1
+done
+if ! ss -ltn | grep -qE 'LISTEN.+:8080([[:space:]]|$)'; then
+  echo "BES server failed to start; see $checkpoint/server.log" >&2
+  exit 1
+fi
+
+payload="(:type :resume-search
+ :mode :online
+ :gym-environment-name \"Cage2-meander-100-v0\"
+ :dataset-name :none
+ :best-team-path \"$source_checkpoint\"
+ :checkpoint-directory \"$checkpoint/\"
+ :num-observations 62 :num-actions 36
+ :decoy-order-mode :fixed :cage2-opening-mode :fixed
+ :teacher-backend :heuristic
+ :population-size $population :init-num-learners 3 :max-num-learners 32
+ :p-add 0.2d0 :p-del 0.1d0 :p-mut 0.5d0 :p-act 0.2d0 :p-swap 0.1d0
+ :gap 0.5d0 :init-program-size 100 :max-program-size 256
+ :p-add-instr 0.9d0 :p-del-instr 0.5d0 :p-swap-instrs 1.0d0
+ :p-mut-constant 0.5d0 :p-mut-constant-sign 0.1d0
+ :migration-interval 50 :batch-size 1000
+ :online-fitness-episodes 1
+ :hamming-space-enabled :disabled :hamming-dataset-name :none
+ :recurrent-policy-enabled :disabled
+ :instruction-set-profile :reduced-eq
+ :instruction-mutation-mode :field-local
+ :effective-aware-mutation-enabled :enabled
+ :read-only-register-profile :cage2-categorical-v1
+ :seed 153)"
+
+PAYLOAD="$payload" "$bridge_bin/python" -c \
+  'import os, socket; s=socket.create_connection(("127.0.0.1", 8080), timeout=10); s.sendall(os.environ["PAYLOAD"].encode()); s.shutdown(socket.SHUT_WR); s.close()'
+
+echo "Started $kind search: session=$session checkpoint=$checkpoint"
+echo "Monitor: tmux attach -t $session"
+echo "Log: tail -f $checkpoint/server.log"

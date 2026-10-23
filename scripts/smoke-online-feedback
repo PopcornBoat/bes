@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /home/hardison/bes-artifacts/worktrees/online-feedback-racing
+export PATH="/home/hardison/venv-base/cage2_bridge/.venv/bin:$PATH"
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/online-feedback-racing/") :ignore-inherited-configuration)'
+
+sbcl --dynamic-space-size 4096 --noinform --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load tests/online-feedback.lisp \
+  --load tests/online-feedback-worker-smoke.lisp

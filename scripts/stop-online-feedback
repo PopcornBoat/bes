@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+/home/hardison/venv-base/cage2_bridge/.venv/bin/python -c \
+  'import socket; s=socket.create_connection(("127.0.0.1", 8080), timeout=10); s.sendall(b"(:type :stop-search)"); s.shutdown(socket.SHUT_WR); s.close()'

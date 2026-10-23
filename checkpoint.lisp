@@ -247,6 +247,9 @@ checkpoint directory."
     :official-guided-best-evaluation
       ,(and (eq *current-search-mode* :official-guided)
             (copy-tree *official-guided-best-evaluation*))
+    :online-feedback-state
+      ,(and (fboundp 'online-feedback-active-p)
+            (online-feedback-state-copy))
     :grouped-selection-state
       ,(and *grouped-selection-enabled*
             (fboundp 'grouped-selection-state-copy)
