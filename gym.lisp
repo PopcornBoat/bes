@@ -276,6 +276,11 @@ Supports:
                                              root-team
                                              observation
                                              environment-name))))))
+                         (when (and policy-observation
+                                    cl-tpg::*online-feedback-observation-hook*)
+                           (funcall
+                            cl-tpg::*online-feedback-observation-hook*
+                            policy-observation timestep))
                          (multiple-value-bind (obs rew term trunc info)
                              (step env action)
                            (when controller

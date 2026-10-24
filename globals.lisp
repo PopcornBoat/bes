@@ -705,6 +705,11 @@ candidate to the independent reference evaluator.")
 (defconstant +online-feedback-promotion-episodes+ 100)
 (defconstant +online-feedback-nomination-limit+ 5)
 (defconstant +online-feedback-constant-step+ 0.1d0)
+(defconstant +online-feedback-maximum-constant-step+ 1.0d0)
+(defconstant +online-feedback-probe-observation-limit+ 72)
+(defconstant +online-feedback-probe-site-attempts+ 32)
+(defconstant +online-feedback-probe-max-top1-change+ 0.20d0)
+(defconstant +online-feedback-probe-max-ranking-change+ 0.50d0)
 
 (defvar *online-feedback-racing-cursor* 0)
 (defvar *online-feedback-promotion-cursor* 0)
@@ -713,6 +718,10 @@ candidate to the independent reference evaluator.")
 (defvar *online-feedback-nominations* nil)
 (defvar *online-feedback-random-seen* 0)
 (defvar *online-feedback-probes* nil)
+(defvar *online-feedback-probe-observations* nil
+  "Fixed official observations used to screen directional behavior changes.")
+(defvar *online-feedback-observation-hook* nil
+  "Dynamically bound callback for collecting observations during one rollout.")
 
 (defconstant +online-candidate-screen-episodes+ 20
   "Prefix of the fixed reference bank used for the cheap candidate screen.")

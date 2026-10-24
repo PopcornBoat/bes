@@ -34,6 +34,16 @@
     (unless (and (eq (getf response :status) :complete)
                  (eq (getf response :stage) :promotion)
                  (null (getf response :accepted))
-                 (= 0.0d0 (getf response :paired-delta)))
+                 (= 0.0d0 (getf response :paired-delta))
+                 (equal (mapcar (lambda (record)
+                                  (list (getf record :lane)
+                                        (getf record :stage)
+                                        (getf record :continued)))
+                                (getf response :racing-audit))
+                        '((:generation-best 1 t)))
+                 (= 1 (length (getf response
+                                    :candidate-promotion-returns)))
+                 (= 1 (length (getf response
+                                    :incumbent-promotion-returns))))
       (error "Online feedback worker smoke failed: ~S" response))
     (format t "Online feedback worker smoke passed: ~S~%" response)))
