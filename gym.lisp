@@ -296,6 +296,12 @@ Supports:
                               cl-tpg::*online-feedback-transition-hook*
                               policy-observation timestep action
                               (cage2-info-value info "concrete_action")))
+                           (when cl-tpg::*online-feedback-step-hook*
+                             (funcall
+                              cl-tpg::*online-feedback-step-hook*
+                              policy-observation timestep action
+                              (cage2-info-value info "concrete_action")
+                              rew obs term trunc))
                            (incf episode-reward rew)
                            (setf observation obs)
                            (when (or term trunc)

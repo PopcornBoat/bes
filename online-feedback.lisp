@@ -310,16 +310,13 @@ registered path nodes so a rejected candidate can be removed cleanly."
   (cage2-controller-decision-concrete-action
    (cage2-controller-resolve-pair-ranking controller pairs)))
 
-(defun online-feedback-behavior-change
-       (child observations parent-rankings
-        &optional contexts parent-concretes)
-  "Count raw ranking and Controller-resolved changes on fixed states."
-  (loop for observation in observations
+(defun online-feedback-behavior-change-from-rankings
+       (child-rankings parent-rankings &optional contexts parent-concretes)
+  "Count ranking and Controller-resolved changes between cached proposals."
+  (loop for child-ranking in child-rankings
         for parent-ranking in parent-rankings
         for index from 0
         for context = (and contexts (elt contexts index))
-        for child-ranking =
-          (online-feedback-ranking-pairs child observation)
         count (not (equal (first parent-ranking)
                           (first child-ranking))) into top1
         count (not (equal parent-ranking child-ranking)) into ranking
@@ -332,6 +329,16 @@ registered path nodes so a rejected candidate can be removed cleanly."
                   (append (list :top1 top1 :ranking ranking)
                           (when contexts
                             (list :concrete concrete))))))
+
+(defun online-feedback-behavior-change
+       (child observations parent-rankings
+        &optional contexts parent-concretes)
+  "Count raw ranking and Controller-resolved changes on fixed states."
+  (online-feedback-behavior-change-from-rankings
+   (mapcar (lambda (observation)
+             (online-feedback-ranking-pairs child observation))
+           observations)
+   parent-rankings contexts parent-concretes))
 
 (defun online-feedback-local-behavior-p (change count)
   (and (plusp (getf change :ranking))
@@ -348,6 +355,12 @@ registered path nodes so a rejected candidate can be removed cleanly."
                      (* count
                         +online-feedback-probe-max-concrete-change+)))))))
 
+(defun online-feedback-directional-local-p
+       (parent-change incumbent-change count)
+  "Keep a directional probe local to both its parent and the saved incumbent."
+  (and (online-feedback-local-behavior-p parent-change count)
+       (online-feedback-local-behavior-p incumbent-change count)))
+
 (defun maybe-create-online-feedback-probes ()
   "Create near-boundary path-local probes only when their behavior changes."
   (when (and (online-feedback-active-p)
@@ -355,6 +368,16 @@ registered path nodes so a rejected candidate can be removed cleanly."
     (let* ((observations
              (ensure-online-feedback-probe-observations))
            (contexts *online-feedback-probe-contexts*)
+           (incumbent-rankings
+             (mapcar (lambda (observation)
+                       (online-feedback-ranking-pairs
+                        *best-team* observation))
+                     observations))
+           (incumbent-concretes
+             (mapcar (lambda (context ranking)
+                       (online-feedback-resolved-concrete
+                        (getf context :controller) ranking))
+                     contexts incumbent-rankings))
            (parents (root-teams)))
       (loop repeat (min 3 (length parents))
             for parent = (random-choice parents)
@@ -389,21 +412,41 @@ registered path nodes so a rejected candidate can be removed cleanly."
                               (multiple-value-bind (minus minus-created)
                                   (online-feedback-perturb-path-child
                                    parent site (- step))
-                                (let* ((plus-change
-                                         (online-feedback-behavior-change
-                                          plus observations rankings
+                                (let* ((plus-rankings
+                                         (mapcar (lambda (observation)
+                                                   (online-feedback-ranking-pairs
+                                                    plus observation))
+                                                 observations))
+                                       (minus-rankings
+                                         (mapcar (lambda (observation)
+                                                   (online-feedback-ranking-pairs
+                                                    minus observation))
+                                                 observations))
+                                       (plus-change
+                                         (online-feedback-behavior-change-from-rankings
+                                          plus-rankings rankings
                                           contexts parent-concretes))
                                        (minus-change
-                                         (online-feedback-behavior-change
-                                          minus observations rankings
+                                         (online-feedback-behavior-change-from-rankings
+                                          minus-rankings rankings
                                           contexts parent-concretes))
+                                       ;; A local mutation of a weak parent can
+                                       ;; still be far from the saved incumbent.
+                                       (plus-incumbent-change
+                                         (online-feedback-behavior-change-from-rankings
+                                          plus-rankings incumbent-rankings
+                                          contexts incumbent-concretes))
+                                       (minus-incumbent-change
+                                         (online-feedback-behavior-change-from-rankings
+                                          minus-rankings incumbent-rankings
+                                          contexts incumbent-concretes))
                                        (plus-keep
-                                         (online-feedback-local-behavior-p
-                                          plus-change
+                                         (online-feedback-directional-local-p
+                                          plus-change plus-incumbent-change
                                           (length observations)))
                                        (minus-keep
-                                         (online-feedback-local-behavior-p
-                                          minus-change
+                                         (online-feedback-directional-local-p
+                                          minus-change minus-incumbent-change
                                           (length observations))))
                                   (unless plus-keep
                                     (online-feedback-discard-path-child
@@ -419,10 +462,14 @@ registered path nodes so a rejected candidate can be removed cleanly."
                                                 :minus minus :site site
                                                 :step step
                                                 :plus-change plus-change
-                                                :minus-change minus-change))
+                                                :minus-change minus-change
+                                                :plus-incumbent-change
+                                                  plus-incumbent-change
+                                                :minus-incumbent-change
+                                                  minus-incumbent-change))
                                     (emit-message
                                      (format nil
-                                             "Online directional probe prepared: generation=~D path=~S learner=~D instruction=~D slot=~S margin=~,4F step=~,4F top1(+/-)=~D/~D ranking(+/-)=~D/~D concrete(+/-)=~D/~D of ~D."
+                                             "Online directional probe prepared: generation=~D path=~S learner=~D instruction=~D slot=~S margin=~,4F step=~,4F top1(+/-)=~D/~D ranking(+/-)=~D/~D concrete-parent(+/-)=~D/~D concrete-incumbent(+/-)=~D/~D of ~D."
                                              *generation*
                                              (getf site :path)
                                              (getf site :learner)
@@ -435,6 +482,8 @@ registered path nodes so a rejected candidate can be removed cleanly."
                                              (getf minus-change :ranking)
                                              (getf plus-change :concrete)
                                              (getf minus-change :concrete)
+                                             (getf plus-incumbent-change :concrete)
+                                             (getf minus-incumbent-change :concrete)
                                              (length observations)))
                                     (return-from
                                      maybe-create-online-feedback-probes

@@ -157,6 +157,15 @@
             '(:top1 1 :ranking 1 :concrete 20) 72)))
  "controller-aligned gate requires bounded executed-action change")
 
+(check-online-feedback
+ (and (cl-tpg::online-feedback-directional-local-p
+       '(:top1 1 :ranking 1 :concrete 1)
+       '(:top1 1 :ranking 1 :concrete 1) 72)
+      (not (cl-tpg::online-feedback-directional-local-p
+            '(:top1 1 :ranking 1 :concrete 1)
+            '(:top1 64 :ranking 64 :concrete 64) 72)))
+ "a local child of a distant parent cannot enter the directional lane")
+
 (let* ((controller (cl-tpg:make-cage2-controller))
        (scan-state (cl-tpg::cage2-controller-scan-state controller)))
   (setf (aref scan-state 0) 2.0d0

@@ -729,6 +729,8 @@ candidate to the independent reference evaluator.")
   "Optional callback before the Controller commits the selected action.")
 (defvar *online-feedback-transition-hook* nil
   "Optional diagnostic callback for the selected and executed CAGE2 action.")
+(defvar *online-feedback-step-hook* nil
+  "Optional diagnostic callback after a real CAGE2 step, including its reward.")
 
 (defconstant +online-candidate-screen-episodes+ 20
   "Prefix of the fixed reference bank used for the cheap candidate screen.")
