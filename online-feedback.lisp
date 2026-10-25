@@ -17,7 +17,8 @@
         *online-feedback-nominations* nil
         *online-feedback-random-seen* 0
         *online-feedback-probes* nil
-        *online-feedback-probe-observations* nil))
+        *online-feedback-probe-observations* nil
+        *online-feedback-probe-contexts* nil))
 
 (defun online-feedback-state-copy ()
   (when (online-feedback-active-p)
@@ -115,9 +116,17 @@
                              :const)
                       collect (list learner-index instruction-index slot)))))
 
+(defun online-feedback-controller-snapshot (controller)
+  "Copy mutable episode state for later pure proposal resolution."
+  (let ((snapshot (copy-cage2-controller controller)))
+    (setf (cage2-controller-scan-state snapshot)
+          (copy-seq (cage2-controller-scan-state controller)))
+    snapshot))
+
 (defun ensure-online-feedback-probe-observations ()
-  "Cache one bounded official trajectory, separate from reward seed streams."
-  (unless *online-feedback-probe-observations*
+  "Cache bounded, controller-aligned official states outside reward streams."
+  (unless (and *online-feedback-probe-observations*
+               *online-feedback-probe-contexts*)
     (unless (and *best-team* (integerp *online-feedback-seed-root*))
       (error "Online feedback probes require a saved incumbent and seed root."))
     (let* ((root (official-guided-derived-root
@@ -129,21 +138,31 @@
            (per-episode-limit
              (ceiling +online-feedback-probe-observation-limit+
                       (length seeds)))
-           (observations nil))
+           (contexts nil))
       (dolist (seed seeds)
         (let* ((episode-count 0)
-              (*online-feedback-observation-hook*
-                (lambda (observation timestep)
+              (*online-feedback-controller-hook*
+                (lambda (observation timestep controller decision)
+                  (declare (ignore decision))
+                  ;; Spread the archive across early and late episode states.
                   (when (and (>= timestep 3)
+                             (zerop (mod (- timestep 3) 4))
                              (< episode-count per-episode-limit))
-                    (push (copy-seq observation) observations)
+                    (push (list :observation (copy-seq observation)
+                                :controller
+                                  (online-feedback-controller-snapshot
+                                   controller))
+                          contexts)
                     (incf episode-count)))))
           (cl-gym:rollout *best-team* *current-gym-environment-name*
                           seed)))
-      (unless observations
+      (unless contexts
         (error "Online feedback probe rollout produced no policy observations."))
-      (setf *online-feedback-probe-observations*
-            (nreverse observations))
+      (setf *online-feedback-probe-contexts* (nreverse contexts)
+            *online-feedback-probe-observations*
+              (mapcar (lambda (context)
+                        (getf context :observation))
+                      *online-feedback-probe-contexts*))
       (emit-message
        (format nil
                "Online feedback probe archive ready: seeds=~S observations=~D."
@@ -287,17 +306,32 @@ registered path nodes so a rejected candidate can be removed cleanly."
   (mapcar #'semantic-action-category-pair
           (execute-team-semantic-ranked team observation 8)))
 
+(defun online-feedback-resolved-concrete (controller pairs)
+  (cage2-controller-decision-concrete-action
+   (cage2-controller-resolve-pair-ranking controller pairs)))
+
 (defun online-feedback-behavior-change
-       (child observations parent-rankings)
-  "Count changed Top-1 actions and Top-8 rankings on fixed observations."
+       (child observations parent-rankings
+        &optional contexts parent-concretes)
+  "Count raw ranking and Controller-resolved changes on fixed states."
   (loop for observation in observations
         for parent-ranking in parent-rankings
+        for index from 0
+        for context = (and contexts (elt contexts index))
         for child-ranking =
           (online-feedback-ranking-pairs child observation)
         count (not (equal (first parent-ranking)
                           (first child-ranking))) into top1
         count (not (equal parent-ranking child-ranking)) into ranking
-        finally (return (list :top1 top1 :ranking ranking))))
+        count (and context
+                   (/= (elt parent-concretes index)
+                       (online-feedback-resolved-concrete
+                        (getf context :controller) child-ranking)))
+          into concrete
+        finally (return
+                  (append (list :top1 top1 :ranking ranking)
+                          (when contexts
+                            (list :concrete concrete))))))
 
 (defun online-feedback-local-behavior-p (change count)
   (and (plusp (getf change :ranking))
@@ -306,7 +340,13 @@ registered path nodes so a rejected candidate can be removed cleanly."
                        +online-feedback-probe-max-top1-change+)))
        (<= (getf change :ranking)
            (ceiling (* count
-                       +online-feedback-probe-max-ranking-change+)))))
+                       +online-feedback-probe-max-ranking-change+)))
+       (or (null (getf change :concrete))
+           (and (plusp (getf change :concrete))
+                (<= (getf change :concrete)
+                    (ceiling
+                     (* count
+                        +online-feedback-probe-max-concrete-change+)))))))
 
 (defun maybe-create-online-feedback-probes ()
   "Create near-boundary path-local probes only when their behavior changes."
@@ -314,6 +354,7 @@ registered path nodes so a rejected candidate can be removed cleanly."
              (<= (+ (length (root-teams)) 2) *population-size*))
     (let* ((observations
              (ensure-online-feedback-probe-observations))
+           (contexts *online-feedback-probe-contexts*)
            (parents (root-teams)))
       (loop repeat (min 3 (length parents))
             for parent = (random-choice parents)
@@ -326,6 +367,11 @@ registered path nodes so a rejected candidate can be removed cleanly."
                                      parent observation))
                                   observations))
                         (remaining sites))
+                   (let ((parent-concretes
+                           (mapcar (lambda (context ranking)
+                                     (online-feedback-resolved-concrete
+                                      (getf context :controller) ranking))
+                                   contexts rankings)))
                    (loop repeat (min +online-feedback-probe-site-attempts+
                                      (length remaining))
                          for site =
@@ -345,10 +391,12 @@ registered path nodes so a rejected candidate can be removed cleanly."
                                    parent site (- step))
                                 (let* ((plus-change
                                          (online-feedback-behavior-change
-                                          plus observations rankings))
+                                          plus observations rankings
+                                          contexts parent-concretes))
                                        (minus-change
                                          (online-feedback-behavior-change
-                                          minus observations rankings))
+                                          minus observations rankings
+                                          contexts parent-concretes))
                                        (plus-keep
                                          (online-feedback-local-behavior-p
                                           plus-change
@@ -374,7 +422,7 @@ registered path nodes so a rejected candidate can be removed cleanly."
                                                 :minus-change minus-change))
                                     (emit-message
                                      (format nil
-                                             "Online directional probe prepared: generation=~D path=~S learner=~D instruction=~D slot=~S margin=~,4F step=~,4F top1(+/-)=~D/~D ranking(+/-)=~D/~D of ~D."
+                                             "Online directional probe prepared: generation=~D path=~S learner=~D instruction=~D slot=~S margin=~,4F step=~,4F top1(+/-)=~D/~D ranking(+/-)=~D/~D concrete(+/-)=~D/~D of ~D."
                                              *generation*
                                              (getf site :path)
                                              (getf site :learner)
@@ -385,10 +433,12 @@ registered path nodes so a rejected candidate can be removed cleanly."
                                              (getf minus-change :top1)
                                              (getf plus-change :ranking)
                                              (getf minus-change :ranking)
+                                             (getf plus-change :concrete)
+                                             (getf minus-change :concrete)
                                              (length observations)))
                                     (return-from
                                      maybe-create-online-feedback-probes
-                                      t)))))))))))
+                                      t))))))))))))
 
 (defun online-feedback-directional-result (scores)
   "Select a behavior-changing probe for fresh racing, not one-seed promotion."

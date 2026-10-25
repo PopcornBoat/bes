@@ -710,6 +710,7 @@ candidate to the independent reference evaluator.")
 (defconstant +online-feedback-probe-site-attempts+ 32)
 (defconstant +online-feedback-probe-max-top1-change+ 0.20d0)
 (defconstant +online-feedback-probe-max-ranking-change+ 0.50d0)
+(defconstant +online-feedback-probe-max-concrete-change+ 0.20d0)
 
 (defvar *online-feedback-racing-cursor* 0)
 (defvar *online-feedback-promotion-cursor* 0)
@@ -720,8 +721,14 @@ candidate to the independent reference evaluator.")
 (defvar *online-feedback-probes* nil)
 (defvar *online-feedback-probe-observations* nil
   "Fixed official observations used to screen directional behavior changes.")
+(defvar *online-feedback-probe-contexts* nil
+  "Fixed observations paired with pre-action Controller state snapshots.")
 (defvar *online-feedback-observation-hook* nil
   "Dynamically bound callback for collecting observations during one rollout.")
+(defvar *online-feedback-controller-hook* nil
+  "Optional callback before the Controller commits the selected action.")
+(defvar *online-feedback-transition-hook* nil
+  "Optional diagnostic callback for the selected and executed CAGE2 action.")
 
 (defconstant +online-candidate-screen-episodes+ 20
   "Prefix of the fixed reference bank used for the cheap candidate screen.")

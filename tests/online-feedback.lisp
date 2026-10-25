@@ -148,6 +148,29 @@
             '(:top1 20 :ranking 20) 64)))
  "behavior gate excludes silent and broad changes")
 
+(check-online-feedback
+ (and (not (cl-tpg::online-feedback-local-behavior-p
+            '(:top1 1 :ranking 1 :concrete 0) 72))
+      (cl-tpg::online-feedback-local-behavior-p
+       '(:top1 1 :ranking 1 :concrete 1) 72)
+      (not (cl-tpg::online-feedback-local-behavior-p
+            '(:top1 1 :ranking 1 :concrete 20) 72)))
+ "controller-aligned gate requires bounded executed-action change")
+
+(let* ((controller (cl-tpg:make-cage2-controller))
+       (scan-state (cl-tpg::cage2-controller-scan-state controller)))
+  (setf (aref scan-state 0) 2.0d0
+        (cl-tpg::cage2-controller-decoy-mask controller) 17)
+  (let ((snapshot
+          (cl-tpg::online-feedback-controller-snapshot controller)))
+    (setf (aref scan-state 0) 1.0d0
+          (cl-tpg::cage2-controller-decoy-mask controller) 0)
+    (check-online-feedback
+     (and (= (aref (cl-tpg::cage2-controller-scan-state snapshot) 0)
+             2.0d0)
+          (= (cl-tpg::cage2-controller-decoy-mask snapshot) 17))
+     "probe snapshot preserves pre-action controller state")))
+
 (let* ((cl-tpg::*teams* nil)
        (observation
          (make-array 62 :element-type 'double-float

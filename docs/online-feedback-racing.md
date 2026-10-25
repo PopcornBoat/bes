@@ -6,10 +6,14 @@ read-only; results go to a separate directory.
 
 Each generation evaluates the population and incumbent on one shared training
 seed. Training return nominates candidates; it never replaces the incumbent.
-A separate, fixed 72-observation probe archive identifies effective bid
-constants close to a winning boundary along paths the policy actually visits.
+A separate, fixed 72-state probe archive samples early and late official
+trajectory steps. Each entry preserves the policy observation and a pre-action
+copy of the external Controller state. It identifies effective bid constants
+close to a winning boundary along paths the policy actually visits.
 Two offspring slots try opposite changes to one such constant. Only variants
-with a nonzero but bounded Top-1/Top-8 behavior change are kept. A path copy
+with bounded Top-1/Top-8 ranking changes and a nonzero, bounded change in the
+Controller-resolved concrete action are kept. The Controller is queried purely
+on its frozen snapshot; the variant does not update its state. A path copy
 isolates internal-team changes from the parent. One-seed return differences are
 provisional direction feedback, not a gradient or promotion evidence. Ordinary
 TPG program, learner, action, and graph mutation remains active.
