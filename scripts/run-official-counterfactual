@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 CHECKPOINT OUTPUT.sexp" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:$PATH
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay/") :ignore-inherited-configuration)'
+export PILOT_CHECKPOINT=$1 PILOT_OUTPUT=$2
+cd "$repo"
+sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load official-counterfactual-pilot.lisp \
+  --eval '(cl-tpg::run-official-counterfactual-pilot
+            (uiop:getenv "PILOT_CHECKPOINT")
+            (uiop:getenv "PILOT_OUTPUT")
+            :seeds (if (uiop:getenv "PILOT_SMOKE")
+                       (list 153)
+                       (list 153 42 2026 314159 271828))
+            :phase-steps (if (uiop:getenv "PILOT_SMOKE")
+                             (list 20)
+                             (list 5 20 40 60 80)))'
