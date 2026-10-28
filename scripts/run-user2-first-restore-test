@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 5 ]]; then
+  echo "Usage: $0 CHECKPOINT OUTPUT_DIR SEED_ROOT COUNT COHORT" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:$PATH
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay/") :ignore-inherited-configuration)'
+export RESTORE_CHECKPOINT=$1 RESTORE_OUTPUT=$2 RESTORE_SEED_ROOT=$3
+export RESTORE_COUNT=$4 RESTORE_COHORT=$5
+mkdir -p "$RESTORE_OUTPUT"
+cd "$repo"
+sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load rare-failure-diagnostics.lisp \
+  --load official-counterfactual-pilot.lisp \
+  --load official-user2-restore-test.lisp \
+  --eval '(cl-tpg::run-user2-first-restore-test
+            (uiop:getenv "RESTORE_CHECKPOINT")
+            (uiop:getenv "RESTORE_OUTPUT")
+            (loop for index below (parse-integer (uiop:getenv "RESTORE_COUNT"))
+                  collect (+ (parse-integer (uiop:getenv "RESTORE_SEED_ROOT"))
+                             (* 197 index)))
+            (intern (string-upcase (uiop:getenv "RESTORE_COHORT"))
+                    :keyword))'
