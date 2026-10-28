@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 DEVELOPMENT.sexp OUTPUT.sexp" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:$PATH
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay/") :ignore-inherited-configuration)'
+export REPAIR_INPUT=$1 REPAIR_OUTPUT=$2
+cd "$repo"
+sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load advantage-repair-analysis.lisp \
+  --eval '(cl-tpg::advantage-repair-development-analysis
+            (uiop:getenv "REPAIR_INPUT")
+            (uiop:getenv "REPAIR_OUTPUT"))'

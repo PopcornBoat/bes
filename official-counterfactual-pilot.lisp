@@ -321,7 +321,9 @@ def _bes_official_state_digest(env):
        (checkpoint output-path
         &key (seeds (loop for index below 120
                           collect (+ 6000001 (* 197 index))))
-             (environment-name "Cage2-meander-100-v0"))
+             (environment-name "Cage2-meander-100-v0")
+             (cohort :holdout)
+             (capture-background-p nil))
   "Confirm one frozen discovery group on independent official seeds.
 
 The hypothesis is (7,0) -> (9,3) at step 20 or 40, with the alternative
@@ -340,6 +342,7 @@ present in the frozen policy's own ranking. One eligible event per episode."
         (env nil)
         (controller nil)
         (records nil)
+        (background nil)
         (transition-count 0))
     (py4cl2:pyexec
      "import gymnasium as gym, cage2_bridge, pickle, random, hashlib
@@ -384,6 +387,17 @@ def _bes_official_state_digest(env):
                                  controller candidate '(9 3)))
                             return candidate)))
              (incf transition-count (length steps))
+             (when capture-background-p
+               (loop for state across steps
+                     for step from 0
+                     when (zerop (mod step 5))
+                       do (push (list :seed seed :step step
+                                      :observation
+                                        (coerce (getf state :policy-observation)
+                                                'list)
+                                      :incumbent-pair
+                                        (getf state :incumbent-pair))
+                                background)))
              (if (null event)
                  (push (list :seed seed :status :no-eligible-event)
                        records)
@@ -401,6 +415,12 @@ def _bes_official_state_digest(env):
                                :baseline-return (getf baseline :return)
                                :branch-return (getf branch :return)
                                :paired-delta delta
+                               :policy-observation
+                                 (coerce (getf event :policy-observation)
+                                         'list)
+                               :root-winning-bid
+                                 (incumbent-conservative-root-winning-bid
+                                  team (getf event :policy-observation))
                                :baseline-concrete
                                  (getf event :incumbent-concrete)
                                :alternative-concrete
@@ -411,6 +431,7 @@ def _bes_official_state_digest(env):
         (ignore-errors (py4cl2:pymethod env "close"))))
     (let ((result
             (list :protocol :official-counterfactual-holdout-v1
+                  :cohort cohort
                   :checkpoint checkpoint
                   :environment environment-name
                   :seeds (copy-list seeds)
@@ -421,6 +442,9 @@ def _bes_official_state_digest(env):
                       :steps (20 40)
                       :alternative-must-be-in-ranking t)
                   :official-transitions transition-count
+                  :background-sampling-mod (and capture-background-p 5)
+                  :background (and capture-background-p
+                                   (reverse background))
                   :records (reverse records))))
       (rare-failure-write-form result output-path)
       result)))

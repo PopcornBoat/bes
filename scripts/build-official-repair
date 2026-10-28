@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 5 ]]; then
+  echo "Usage: $0 DEVELOPMENT.sexp ANALYSIS.sexp PARENT.lisp CANDIDATE.lisp REPORT.sexp" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:$PATH
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay/") :ignore-inherited-configuration)'
+export REPAIR_DEVELOPMENT=$1 REPAIR_ANALYSIS=$2 REPAIR_PARENT=$3
+export REPAIR_CANDIDATE=$4 REPAIR_REPORT=$5
+cd "$repo"
+sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load advantage-repair-candidate.lisp \
+  --eval '(cl-tpg::run-advantage-repair-candidate
+            (uiop:getenv "REPAIR_DEVELOPMENT")
+            (uiop:getenv "REPAIR_ANALYSIS")
+            (uiop:getenv "REPAIR_PARENT")
+            (uiop:getenv "REPAIR_CANDIDATE")
+            (uiop:getenv "REPAIR_REPORT"))'
