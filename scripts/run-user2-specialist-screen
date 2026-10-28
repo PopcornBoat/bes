@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ $# -ne 3 ]]; then
-  echo "Usage: $0 PARENT_CHECKPOINT DISCOVERY_DIR OUTPUT_DIR" >&2
+if [[ $# -lt 3 || $# -gt 4 ]]; then
+  echo "Usage: $0 PARENT_CHECKPOINT DISCOVERY_DIR OUTPUT_DIR [ENVIRONMENT]" >&2
   exit 2
 fi
 repo=/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay
 export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:$PATH
 export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay/") :ignore-inherited-configuration)'
 export SPECIALIST_PARENT=$1 SPECIALIST_DISCOVERY=$2 SPECIALIST_OUTPUT=$3
+if [[ $# -eq 4 ]]; then export SPECIALIST_ENVIRONMENT=$4; else export SPECIALIST_ENVIRONMENT=Cage2-meander-100-v0; fi
 mkdir -p "$SPECIALIST_OUTPUT"
 cd "$repo"
 sbcl --dynamic-space-size 4096 --non-interactive \
@@ -18,4 +19,5 @@ sbcl --dynamic-space-size 4096 --non-interactive \
   --eval '(cl-tpg::run-user2-specialist-screen
             (uiop:getenv "SPECIALIST_PARENT")
             (uiop:getenv "SPECIALIST_DISCOVERY")
-            (uiop:getenv "SPECIALIST_OUTPUT"))'
+            (uiop:getenv "SPECIALIST_OUTPUT")
+            (uiop:getenv "SPECIALIST_ENVIRONMENT"))'

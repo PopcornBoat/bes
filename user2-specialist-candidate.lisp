@@ -141,11 +141,11 @@
           :probe-marker-changes marker-changes
           :probe-nonmarker-changes nonmarker-changes)))
 
-(defun user2-specialist-save-candidate (team path teacher-backend)
+(defun user2-specialist-save-candidate (team path teacher-backend environment-name)
   "Write an unscored experimental checkpoint; never touch the saved best."
   (write-best-team-checkpoint
    team nil path
-   :gym-environment-name "Cage2-meander-100-v0"
+   :gym-environment-name environment-name
    :fitness-evaluation-protocol :user2-specialist-experiment-v1
    :num-observations 62
    :instruction-set-profile *instruction-set-profile*
@@ -158,7 +158,8 @@
    :action-agreement-signature (action-agreement-signature)))
 
 (defun run-user2-specialist-screen
-       (checkpoint discovery-directory output-directory)
+       (checkpoint discovery-directory output-directory
+        &optional (environment-name "Cage2-meander-100-v0"))
   "Construct independent specialists and report their discovery behavior."
   (let* ((*num-observations* 62)
          (*num-actions* 36)
@@ -221,7 +222,8 @@
                      (user2-specialist-save-candidate
                       child path
                       (getf (getf policy :metadata)
-                            :teacher-backend))
+                            :teacher-backend)
+                      environment-name)
                      (push (list :candidate name
                                  :threshold threshold
                                  :screen screen)
@@ -316,7 +318,7 @@
 
 (defun run-user2-specialist-official
        (parent-path candidate-path output-path seeds cohort
-        &optional (horizon 100))
+        &optional (horizon 100) (red-agent-name "meander"))
   "Evaluate complete closed-loop episodes on paired official seeds."
   (let* ((*num-observations* 62)
          (*num-actions* 36)
@@ -333,7 +335,7 @@
            (rare-failure-load-policy :parent parent-path))
          (candidate-policy
            (rare-failure-load-policy :candidate candidate-path))
-         (environment-name (cage2-validation-environment-name "meander" horizon))
+         (environment-name (cage2-validation-environment-name red-agent-name horizon))
          (records nil))
     (unless (= (length seeds)
                (length (remove-duplicates seeds)))

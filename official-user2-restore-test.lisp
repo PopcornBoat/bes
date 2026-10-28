@@ -54,7 +54,8 @@
                   collect (getf item :step)))))
 
 (defun run-user2-first-restore-test
-       (checkpoint output-directory seeds cohort)
+       (checkpoint output-directory seeds cohort
+        &optional (environment-name "Cage2-meander-100-v0"))
   "One teacher-free official User2 Restore intervention per eligible episode."
   (let* ((*num-observations* 62)
          (*num-actions* 36)
@@ -66,7 +67,6 @@
          (*cage2-opening-mode* :fixed)
          (*recurrent-policy-enabled* nil)
          (*hamming-space-enabled* nil)
-         (environment-name "Cage2-meander-100-v0")
          (directory (uiop:ensure-directory-pathname output-directory))
          (policy (rare-failure-load-policy :user2-test checkpoint))
          (metadata (getf policy :metadata))

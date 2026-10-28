@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ $# -lt 6 || $# -gt 7 ]]; then
-  echo "Usage: $0 PARENT CANDIDATE OUTPUT SEED_ROOT COUNT COHORT [HORIZON]" >&2
+if [[ $# -lt 6 || $# -gt 8 ]]; then
+  echo "Usage: $0 PARENT CANDIDATE OUTPUT SEED_ROOT COUNT COHORT [HORIZON] [RED_AGENT]" >&2
   exit 2
 fi
 repo=/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay
@@ -10,7 +10,8 @@ export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-art
 export SPECIALIST_PARENT=$1 SPECIALIST_CANDIDATE=$2
 export SPECIALIST_OUTPUT=$3 SPECIALIST_SEED_ROOT=$4
 export SPECIALIST_COUNT=$5 SPECIALIST_COHORT=$6
-if [[ $# -eq 7 ]]; then export SPECIALIST_HORIZON=$7; else export SPECIALIST_HORIZON=100; fi
+if [[ $# -ge 7 ]]; then export SPECIALIST_HORIZON=$7; else export SPECIALIST_HORIZON=100; fi
+if [[ $# -eq 8 ]]; then export SPECIALIST_RED_AGENT=$8; else export SPECIALIST_RED_AGENT=meander; fi
 mkdir -p "$(dirname "$SPECIALIST_OUTPUT")"
 cd "$repo"
 sbcl --dynamic-space-size 4096 --non-interactive \
@@ -28,4 +29,5 @@ sbcl --dynamic-space-size 4096 --non-interactive \
                              (* 197 index)))
             (intern (string-upcase (uiop:getenv "SPECIALIST_COHORT"))
                     :keyword)
-            (parse-integer (uiop:getenv "SPECIALIST_HORIZON")))'
+            (parse-integer (uiop:getenv "SPECIALIST_HORIZON"))
+            (uiop:getenv "SPECIALIST_RED_AGENT"))'

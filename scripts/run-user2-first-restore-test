@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ $# -ne 5 ]]; then
-  echo "Usage: $0 CHECKPOINT OUTPUT_DIR SEED_ROOT COUNT COHORT" >&2
+if [[ $# -lt 5 || $# -gt 6 ]]; then
+  echo "Usage: $0 CHECKPOINT OUTPUT_DIR SEED_ROOT COUNT COHORT [ENVIRONMENT]" >&2
   exit 2
 fi
 repo=/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay
@@ -9,6 +9,7 @@ export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:$PATH
 export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay/") :ignore-inherited-configuration)'
 export RESTORE_CHECKPOINT=$1 RESTORE_OUTPUT=$2 RESTORE_SEED_ROOT=$3
 export RESTORE_COUNT=$4 RESTORE_COHORT=$5
+if [[ $# -eq 6 ]]; then export RESTORE_ENVIRONMENT=$6; else export RESTORE_ENVIRONMENT=Cage2-meander-100-v0; fi
 mkdir -p "$RESTORE_OUTPUT"
 cd "$repo"
 sbcl --dynamic-space-size 4096 --non-interactive \
@@ -24,4 +25,5 @@ sbcl --dynamic-space-size 4096 --non-interactive \
                   collect (+ (parse-integer (uiop:getenv "RESTORE_SEED_ROOT"))
                              (* 197 index)))
             (intern (string-upcase (uiop:getenv "RESTORE_COHORT"))
-                    :keyword))'
+                    :keyword)
+            (uiop:getenv "RESTORE_ENVIRONMENT"))'
