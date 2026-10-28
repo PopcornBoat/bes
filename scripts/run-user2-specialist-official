@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -lt 6 || $# -gt 7 ]]; then
+  echo "Usage: $0 PARENT CANDIDATE OUTPUT SEED_ROOT COUNT COHORT [HORIZON]" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:$PATH
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/official-counterfactual-replay/") :ignore-inherited-configuration)'
+export SPECIALIST_PARENT=$1 SPECIALIST_CANDIDATE=$2
+export SPECIALIST_OUTPUT=$3 SPECIALIST_SEED_ROOT=$4
+export SPECIALIST_COUNT=$5 SPECIALIST_COHORT=$6
+if [[ $# -eq 7 ]]; then export SPECIALIST_HORIZON=$7; else export SPECIALIST_HORIZON=100; fi
+mkdir -p "$(dirname "$SPECIALIST_OUTPUT")"
+cd "$repo"
+sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load rare-failure-diagnostics.lisp \
+  --load official-counterfactual-pilot.lisp \
+  --load user2-specialist-candidate.lisp \
+  --eval '(cl-tpg::run-user2-specialist-official
+            (uiop:getenv "SPECIALIST_PARENT")
+            (uiop:getenv "SPECIALIST_CANDIDATE")
+            (uiop:getenv "SPECIALIST_OUTPUT")
+            (loop for index below (parse-integer (uiop:getenv "SPECIALIST_COUNT"))
+                  collect (+ (parse-integer (uiop:getenv "SPECIALIST_SEED_ROOT"))
+                             (* 197 index)))
+            (intern (string-upcase (uiop:getenv "SPECIALIST_COHORT"))
+                    :keyword)
+            (parse-integer (uiop:getenv "SPECIALIST_HORIZON")))'
