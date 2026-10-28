@@ -25,12 +25,24 @@ Every comparison reset the official Python CAGE2 environment to the same initial
 | 50-step confirmation | `9850000 + 197*i` | 200 | -10.222 | -9.111 | +1.111 | 0.126 | 117 / 42 / 41 |
 | 100-step confirmation | `9800000 + 197*i` | 200 | -22.608 | -17.8735 | +4.7345 | 0.2736 | 167 / 18 / 15 |
 
-The 100-step approximate normal 95% interval for paired improvement is [+4.198,+5.271]; the 50-step interval is [+0.863,+1.359]. The 30-step interval is [-0.162,+0.042], so that small measured loss is uncertain. Summing the three confirmation means gives parent -38.385, candidate -32.5995, and a descriptive difference of +5.7855 under this **200-episode-per-horizon** protocol. This is not the standard 1000-episode-per-horizon full validation.
+The 100-step approximate normal 95% interval for paired improvement is [+4.198,+5.271]; the 50-step interval is [+0.863,+1.359]. The 30-step interval is [-0.162,+0.042], so that small measured loss is uncertain. Summing the three confirmation means gives parent -38.385, candidate -32.5995, and a descriptive difference of +5.7855 under this **200-episode-per-horizon** protocol. The 200-episode paired comparison is separate from the standard 1000-episode-per-horizon full validation below.
 
 On the 100-step confirmation block, the candidate executed User2 Restore 3.21 times per episode on average, versus zero for the parent. The visible User2 compromise marker appeared for 4.405 steps on average, versus 63.025 for the parent. Marker duration improved in 185 episodes and was equal in 15; none worsened. The worst episode return change was -3.5. On the 50-step block, candidate Restore count averaged 1.435 and marker duration fell from 19.985 to 2.11 steps. On the 30-step block, Restore count averaged 0.665 and marker duration fell from 5.875 to 1.34 steps.
 
 The independent confirmation seed blocks are disjoint from the prior first-intervention discovery and holdout blocks and from the 30-seed scout. The 30-step and 50-step comparisons intentionally use the same seed block across horizons.
 
+## Standard Meander full validation
+
+The ordinary BES single-red-full path evaluated the saved candidate on the fixed seed-root-153 validation protocol. Each horizon used 1000 official episodes.
+
+| Horizon | Candidate mean | Standard deviation | Episodes |
+|---|---:|---:|---:|
+| 30 steps | -5.5753 | 1.3676 | 1000 |
+| 50 steps | -8.9257 | 2.4112 | 1000 |
+| 100 steps | -17.5879 | 11.9951 | 1000 |
+| Total | **-32.0889** | | |
+
+The full result is stored in /home/hardison/bes-artifacts/validations/meander-user2-specialist-20261028/full-validation-153-results.lisp, with the execution log beside it. This is an absolute candidate score. The parent was not rerun on this 3000-episode validation bank; the separate 200-episode-per-horizon paired comparisons above provide the direct parent-versus-candidate evidence.
 ## Standard rollout and checkpoint safety
 
 The candidate's serialized graph was byte-for-byte identical before and after adding the parent-derived `:TEACHER-BACKEND :HEURISTIC` metadata. A fresh `load-best-team` followed by the ordinary `cl-gym:rollout` exactly reproduced both recorded returns on confirmation seed 9800000: parent -30.2, candidate -23.5. This checks the standard policy execution path and Controller profile against the experiment runner.
