@@ -26,7 +26,7 @@
     (if (eq (getf manifest :protocol) :matched-counterfactual-level2-v1)
         (matched-counterfactual-assert-manifest manifest)
         (unless (and (eq (getf manifest :protocol) :response-sweep-v2)
-                     (<= 1 (length (getf manifest :lanes)) 12)
+                     (<= 1 (length (getf manifest :lanes)) 14)
                      (loop for lane in (getf manifest :lanes)
                            for id from 0
                            always (and (= (getf lane :id) id)

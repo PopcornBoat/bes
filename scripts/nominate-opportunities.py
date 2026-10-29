@@ -13,7 +13,8 @@ from pathlib import Path
 HOST_OFFSETS = {1: 0, 2: 4, 3: 8, 4: 12, 5: 28,
                 7: 36, 8: 40, 9: 44, 10: 48}
 LANES = ("missing-support", "suppressed-action", "winner-domination",
-         "persistent-behavior", "temporal-mismatch", "overactive-winner")
+         "persistent-behavior", "temporal-mismatch", "overactive-winner",
+         "adverse-state-support")
 
 
 def audit_module():
@@ -38,7 +39,8 @@ def longest_action_run(rows):
     return best
 
 
-def group_record(key, episodes, catalogue, winner_counts, total_steps):
+def group_record(key, episodes, catalogue, winner_counts, total_steps,
+                 adverse_scores):
     terminal, path, target, bits = key
     rows = [row for episode in episodes.values() for row in episode]
     action_counts = Counter(row["selected"] for row in rows)
@@ -94,6 +96,10 @@ def group_record(key, episodes, catalogue, winner_counts, total_steps):
                               * exposure * dominant_count / len(rows)),
         "overactive-winner": (exposure * winner_count / len(rows)
                               * mean_margin / (1 + mean_margin)),
+        # Restore the frozen Level-1 signal as its own nomination lane. It
+        # never multiplies or suppresses the other structural signals.
+        "adverse-state-support": adverse_scores.get(
+            (terminal, target, bits), 0.0),
     }
     return {
         "terminal": terminal, "path": path, "target": target,
@@ -133,6 +139,16 @@ def main():
     module.EXPECTED_SEEDS = [args.seed_root + 197*i for i in range(100)]
     catalogue = module.load_catalogue(args.audit_dir / "catalogue.tsv")
     by_seed = module.load_rows(args.audit_dir / "steps.tsv", catalogue)
+    legacy_groups, terminal_targets = module.build_groups(by_seed)
+    legacy_candidates = module.build_candidates(
+        legacy_groups, terminal_targets, catalogue)
+    adverse_scores = {}
+    for row in legacy_candidates:
+        if row["eligible"]:
+            key = (row["terminal"], row["target"],
+                   tuple(row["host_bits"]))
+            adverse_scores[key] = max(adverse_scores.get(key, 0.0),
+                                      row["score"])
     winner_counts = Counter(row["winner_learner"]
                             for rows in by_seed.values() for row in rows)
     groups = defaultdict(lambda: defaultdict(list))
@@ -143,7 +159,7 @@ def main():
                 key = (row["terminal"], row["path"], target, bits)
                 groups[key][seed].append(row)
     records = [group_record(key, episodes, catalogue, winner_counts,
-                            sum(winner_counts.values()))
+                            sum(winner_counts.values()), adverse_scores)
                for key, episodes in groups.items()]
     eligible = [row for row in records if row["eligible"]]
     selected = []
@@ -195,7 +211,7 @@ def main():
     manifest.extend([" ))", ""])
     (args.audit_dir / "opportunities.sexp").write_text("\n".join(manifest))
     report = {
-        "protocol": "multi-signal-opportunity-v1",
+        "protocol": "multi-signal-opportunity-v2",
         "seed_root": args.seed_root, "random_seed": args.random_seed,
         "eligible_groups": len(eligible), "total_groups": len(records),
         "steps_sha256": steps_hash,

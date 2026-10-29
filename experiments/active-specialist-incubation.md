@@ -22,14 +22,21 @@ eligible group; duplicate groups are kept once:
   early and late halves of an episode;
 - overactive winner hypothesis: one learner wins this group repeatedly by
   a wide bid margin;
+- adverse-state support: the frozen Level-1 exposure, persistence, observed
+  loss-lift, support-deficit and feasibility score, used as an independent
+  lane rather than multiplying or suppressing the other signals;
 - a same-target, closest-exposure random control for each nominated group.
 
 These are *hypothesis sources*, not reward estimates. No lane uses the
 immediate-reward loss-lift multiplication from the first audit. Eligibility
 requires 10 independent episode exposures, 20 state rows and at least one
 response Controller-feasible in 25% of rows. Lane scores never share one
-aggregate scalar. Per-lane capacity is one in the first run, producing at
-most twelve groups.
+aggregate scalar. Per-lane capacity is one; the original six-lane pilot
+produced twelve groups. The restored adverse-state lane permits up to
+fourteen groups with matched controls. It was added after the first pilot
+exposed that removing the earlier loss-lift signal excluded the known
+User2 group. Results from the updated rule are therefore an exploratory
+repair, not a blinded reproduction of the positive control.
 
 ## Official response screen
 
