@@ -387,6 +387,10 @@ historical best directly.  The request is consumed at most once per process."
                    (equal (getf request :seeds) (getf result :seeds))
                    (equal (getf request :tournament-seeds)
                           (getf result :tournament-seeds))
+                   (= (length (getf request :candidates))
+                      (length (getf result :candidate-results)))
+                   (= (getf request :incumbent-version)
+                      (getf result :incumbent-version))
                    (= (getf request :num-observations)
                       *num-observations*)
                    (= (getf request :num-actions) *num-actions*)
@@ -394,9 +398,18 @@ historical best directly.  The request is consumed at most once per process."
                           *current-gym-environment-name*)
                    (every
                     (lambda (candidate)
-                      (equal (getf candidate :candidate-sha256)
-                             (incubation-file-sha256
-                              (getf candidate :candidate-path))))
+                      (let ((record
+                              (find (getf candidate :candidate-id)
+                                    (getf result :candidate-results)
+                                    :key (lambda (row)
+                                           (getf row :candidate-id))
+                                    :test #'equal)))
+                        (and record
+                             (equal (getf candidate :candidate-path)
+                                    (getf record :candidate-path))
+                             (equal (getf candidate :candidate-sha256)
+                                    (incubation-file-sha256
+                                     (getf candidate :candidate-path))))))
                     (getf request :candidates)))
         (error "Specialist admission does not match the current warm start or its frozen artifacts."))
       (let ((anchors
