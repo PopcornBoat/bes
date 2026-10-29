@@ -27,9 +27,10 @@ def describe(values):
 
 
 def main():
-    if len(sys.argv) != 2:
-        raise SystemExit("Usage: analyze-response-sweep.py OUTPUT_DIRECTORY")
+    if len(sys.argv) not in (2, 3):
+        raise SystemExit("Usage: analyze-response-sweep.py OUTPUT_DIRECTORY [SEED_ROOT]")
     root = Path(sys.argv[1])
+    seed_root = int(sys.argv[2]) if len(sys.argv) == 3 else 13000000
     with (root / "events.tsv").open(newline="") as stream:
         rows = list(csv.DictReader(stream, delimiter="\t"))
     if not rows:
@@ -42,7 +43,7 @@ def main():
         response = int(row["response"])
         if group not in range(5) or response not in range(4):
             raise ValueError("Unexpected group or response")
-        if seed not in {13000000 + 197 * i for i in range(100)}:
+        if seed not in {seed_root + 197 * i for i in range(100)}:
             raise ValueError("Seed outside frozen block")
         if row["cohort"] not in ("discovery", "confirmation"):
             raise ValueError("Unknown cohort")
@@ -102,7 +103,8 @@ def main():
                            cohorts["confirmation"][str(selected)] if selected is not None
                            else None)})
     report = {
-        "protocol": "response-sweep-v1", "seeds_scanned": 100,
+        "protocol": "response-sweep-v1", "seed_root": seed_root,
+        "seeds_scanned": 100,
         "groups": output,
         "total_official_branch_transitions": sum(int(x["branch_transitions"]) for x in rows),
     }

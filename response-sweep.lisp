@@ -16,8 +16,31 @@
                                    (getf lane :terminal)))
                  (return state)))))
 
+(defun response-sweep-manifest (path)
+  "Accept the original frozen manifest or a fresh target/path-only one."
+  (let ((manifest (rare-failure-read-form path)))
+    (if (eq (getf manifest :protocol) :matched-counterfactual-level2-v1)
+        (matched-counterfactual-assert-manifest manifest)
+        (unless (and (eq (getf manifest :protocol) :response-sweep-v2)
+                     (= (length (getf manifest :lanes)) 5)
+                     (loop for lane in (getf manifest :lanes)
+                           for id from 0
+                           always (and (= (getf lane :id) id)
+                                       (stringp (getf lane :terminal))
+                                       (member (getf lane :target)
+                                               '(1 2 3 4 5 7 8 9 10))
+                                       (= (length (getf lane :bits)) 4)
+                                       (= (getf lane :offset)
+                                          (case (getf lane :target)
+                                            (1 0) (2 4) (3 8) (4 12)
+                                            (5 28) (7 36) (8 40)
+                                            (9 44) (10 48))))))
+          (error "Invalid response-sweep target/path manifest.")))
+    manifest))
+
 (defun run-response-sweep (checkpoint manifest-path output-file
-                           &key (seed-root 13000000) (count 100) (cap 40))
+                           &key (seed-root 13000000) (count 100) (cap 40)
+                                (environment-name "Cage2-meander-100-v0"))
   "Replay all four responses at frozen official state/path opportunities."
   (let* ((*num-observations* 62)
          (*num-actions* 36)
@@ -29,9 +52,7 @@
          (*cage2-opening-mode* :fixed)
          (*recurrent-policy-enabled* nil)
          (*hamming-space-enabled* nil)
-         (environment-name "Cage2-meander-100-v0")
-         (manifest (matched-counterfactual-assert-manifest
-                    (rare-failure-read-form manifest-path)))
+         (manifest (response-sweep-manifest manifest-path))
          (lanes (getf manifest :lanes))
          (counts (make-array (length lanes) :initial-element 0))
          (policy (rare-failure-load-policy :response-sweep checkpoint))

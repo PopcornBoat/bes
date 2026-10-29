@@ -62,7 +62,8 @@
   (format nil "~{~A~^>~}" (mapcar #'team-id path)))
 
 (defun run-structural-opportunity-audit
-       (checkpoint output-file &key (seed-root 11000000) (count 100))
+       (checkpoint output-file &key (seed-root 11000000) (count 100)
+                               (environment-name "Cage2-meander-100-v0"))
   "Collect frozen-incumbent official traces without testing alternative actions."
   (unless (and (integerp seed-root) (<= 0 seed-root)
                (integerp count) (plusp count))
@@ -77,7 +78,6 @@
          (*cage2-opening-mode* :fixed)
          (*recurrent-policy-enabled* nil)
          (*hamming-space-enabled* nil)
-         (environment-name "Cage2-meander-100-v0")
          (policy (rare-failure-load-policy :structural-audit checkpoint))
          (team (getf policy :team))
          (metadata (getf policy :metadata))

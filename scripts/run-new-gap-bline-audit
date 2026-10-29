@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 OUTPUT_DIRECTORY" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+checkpoint=$repo/validated-checkpoints/bline-v14/bline-62-36-v14.lisp
+output=$1
+mkdir -p "$output"
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit/") :ignore-inherited-configuration)'
+export AUDIT_CHECKPOINT="$checkpoint" AUDIT_OUTPUT="$output/steps.tsv"
+export AUDIT_COUNT="${AUDIT_COUNT:-100}"
+sha256sum "$checkpoint" "$repo/structural-opportunity-audit.lisp" \
+  "$repo/scripts/analyze-structural-opportunity.py" \
+  "$repo/scripts/select-response-sweep-groups.py" \
+  "$repo/experiments/new-gap-screen.md" > "$output/input-sha256.txt"
+cd "$repo"
+/usr/bin/sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load official-counterfactual-pilot.lisp \
+  --load structural-opportunity-audit.lisp \
+  --eval '(cl-tpg::run-structural-opportunity-audit
+            (uiop:getenv "AUDIT_CHECKPOINT")
+            (uiop:getenv "AUDIT_OUTPUT")
+            :seed-root 14000000
+            :count (parse-integer (uiop:getenv "AUDIT_COUNT"))
+            :environment-name "Cage2-b_line-100-v0")'
+if [[ "$AUDIT_COUNT" == 100 ]]; then
+  python3 scripts/select-response-sweep-groups.py "$output" \
+    --seed-root 14000000 > "$output/group-selection.stdout.json"
+fi

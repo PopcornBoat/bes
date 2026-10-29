@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 3 ]]; then
+  echo "Usage: $0 MANIFEST OUTPUT_DIRECTORY SEED_ROOT" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+checkpoint=$repo/validated-checkpoints/bline-v14/bline-62-36-v14.lisp
+manifest=$1
+output=$2
+seed_root=$3
+mkdir -p "$output"
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit/") :ignore-inherited-configuration)'
+export SWEEP_CHECKPOINT="$checkpoint" SWEEP_MANIFEST="$manifest"
+export SWEEP_OUTPUT="$output/events.tsv" SWEEP_SEED_ROOT="$seed_root"
+sha256sum "$checkpoint" "$manifest" "$repo/response-sweep.lisp" \
+  "$repo/scripts/analyze-response-sweep.py" \
+  "$repo/experiments/new-gap-screen.md" > "$output/input-sha256.txt"
+cd "$repo"
+/usr/bin/sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load official-counterfactual-pilot.lisp \
+  --load matched-counterfactual-screen.lisp \
+  --load response-sweep.lisp \
+  --eval '(cl-tpg::run-response-sweep
+            (uiop:getenv "SWEEP_CHECKPOINT")
+            (uiop:getenv "SWEEP_MANIFEST")
+            (uiop:getenv "SWEEP_OUTPUT")
+            :seed-root (parse-integer (uiop:getenv "SWEEP_SEED_ROOT"))
+            :environment-name "Cage2-b_line-100-v0")'
+python3 scripts/analyze-response-sweep.py "$output" "$seed_root"
