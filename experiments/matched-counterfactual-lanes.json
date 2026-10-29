@@ -1,0 +1,85 @@
+{
+  "level1_lanes_sha256": "9136a6dd6f8f5d35d40d3355805cfda0958fb9d5d7768869b73cf1364cb42bdb",
+  "lanes": [
+    {
+      "id": 0,
+      "terminal": "TEAM-0-33",
+      "target": 8,
+      "offset": 40,
+      "bits": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "structural_index": 13,
+      "random_index": 17,
+      "collision_resampled": false,
+      "level1_shared_episodes": 92
+    },
+    {
+      "id": 1,
+      "terminal": "TEAM-0-7",
+      "target": 9,
+      "offset": 44,
+      "bits": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "structural_index": 25,
+      "random_index": 14,
+      "collision_resampled": false,
+      "level1_shared_episodes": 93
+    },
+    {
+      "id": 2,
+      "terminal": "TEAM-0-7",
+      "target": 2,
+      "offset": 4,
+      "bits": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "structural_index": 8,
+      "random_index": 27,
+      "collision_resampled": false,
+      "level1_shared_episodes": 92
+    },
+    {
+      "id": 3,
+      "terminal": "TEAM-0-156",
+      "target": 8,
+      "offset": 40,
+      "bits": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "structural_index": 13,
+      "random_index": 31,
+      "collision_resampled": true,
+      "level1_shared_episodes": 56
+    },
+    {
+      "id": 4,
+      "terminal": "TEAM-0-7",
+      "target": 10,
+      "offset": 48,
+      "bits": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "structural_index": 19,
+      "random_index": 26,
+      "collision_resampled": false,
+      "level1_shared_episodes": 100
+    }
+  ]
+}
