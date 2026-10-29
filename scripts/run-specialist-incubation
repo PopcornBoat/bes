@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 6 ]]; then
+  echo "Usage: $0 CHECKPOINT ENVIRONMENT SCREEN_DIR AUDIT_DIR SEED_ROOT OUTPUT_DIR" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+checkpoint=$1 environment=$2 screen=$3 audit=$4 seed_root=$5 output=$6
+mkdir -p "$output"
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit/") :ignore-inherited-configuration)'
+export INCUBATION_CHECKPOINT="$checkpoint" INCUBATION_ENVIRONMENT="$environment"
+export INCUBATION_OUTPUT="$output" INCUBATION_SEED_ROOT="$seed_root"
+sha256sum "$checkpoint" "$screen/events.tsv" "$screen/opportunity-analysis.json" \
+  "$audit/steps.tsv" "$repo/scripts/synthesize-opportunity-candidates.py" \
+  "$repo/active-specialist-incubation.lisp" > "$output/input-sha256.txt"
+cd "$repo"
+python3 scripts/synthesize-opportunity-candidates.py "$screen" "$audit" "$output"
+export INCUBATION_MANIFEST="$output/candidate-manifest.sexp"
+/usr/bin/sbcl --dynamic-space-size 4096 --noinform --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load active-specialist-incubation.lisp \
+  --eval '(cl-tpg::build-incubation-candidates
+            (uiop:getenv "INCUBATION_CHECKPOINT")
+            (uiop:getenv "INCUBATION_MANIFEST")
+            (pathname (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/"))
+            (uiop:getenv "INCUBATION_ENVIRONMENT"))' \
+  --eval '(when (plusp (parse-integer (uiop:read-file-string
+                                 (concatenate (quote string)
+                                              (uiop:getenv "INCUBATION_OUTPUT")
+                                              "/accepted-count.txt"))))
+            (cl-tpg::write-incubation-admission-request
+              (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/candidate-summary.sexp")
+              (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/admission-request.lisp")
+              (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/admission-result.lisp")
+              (uiop:getenv "INCUBATION_ENVIRONMENT")
+              (parse-integer (uiop:getenv "INCUBATION_SEED_ROOT"))))'
+if [[ $(cat "$output/accepted-count.txt") == 0 ]]; then
+  echo "No candidate passed the behavioral probe; official admission skipped."
+  exit 0
+fi
+if [[ "${INCUBATION_BUILD_ONLY:-0}" == 1 ]]; then
+  exit 0
+fi
+/usr/bin/sbcl --dynamic-space-size 4096 --noinform --non-interactive \
+  --load scripts/run-official-admission-evaluation.lisp \
+  --end-toplevel-options "$output/admission-request.lisp"
+/usr/bin/sbcl --noinform --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load active-specialist-incubation.lisp \
+  --eval '(cl-tpg::summarize-incubation-admission
+            (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/admission-result.lisp")
+            (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/candidate-summary.sexp")
+            (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/admission-summary.sexp"))' \
+  --eval '(cl-tpg::incubation-write-winner-path
+            (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/admission-result.lisp")
+            (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/winner-path.txt"))'
+if [[ -s "$output/winner-path.txt" ]]; then
+  winner=$(cat "$output/winner-path.txt")
+  OPPORTUNITY_AUDIT_COUNT=20 bash scripts/run-opportunity-discovery \
+    "$checkpoint" "$environment" 22000000 "$output/incumbent-audit"
+  OPPORTUNITY_AUDIT_COUNT=20 bash scripts/run-opportunity-discovery \
+    "$winner" "$environment" 22000000 "$output/winner-audit"
+  python3 scripts/summarize-action-execution.py \
+    "$audit/catalogue.tsv" "$output/incumbent-audit/steps.tsv" \
+    "$output/winner-audit/steps.tsv" "$output/user2-restore-soft-metric.json" \
+    --target 8 --response 2
+fi

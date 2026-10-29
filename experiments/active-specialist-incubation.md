@@ -53,13 +53,46 @@ executes that repair on official trajectories.
 
 ## Candidate incubation and promotion
 
-Screened hypotheses are to produce multiple legal TPG descendants with
-different categorical gates, bid margins and insertion locations. A frozen
-incumbent graph is copied with serialize/deserialize before variation.
-Incubation may use cheap behavioral probes and limited parallel official
-workers. An incubated descendant receives bounded population/lineage
-opportunity only after independent official evidence. Historical best may
-change only through the existing fresh-seed staged promotion and deep-copy
-checkpoint path. Workers own separate environment, Controller and RNG state;
-they write independent result files. Record official transitions per
-confirmed improvement and lane provenance.
+`scripts/synthesize-opportunity-candidates.py` selects at most four response
+hypotheses after the screen. Categorical one- or two-feature gates are fitted
+only on the discovery states, with separate incumbent audit observations used
+for collateral checks. Each hypothesis may create a terminal insertion with
+bid 1000, a root insertion with bid 250, and a two-feature terminal variant.
+The selection code does not read the Meander User2 Restore metric.
+
+`active-specialist-incubation.lisp` copies the entire incumbent graph by the
+existing serialize/deserialize route, inserts one ordinary TPG learner with a
+Semantic-36 terminal, and rejects candidates that do not change the chosen
+probe or change more than half the sampled background decisions. Generated
+graphs remain normal checkpoint files and retain the source execution profile.
+
+`scripts/run-specialist-incubation` builds candidates and submits the accepted
+ones to the existing official admission evaluator. Two fresh paired episodes
+serve as a negative filter, followed by a common-seed tournament at
+5/12/40/100 episodes with up to four independent policy workers. Discovery,
+response-screen, admission and post-selection action-audit seed blocks are
+disjoint. The request and each result are immutable files under the run
+directory. The standalone admission winner is **not** a promoted historical
+best; fresh staged promotion remains necessary before replacing an incumbent.
+
+If a tournament winner exists, the runner compares it with the incumbent on
+the same 20 fresh official seeds and writes `user2-restore-soft-metric.json`.
+This is analysis only: it reports actual selected User2 Restore actions and
+episode returns, not a training gate. A result of zero means this run has not
+shown that the behavior was learned.
+
+Example command after the response screen has finished:
+
+```bash
+bash scripts/run-specialist-incubation \
+  validated-checkpoints/meander-v8/meander-62-36-v8.lisp \
+  Cage2-meander-100-v0 \
+  /home/hardison/bes-artifacts/validations/meander-opportunity-screen-20261029 \
+  /home/hardison/bes-artifacts/validations/meander-opportunity-discovery-20261029 \
+  20000000 \
+  /home/hardison/bes-artifacts/validations/meander-specialist-incubation-20261029
+```
+
+The `INCUBATION_BUILD_ONLY=1` environment variable stops after candidate
+checkpoints and the admission request are prepared. No generated descendant
+is inserted into a live population solely because it passed a local probe.
