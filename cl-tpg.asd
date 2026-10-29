@@ -45,4 +45,5 @@
 	       (:file "coordinated-repair-bundles")
 	       (:file "compression-reseed")
 	       (:file "population-diversity-pulse")
-	       (:file "main")))
+	       (:file "main")
+	       (:file "active-specialist-incubation")))

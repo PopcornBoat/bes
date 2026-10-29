@@ -71,8 +71,9 @@ ones to the existing official admission evaluator. Two fresh paired episodes
 serve as a negative filter, followed by a common-seed tournament at
 5/12/40/100 episodes with up to four independent policy workers. Discovery,
 response-screen, admission and post-selection action-audit seed blocks are
-disjoint. The request and each result are immutable files under the run
-directory. The standalone admission winner is **not** a promoted historical
+disjoint. The request hashes the incumbent and candidate checkpoints; each
+result is an immutable file under the run directory. The standalone admission
+winner is **not** a promoted historical
 best; fresh staged promotion remains necessary before replacing an incumbent.
 
 If a tournament winner exists, the runner compares it with the incumbent on
@@ -96,3 +97,13 @@ bash scripts/run-specialist-incubation \
 The `INCUBATION_BUILD_ONLY=1` environment variable stops after candidate
 checkpoints and the admission request are prepared. No generated descendant
 is inserted into a live population solely because it passed a local probe.
+
+To import an admission result into a live population, start an official-guided
+warm start from the *exact incumbent checkpoint named in the request* with
+`*official-admission-enabled*` true and set
+`*incubation-admission-import-request*` to the absolute request path before
+calling the warm-start function. Startup checks source and candidate hashes,
+environment, action contract and seed lists. It installs at most the existing
+bounded evidence anchors, then queues the tournament winner for ordinary
+fresh-seed Stage-4 promotion. No historical best file is overwritten on
+import. A different or changed incumbent is rejected.

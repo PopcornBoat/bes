@@ -4362,7 +4362,8 @@ normal evolution."
                checkpoint-metadata)
               (initialize-best-from-current-population
                loaded-best-team
-               comparable-fitness))))
+               comparable-fitness)))
+        (maybe-import-incubation-admission best-team-path))
 
       ;; Warm start intentionally reconstructs a fresh population. Compression
       ;; counters are therefore run-local even though prior event provenance is

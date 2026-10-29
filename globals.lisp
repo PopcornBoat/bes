@@ -1038,6 +1038,10 @@ negative-only cheap admission.  No donor or teacher policy is admitted.")
   "Frozen evolved nominations that passed negative filtering and await the
 ordinary full official-guided racing protocol.")
 
+(defvar *incubation-admission-import-request* nil
+  "Optional frozen specialist admission request to import at warm start.
+The matching incumbent checkpoint is required; import never replaces best.")
+
 (defvar *official-admission-batch-count* 0
   "Number of cheap admission batches launched in the current run lineage.")
 

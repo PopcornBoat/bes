@@ -6,6 +6,10 @@ if [[ $# -ne 6 ]]; then
 fi
 repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
 checkpoint=$1 environment=$2 screen=$3 audit=$4 seed_root=$5 output=$6
+if [[ -e "$output" && -n "$(ls -A "$output")" ]]; then
+  echo "Output directory already contains an incubation run: $output" >&2
+  exit 2
+fi
 mkdir -p "$output"
 export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit/") :ignore-inherited-configuration)'

@@ -1,5 +1,12 @@
 (in-package :cl-tpg)
 
+(defun incubation-file-sha256 (path)
+  "Hash an immutable admission artifact before using it in a live search."
+  (let ((output
+          (uiop:run-program (list "sha256sum" (namestring (pathname path)))
+                            :output :string)))
+    (subseq output 0 64)))
+
 (defun incubation-observation (source)
   "Materialize a policy observation with the program executor's array type."
   (unless (= (length source) *num-observations*)
@@ -204,13 +211,18 @@
 
 (defun write-incubation-admission-request
        (summary-path request-path result-path environment-name seed-root
-        &key candidate-limit (tournament-count 100))
+        &key candidate-limit candidate-ids (tournament-count 100))
   "Prepare a fresh-seed official tournament for the accepted specialists."
   (let* ((summary (rare-failure-read-form summary-path))
          (candidates
            (let ((accepted
-                   (remove-if-not (lambda (row) (getf row :accepted))
-                                  (getf summary :candidates))))
+                   (remove-if-not
+                    (lambda (row)
+                      (and (getf row :accepted)
+                           (or (null candidate-ids)
+                               (member (getf row :id) candidate-ids
+                                       :test #'string=))))
+                    (getf summary :candidates))))
              (if candidate-limit
                  (subseq accepted 0 (min candidate-limit (length accepted)))
                  accepted)))
@@ -226,6 +238,9 @@
      (list :version 2
            :protocol +official-admission-protocol+
            :incumbent-path (getf summary :incumbent-checkpoint)
+           :incumbent-sha256
+             (incubation-file-sha256
+              (getf summary :incumbent-checkpoint))
            :incumbent-version 0
            :result-path result-path
            :gym-environment-name environment-name
@@ -244,6 +259,9 @@
               (lambda (row)
                 (list :candidate-id (getf row :id)
                       :candidate-path (getf row :checkpoint-path)
+                      :candidate-sha256
+                        (incubation-file-sha256
+                         (getf row :checkpoint-path))
                       :candidate-generation 0
                       :candidate-imitation-score 0.0d0
                       :lanes (list :active-specialist-incubation)))
@@ -333,3 +351,72 @@
       (when winner
         (write-line (getf winner :candidate-path) out)))
     (and winner (getf winner :candidate-path))))
+
+(defun maybe-import-incubation-admission (warm-start-path)
+  "Admit verified specialist evidence into a matching official warm start.
+
+This only creates bounded evidence anchors and queues the tournament winner
+for the existing fresh-seed full promotion protocol.  It never changes the
+historical best directly.  The request is consumed at most once per process."
+  (when *incubation-admission-import-request*
+    (unless (and (official-admission-active-p)
+                 (null *official-admission-job*)
+                 (null *online-candidate-job*)
+                 (null *official-admission-full-queue*))
+      (error "Specialist admission import requires an idle official-guided warm start."))
+    (let* ((request
+             (rare-failure-read-form
+              *incubation-admission-import-request*))
+           (result
+             (rare-failure-read-form (getf request :result-path)))
+           (winner
+             (find (getf result :winner-id)
+                   (getf result :candidate-results)
+                   :key (lambda (record)
+                          (getf record :candidate-id))
+                   :test #'equal)))
+      (unless (and (eq (getf request :protocol)
+                       +official-admission-protocol+)
+                   (eq (getf result :status) :complete)
+                   (eq (getf result :protocol)
+                       +official-admission-protocol+)
+                   (equal (truename (getf request :incumbent-path))
+                          (truename warm-start-path))
+                   (equal (getf request :incumbent-sha256)
+                          (incubation-file-sha256 warm-start-path))
+                   (equal (getf request :seeds) (getf result :seeds))
+                   (equal (getf request :tournament-seeds)
+                          (getf result :tournament-seeds))
+                   (= (getf request :num-observations)
+                      *num-observations*)
+                   (= (getf request :num-actions) *num-actions*)
+                   (equal (getf request :gym-environment-name)
+                          *current-gym-environment-name*)
+                   (every
+                    (lambda (candidate)
+                      (equal (getf candidate :candidate-sha256)
+                             (incubation-file-sha256
+                              (getf candidate :candidate-path))))
+                    (getf request :candidates)))
+        (error "Specialist admission does not match the current warm start or its frozen artifacts."))
+      (let ((anchors
+              (official-admission-install-batch-evidence
+               (getf result :candidate-results))))
+        (when winner
+          (setf *official-admission-full-queue*
+                (list
+                 (list :candidate-path
+                         (getf winner :candidate-path)
+                       :candidate-generation *generation*
+                       :candidate-imitation-score
+                         (getf winner :candidate-imitation-score)
+                       :lanes (copy-list (getf winner :lanes))
+                       :admission-evidence (copy-tree winner)))))
+        (setf *incubation-admission-import-request* nil)
+        (persist-official-guided-runtime-state)
+        (emit-message
+         (format nil
+                 "Specialist admission imported: evidence-anchors=~D winner=~A fresh-promotion-queued=~D."
+                 (length anchors)
+                 (or (and winner (getf winner :candidate-id)) :none)
+                 (length *official-admission-full-queue*)))))))
