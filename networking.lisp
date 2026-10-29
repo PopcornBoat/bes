@@ -69,6 +69,9 @@ Return :REQUESTED, :ALREADY-REQUESTED, or :NO-SEARCH."
 (defparameter *telemetry-ip* "127.0.0.1"
   "IP address of the Emacs client receiving telemetry.")
 
+(defparameter *server-port* 8080
+  "TCP command and UDP telemetry port for this BES server.")
+
 (defparameter *heartbeat-interval* 100
   "The amount of time to wait between sending heartbeats (in seconds).")
 
@@ -129,7 +132,7 @@ The special key :LOCAL always resolves dynamically to the current machine IP.")
   (handler-case
       (let ((socket
               (usocket:socket-connect
-               *telemetry-ip* 8080 :protocol :datagram)))
+               *telemetry-ip* *server-port* :protocol :datagram)))
         (unwind-protect
              (usocket:socket-send socket msg (length msg))
           (usocket:socket-close socket)))
@@ -340,7 +343,7 @@ return their fixed configured addresses."
      (lambda ()
        (handler-case
 	   (progn
-	     (usocket:with-client-socket (socket stream receiver-ip-address 8080 :timeout 30)
+	     (usocket:with-client-socket (socket stream receiver-ip-address *server-port* :timeout 30)
 	       (prin1 `(:type :migrant
 			:from ,sender-id
 			:ts ,(get-universal-time)
@@ -1312,7 +1315,7 @@ return their fixed configured addresses."
   (let* ((ip-address (get-local-ip))
 	 (island-id (lookup-island-id-by-ip ip-address))
 	 (neighbour-ids (get-neighbour-ids island-id)))
-    (format t "Server started on ~A:8080.~%" ip-address)
+    (format t "Server started on ~A:~D.~%" ip-address *server-port*)
     (format t "This is island ~A.~%" island-id)
     (when neighbour-ids
       (format t "My neighbours are: ~{~A~^, ~}~%" neighbour-ids) 
@@ -1330,7 +1333,7 @@ return their fixed configured addresses."
     ;; Start listening for commands over TCP
     (push (bt:make-thread
 	   (lambda ()
-	     (usocket:with-server-socket (server (usocket:socket-listen "0.0.0.0" 8080))
+	     (usocket:with-server-socket (server (usocket:socket-listen "0.0.0.0" *server-port*))
 	       (loop
 		 (let ((client-socket (usocket:socket-accept server)))
 		   (bt:make-thread

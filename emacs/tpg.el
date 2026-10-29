@@ -21,6 +21,9 @@
     ("10.100.202.59" . 15)) ;; ds-cmlm-19
   "The mapping between IP address and their island ID.")
 
+(defvar tpg-service-port 8080
+  "TCP command and UDP telemetry port of the local BES server.")
+
 (defvar tpg-hamming-space-enabled nil
   "Whether the next CAGE2 operation uses nearest-demonstration projection.")
 
@@ -402,7 +405,7 @@ selected yet."
              (let ((proc (make-network-process
                           :name "start-search-tcp-client"
                           :host ip-address
-                          :service 8080
+                          :service tpg-service-port
                           :family 'ipv4
                           :nowait nil
                           :sentinel (lambda (_proc event)
@@ -426,7 +429,7 @@ selected yet."
                (condition-case nil
                    (let ((proc (make-network-process
                                 :name "stop-search-tcp-client"
-                                :host ip :service 8080 :family 'ipv4
+                                :host ip :service tpg-service-port :family 'ipv4
                                 :nowait t))) ;; t prevents the 'hang' and immediate error
                      (process-send-string proc (format "%S\n" payload))
                      (process-send-eof proc))
@@ -1243,7 +1246,7 @@ selected yet."
   ;; Ensure server is running
   (unless (process-live-p (get-process "tpg"))
     (make-network-process
-     :name "tpg" :family 'ipv4 :service 8080 :type 'datagram
+     :name "tpg" :family 'ipv4 :service tpg-service-port :type 'datagram
      :host "0.0.0.0" :server t :filter #'tpg-telemetry-handler))
   
   ;; Setup Dashboard
@@ -1275,7 +1278,7 @@ selected yet."
     (let ((proc (make-network-process
                  :name process-name
                  :host ip
-                 :service 8080
+                 :service tpg-service-port
                  :family 'ipv4
                  :nowait nil
                  :sentinel (lambda (_proc event)

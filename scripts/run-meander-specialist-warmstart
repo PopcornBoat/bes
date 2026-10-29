@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Reproduce the frozen v8 opportunity nomination, then let ordinary official
+# admission and Stage-4 promotion decide whether an evolved graph replaces v8.
+repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+source_checkpoint=$repo/validated-checkpoints/meander-v8/meander-62-36-v8.lisp
+audit=/home/hardison/bes-artifacts/validations/meander-opportunity-recovered-lane-20261029
+run=${1:?Usage: run-meander-specialist-warmstart EMPTY_RUN_DIRECTORY}
+checkpoint=$run/checkpoints
+screen=$run/response-screen
+incubation=$run/incubation
+port=8081
+environment=Cage2-meander-100-v0
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+expected_v8_sha=52d6598e1cdd3b4839e60465cd67ab79e768125baa31522aec40ef485031afa3
+
+if [[ "$(sha256sum "$source_checkpoint" | cut -d ' ' -f 1)" != "$expected_v8_sha" ]]; then
+  echo "Protected v8 checkpoint hash changed" >&2
+  exit 2
+fi
+
+if [[ -e "$run" && -n "$(ls -A "$run")" ]]; then
+  echo "Refusing to reuse nonempty run directory: $run" >&2
+  exit 2
+fi
+if ss -ltn | grep -qE "LISTEN.+:$port([[:space:]]|$)"; then
+  echo "BES port $port is already in use" >&2
+  exit 2
+fi
+mkdir -p "$run" "$checkpoint"
+export PATH="$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export CL_SOURCE_REGISTRY="(:source-registry (:directory \"$repo/\") :ignore-inherited-configuration)"
+cd "$repo"
+sha256sum "$source_checkpoint" "$audit/steps.tsv" \
+  experiments/meander-opportunities-adverse.json \
+  experiments/meander-opportunities-adverse.sexp \
+  scripts/run-meander-specialist-warmstart > "$run/input-sha256.txt"
+
+echo "[1/4] Screening all nominated response hypotheses against official Meander"
+bash scripts/run-opportunity-screen "$source_checkpoint" "$environment" \
+  "$repo/experiments/meander-opportunities-adverse.sexp" \
+  "$repo/experiments/meander-opportunities-adverse.json" \
+  31000000 "$screen"
+
+echo "[2/4] Synthesizing and independently evaluating specialist candidates"
+bash scripts/run-specialist-incubation "$source_checkpoint" "$environment" \
+  "$screen" "$audit" 32000000 "$incubation"
+
+export BES_SPECIALIST_ADMISSION_REQUEST= BES_SPECIALIST_CONFIRMATION_REQUEST=
+if [[ -f "$incubation/confirmation-summary.sexp" ]] && \
+   grep -q ':ELIGIBLE-FOR-IMPORT T' "$incubation/confirmation-summary.sexp"; then
+  export BES_SPECIALIST_ADMISSION_REQUEST="$incubation/admission-request.lisp"
+  export BES_SPECIALIST_CONFIRMATION_REQUEST="$incubation/confirmation-request.lisp"
+  echo "[3/4] Independent official confirmation passed; candidate enters normal Stage-4 promotion"
+else
+  echo "[3/4] No independently confirmed candidate; training proceeds from protected v8"
+fi
+
+cat > "$run/resume-search.sexp" <<EOF
+(:type :resume-search
+ :mode :official-guided
+ :gym-environment-name "$environment"
+ :dataset-name :none
+ :best-team-path "$source_checkpoint"
+ :checkpoint-directory "$checkpoint/"
+ :num-observations 62 :num-actions 36
+ :instruction-set-profile :reduced-eq
+ :read-only-register-profile :cage2-categorical-v1
+ :instruction-mutation-mode :field-local
+ :effective-aware-mutation-enabled :enabled
+ :decoy-order-mode :fixed :cage2-opening-mode :fixed
+ :teacher-forcing-rollout-mode :dagger :teacher-backend :heuristic
+ :population-size 160 :init-num-learners 3 :max-num-learners 32
+ :p-add 0.2d0 :p-del 0.1d0 :p-mut 0.5d0 :p-act 0.2d0 :p-swap 0.1d0
+ :gap 0.5d0 :init-program-size 100 :max-program-size 256
+ :p-add-instr 0.9d0 :p-del-instr 0.5d0 :p-swap-instrs 1.0d0
+ :p-mut-constant 0.5d0 :p-mut-constant-sign 0.1d0
+ :migration-interval 50 :batch-size 1000 :online-fitness-episodes 5
+ :hamming-space-enabled :disabled :hamming-dataset-name :none
+ :recurrent-policy-enabled :disabled :seed 153)
+EOF
+
+echo "[4/4] Starting v8 official-guided warm start on port $port"
+/usr/bin/sbcl --dynamic-space-size 4096 --noinform \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --eval '(let ((admission (uiop:getenv "BES_SPECIALIST_ADMISSION_REQUEST"))
+                (confirmation (uiop:getenv "BES_SPECIALIST_CONFIRMATION_REQUEST")))
+            (setf cl-tpg::*server-port* 8081
+                  cl-tpg::*incubation-admission-import-request*
+                    (and admission (plusp (length admission)) admission)
+                  cl-tpg::*incubation-confirmation-request*
+                    (and confirmation (plusp (length confirmation)) confirmation)))' \
+  --eval '(cl-tpg:start-server)' \
+  --eval '(loop (sleep 3600))' &
+server_pid=$!
+for _ in {1..60}; do
+  if ss -ltn | grep -qE "LISTEN.+:$port([[:space:]]|$)"; then
+    break
+  fi
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    echo "BES server exited during startup" >&2
+    exit 1
+  fi
+  sleep 1
+done
+if ! ss -ltn | grep -qE "LISTEN.+:$port([[:space:]]|$)"; then
+  echo "BES server failed to bind port $port" >&2
+  exit 1
+fi
+
+DISPLAY=:0 emacs -Q -l "$repo/emacs/tpg.el" \
+  --eval '(setq tpg-service-port 8081 server-name "bes-meander-specialist")' \
+  --eval '(progn (server-start) (tpg) (tpg-start-auto-refresh))' \
+  > "$run/emacs.log" 2>&1 &
+echo $! > "$run/emacs.pid"
+
+"$bridge_bin/python" "$repo/scripts/bes-send-command.py" \
+  --port "$port" --file "$run/resume-search.sexp"
+echo "Warm start request sent; protected source: $source_checkpoint"
+echo "Emacs monitor port: $port; checkpoint directory: $checkpoint"
+wait "$server_pid"
