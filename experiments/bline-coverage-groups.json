@@ -1,0 +1,72 @@
+{
+  "protocol": "bline-coverage-fallback-v1",
+  "reason": "Only five high-exposure eligible groups across four targets; all structural scores zero",
+  "steps_sha256": "a2989601b04da12df4ee8ca240356181d964a6173f7f4dbf9e33b5de5caed26e",
+  "groups": [
+    {
+      "terminal": "TEAM-0-412",
+      "target": 2,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 4,
+      "episode_exposure": 79,
+      "score": 0.0
+    },
+    {
+      "terminal": "TEAM-0-412",
+      "target": 9,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 44,
+      "episode_exposure": 56,
+      "score": 0.0
+    },
+    {
+      "terminal": "TEAM-0-412",
+      "target": 2,
+      "bits": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 4,
+      "episode_exposure": 52,
+      "score": 0.0
+    },
+    {
+      "terminal": "TEAM-0-412",
+      "target": 8,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 40,
+      "episode_exposure": 52,
+      "score": 0.0
+    },
+    {
+      "terminal": "TEAM-0-412",
+      "target": 10,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 48,
+      "episode_exposure": 50,
+      "score": 0.0
+    }
+  ]
+}

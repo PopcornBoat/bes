@@ -32,3 +32,16 @@ will be modified.
 - Do not synthesize a specialist or change training selection based on this
   run. If the automatic group selection or confirmation fails, report that
   outcome without tuning the score on these results.
+
+## Prereward feasibility amendment
+
+The frozen 100-episode B-line audit completed before any substitute-action
+return was measured. It produced only five eligible groups with at least 40
+episode exposures, across four targets. Every structural score was exactly
+zero because the loss-lift factor vanished. Therefore the five-distinct-target
+structural-versus-random comparison above is infeasible; it must **not** be
+reported as a successful structural discovery experiment. Before running a
+response intervention, the exploratory fallback was frozen: test all five
+eligible groups, sorted by episode exposure and then target/bits, and report
+the results as coverage-only hypothesis generation. No random control or
+structural superiority claim applies to this fallback.
