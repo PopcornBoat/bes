@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 OUTPUT_DIRECTORY" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+checkpoint=/home/hardison/bes-artifacts/validations/meander-bid-guidance-gen463-20261026/checkpoints/bid-guidance-gen463.lisp
+output=$1
+mkdir -p "$output"
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit/") :ignore-inherited-configuration)'
+export LEVEL1_CHECKPOINT="$checkpoint" LEVEL1_OUTPUT="$output/steps.tsv"
+sha256sum "$checkpoint" "$repo/structural-opportunity-audit.lisp" \
+  "$repo/scripts/analyze-structural-opportunity.py" \
+  "$repo/experiments/structural-opportunity-audit.md" \
+  > "$output/input-sha256.txt"
+cd "$repo"
+/usr/bin/sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load official-counterfactual-pilot.lisp \
+  --load structural-opportunity-audit.lisp \
+  --eval '(cl-tpg::run-structural-opportunity-audit
+            (uiop:getenv "LEVEL1_CHECKPOINT")
+            (uiop:getenv "LEVEL1_OUTPUT"))'
+python3 scripts/analyze-structural-opportunity.py "$output"
