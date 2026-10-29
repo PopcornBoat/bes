@@ -313,6 +313,9 @@
                                  (= (getf row :response) 2)
                                  (getf row :tournament-selected)))
                           records)))))
+    (unless (eq (getf result :status) :complete)
+      (error "Incubation official admission failed: ~A"
+             (getf result :message)))
     (rare-failure-write-form report output-path)
     report))
 
