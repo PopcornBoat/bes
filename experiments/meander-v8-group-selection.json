@@ -1,0 +1,152 @@
+{
+  "protocol": "response-sweep-group-selection-v1",
+  "seed_root": 16000000,
+  "eligible_action_rows": 228,
+  "eligible_groups_with_40_episodes": 33,
+  "random_seed": 812731,
+  "structural": [
+    {
+      "terminal": "TEAM-0-25",
+      "target": 8,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "offset": 40,
+      "episode_exposure": 95,
+      "score": 0.00986668036535491,
+      "step_exposure": 4532
+    },
+    {
+      "terminal": "TEAM-0-43",
+      "target": 9,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "offset": 44,
+      "episode_exposure": 96,
+      "score": 0.008752061855670101,
+      "step_exposure": 96
+    },
+    {
+      "terminal": "TEAM-0-43",
+      "target": 10,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 48,
+      "episode_exposure": 96,
+      "score": 0.008752061855670101,
+      "step_exposure": 96
+    },
+    {
+      "terminal": "TEAM-0-129",
+      "target": 7,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 36,
+      "episode_exposure": 100,
+      "score": 0.0,
+      "step_exposure": 339
+    },
+    {
+      "terminal": "TEAM-0-25",
+      "target": 1,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 0,
+      "episode_exposure": 100,
+      "score": 0.0,
+      "step_exposure": 5346
+    }
+  ],
+  "random": [
+    {
+      "terminal": "TEAM-0-45",
+      "target": 8,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "offset": 40,
+      "episode_exposure": 92,
+      "score": 0.0008689333333333323,
+      "step_exposure": 484
+    },
+    {
+      "terminal": "TEAM-0-43",
+      "target": 9,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 44,
+      "episode_exposure": 97,
+      "score": 0.0,
+      "step_exposure": 97
+    },
+    {
+      "terminal": "TEAM-0-43",
+      "target": 10,
+      "bits": [
+        1.0,
+        1.0,
+        0.0,
+        1.0
+      ],
+      "offset": 48,
+      "episode_exposure": 97,
+      "score": 0.0,
+      "step_exposure": 97
+    },
+    {
+      "terminal": "TEAM-0-225",
+      "target": 7,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 36,
+      "episode_exposure": 52,
+      "score": 0.0,
+      "step_exposure": 85
+    },
+    {
+      "terminal": "TEAM-0-45",
+      "target": 1,
+      "bits": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "offset": 0,
+      "episode_exposure": 100,
+      "score": 0.0,
+      "step_exposure": 586
+    }
+  ],
+  "steps_sha256": "86555f29dee35c9c61c8c8f09359c89e2eadcaa17f2fa82b2847b10d4691c383"
+}
