@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 6 ]]; then
+  echo "Usage: $0 CHECKPOINT ENVIRONMENT MANIFEST NOMINATIONS_JSON SEED_ROOT OUTPUT_DIRECTORY" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+checkpoint=$1 environment=$2 manifest=$3 nominations=$4 seed_root=$5 output=$6
+mkdir -p "$output"
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit/") :ignore-inherited-configuration)'
+export OPPORTUNITY_CHECKPOINT="$checkpoint" OPPORTUNITY_ENVIRONMENT="$environment"
+export OPPORTUNITY_MANIFEST="$manifest" OPPORTUNITY_SEED_ROOT="$seed_root"
+export OPPORTUNITY_OUTPUT="$output/events.tsv"
+export OPPORTUNITY_SCREEN_COUNT="${OPPORTUNITY_SCREEN_COUNT:-100}"
+sha256sum "$checkpoint" "$manifest" "$nominations" \
+  "$repo/response-sweep.lisp" "$repo/scripts/analyze-opportunity-screen.py" \
+  "$repo/experiments/active-specialist-incubation.md" \
+  > "$output/input-sha256.txt"
+cd "$repo"
+/usr/bin/sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load official-counterfactual-pilot.lisp \
+  --load matched-counterfactual-screen.lisp \
+  --load response-sweep.lisp \
+  --eval '(cl-tpg::run-response-sweep
+            (uiop:getenv "OPPORTUNITY_CHECKPOINT")
+            (uiop:getenv "OPPORTUNITY_MANIFEST")
+            (uiop:getenv "OPPORTUNITY_OUTPUT")
+            :seed-root (parse-integer (uiop:getenv "OPPORTUNITY_SEED_ROOT"))
+            :count (parse-integer (uiop:getenv "OPPORTUNITY_SCREEN_COUNT"))
+            :environment-name (uiop:getenv "OPPORTUNITY_ENVIRONMENT"))'
+if [[ "$OPPORTUNITY_SCREEN_COUNT" == 100 ]]; then
+  python3 scripts/analyze-opportunity-screen.py "$output" "$nominations" \
+    --seed-root "$seed_root"
+fi

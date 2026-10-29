@@ -127,9 +127,9 @@ def _bes_official_state_digest(env):
                               :if-exists :supersede
                               :if-does-not-exist :create)
            (format out
-                   "seed~Cstep~Cepisode_return~Creward~Cterminal~Cpath~Cobservation~Cselected_index~Cdirect_mask~Creachable_mask~Ctop8_mask~Cfeasible_mask~Cbid_margin~Cstate_digest~%"
+                   "seed~Cstep~Cepisode_return~Creward~Cterminal~Cpath~Cobservation~Cselected_index~Cdirect_mask~Creachable_mask~Ctop8_mask~Cfeasible_mask~Cbid_margin~Cstate_digest~Cwinner_learner~%"
                    #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab
-                   #\Tab #\Tab #\Tab #\Tab)
+                   #\Tab #\Tab #\Tab #\Tab #\Tab)
            (loop for index below count
                  for seed = (+ seed-root (* 197 index))
                  for episode =
@@ -173,7 +173,7 @@ def _bes_official_state_digest(env):
                                        ;; Monitor fallback has no Semantic-36 index.
                                        (setf selected-index -1))
                                      (format out
-                                             "~D~C~D~C~A~C~A~C~A~C~A~C~A~C~D~C~D~C~D~C~D~C~D~C~A~C~A~%"
+                                             "~D~C~D~C~A~C~A~C~A~C~A~C~A~C~D~C~D~C~D~C~D~C~D~C~A~C~A~C~A~%"
                                              seed #\Tab step #\Tab
                                              (getf episode :return) #\Tab
                                              (getf state :reward) #\Tab
@@ -192,7 +192,12 @@ def _bes_official_state_digest(env):
                                              #\Tab
                                              (structural-opportunity-local-bid-margin
                                               terminal observation) #\Tab
-                                             (getf state :state-digest))))))
+                                             (getf state :state-digest) #\Tab
+                                             (learner-id
+                                              (nth-value
+                                               0
+                                               (execute-team-to-terminal
+                                                team observation))))))))
                     (finish-output out)
                     (when (zerop (mod (1+ index) 10))
                       (format t "Level-1 official rollouts ~D/~D~%"

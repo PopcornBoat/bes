@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 4 ]]; then
+  echo "Usage: $0 CHECKPOINT ENVIRONMENT SEED_ROOT OUTPUT_DIRECTORY" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+checkpoint=$1 environment=$2 seed_root=$3 output=$4
+mkdir -p "$output"
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit/") :ignore-inherited-configuration)'
+export OPPORTUNITY_CHECKPOINT="$checkpoint" OPPORTUNITY_ENVIRONMENT="$environment"
+export OPPORTUNITY_SEED_ROOT="$seed_root" OPPORTUNITY_OUTPUT="$output/steps.tsv"
+export OPPORTUNITY_AUDIT_COUNT="${OPPORTUNITY_AUDIT_COUNT:-100}"
+sha256sum "$checkpoint" "$repo/structural-opportunity-audit.lisp" \
+  "$repo/scripts/nominate-opportunities.py" \
+  "$repo/experiments/active-specialist-incubation.md" \
+  > "$output/input-sha256.txt"
+cd "$repo"
+/usr/bin/sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load official-counterfactual-pilot.lisp \
+  --load structural-opportunity-audit.lisp \
+  --eval '(cl-tpg::run-structural-opportunity-audit
+            (uiop:getenv "OPPORTUNITY_CHECKPOINT")
+            (uiop:getenv "OPPORTUNITY_OUTPUT")
+            :seed-root (parse-integer (uiop:getenv "OPPORTUNITY_SEED_ROOT"))
+            :count (parse-integer (uiop:getenv "OPPORTUNITY_AUDIT_COUNT"))
+            :environment-name (uiop:getenv "OPPORTUNITY_ENVIRONMENT"))'
+if [[ "$OPPORTUNITY_AUDIT_COUNT" == 100 ]]; then
+  python3 scripts/nominate-opportunities.py "$output" \
+    --seed-root "$seed_root" > "$output/nomination-stdout.json"
+fi

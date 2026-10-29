@@ -53,7 +53,8 @@ def load_rows(path, catalogue):
                     "path", "observation", "selected_index", "direct_mask",
                     "reachable_mask", "top8_mask", "feasible_mask",
                     "bid_margin", "state_digest"}
-        if set(reader.fieldnames or ()) != expected:
+        if set(reader.fieldnames or ()) not in (expected,
+                expected | {"winner_learner"}):
             raise ValueError(f"Unexpected trace columns: {reader.fieldnames}")
         for raw in reader:
             observation = tuple(numeric(value)
@@ -75,6 +76,7 @@ def load_rows(path, catalogue):
                 "feasible": int(raw["feasible_mask"]),
                 "bid_margin": numeric(raw["bid_margin"]),
                 "state_digest": raw["state_digest"],
+                "winner_learner": raw.get("winner_learner"),
             }
             if row["selected"] != -1:
                 if row["selected"] not in catalogue:

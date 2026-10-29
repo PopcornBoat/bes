@@ -10,10 +10,14 @@
           do (multiple-value-bind (ranking path terminal)
                  (execute-team-semantic-ranked
                   team (getf state :policy-observation))
-               (declare (ignore ranking path))
+               (declare (ignore ranking))
                (when (and terminal
                           (string= (team-id terminal)
-                                   (getf lane :terminal)))
+                                   (getf lane :terminal))
+                          (or (null (getf lane :path))
+                              (string= (format nil "~{~A~^>~}"
+                                               (mapcar #'team-id path))
+                                       (getf lane :path))))
                  (return state)))))
 
 (defun response-sweep-manifest (path)
@@ -22,11 +26,13 @@
     (if (eq (getf manifest :protocol) :matched-counterfactual-level2-v1)
         (matched-counterfactual-assert-manifest manifest)
         (unless (and (eq (getf manifest :protocol) :response-sweep-v2)
-                     (= (length (getf manifest :lanes)) 5)
+                     (<= 1 (length (getf manifest :lanes)) 12)
                      (loop for lane in (getf manifest :lanes)
                            for id from 0
                            always (and (= (getf lane :id) id)
                                        (stringp (getf lane :terminal))
+                                       (or (null (getf lane :path))
+                                           (stringp (getf lane :path)))
                                        (member (getf lane :target)
                                                '(1 2 3 4 5 7 8 9 10))
                                        (= (length (getf lane :bits)) 4)
@@ -95,9 +101,9 @@ def _bes_official_state_digest(env):
          (with-open-file (out output-file :direction :output
                               :if-exists :supersede
                               :if-does-not-exist :create)
-           (format out "group~Cseed~Ccohort~Cstep~Cresponse~Cstatus~Cbaseline_return~Cbranch_return~Cdelta~Cbaseline_concrete~Cbranch_concrete~Cbranch_transitions~Cstate_digest~%"
+           (format out "group~Cseed~Ccohort~Cstep~Cresponse~Cstatus~Cbaseline_return~Cbranch_return~Cdelta~Cbaseline_concrete~Cbranch_concrete~Cbranch_transitions~Cstate_digest~Cobservation~%"
                    #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab
-                   #\Tab #\Tab #\Tab #\Tab #\Tab)
+                   #\Tab #\Tab #\Tab #\Tab #\Tab #\Tab)
            (loop for i below count
                  for seed = (+ seed-root (* 197 i))
                  for baseline = (official-pilot-run-episode
@@ -154,7 +160,7 @@ def _bes_official_state_digest(env):
                                          (incf branch-transitions
                                                (length (getf branch :steps))))
                                        (format out
-                                               "~D~C~D~C~A~C~D~C~D~C~A~C~A~C~A~C~A~C~D~C~A~C~D~C~A~%"
+                                               "~D~C~D~C~A~C~D~C~D~C~A~C~A~C~A~C~A~C~D~C~A~C~D~C~A~C~A~%"
                                                id #\Tab seed #\Tab
                                                (if (<= (aref counts id) 20)
                                                    "discovery" "confirmation")
@@ -171,7 +177,13 @@ def _bes_official_state_digest(env):
                                                     (getf branch :steps))
                                                    0)
                                                #\Tab
-                                               (getf state :state-digest)))
+                                               (getf state :state-digest)
+                                               #\Tab
+                                               (format nil "~{~A~^,~}"
+                                                       (coerce
+                                                        (getf state
+                                                              :policy-observation)
+                                                        'list))))
                               (finish-output out))))))
                     (when (zerop (mod (1+ i) 10))
                       (format t "Response sweep ~D/~D seeds, counts=~S~%"
