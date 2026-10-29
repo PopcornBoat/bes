@@ -1042,6 +1042,9 @@ ordinary full official-guided racing protocol.")
   "Optional frozen specialist admission request to import at warm start.
 The matching incumbent checkpoint is required; import never replaces best.")
 
+(defvar *incubation-confirmation-request* nil
+  "Required fresh-seed confirmation request for specialist admission import.")
+
 (defvar *official-admission-batch-count* 0
   "Number of cheap admission batches launched in the current run lineage.")
 

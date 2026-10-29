@@ -352,6 +352,104 @@
         (write-line (getf winner :candidate-path) out)))
     (and winner (getf winner :candidate-path))))
 
+(defun incubation-write-winner-id (result-path output-path)
+  "Write the tournament winner ID for a frozen independent confirmation."
+  (let ((winner-id
+          (getf (rare-failure-read-form result-path) :winner-id)))
+    (with-open-file (out output-path :direction :output
+                        :if-exists :supersede
+                        :if-does-not-exist :create)
+      (when winner-id
+        (write-line winner-id out)))
+    winner-id))
+
+(defun summarize-incubation-confirmation (result-path output-path)
+  "Record the fresh fixed-candidate official comparison before population import."
+  (let* ((result (rare-failure-read-form result-path))
+         (record (first (getf result :candidate-results)))
+         (last-stage
+           (and record
+                (car (last (getf record :tournament-stages)))))
+         (report
+           (list :status (getf result :status)
+                 :candidate-id (getf record :candidate-id)
+                 :winner-id (getf result :winner-id)
+                 :episode-count (getf last-stage :episode-count 0)
+                 :paired-mean (getf last-stage :paired-mean)
+                 :paired-se (getf last-stage :paired-se)
+                 :same-seed-correlation
+                   (getf last-stage :same-seed-correlation)
+                 :eligible-for-import
+                   (and record
+                        (getf record :tournament-selected)
+                        (official-admission-evidence-eligible-p record)
+                        (>= (getf last-stage :episode-count 0) 100)))))
+    (unless (eq (getf result :status) :complete)
+      (error "Specialist confirmation failed: ~A" (getf result :message)))
+    (rare-failure-write-form report output-path)
+    report))
+
+(defun incubation-confirmed-winner
+       (request confirmation-request confirmation-result winner)
+  "Return the separately confirmed record, or NIL when evidence is weak."
+  (let* ((spec
+           (find (getf winner :candidate-id)
+                 (getf confirmation-request :candidates)
+                 :key (lambda (row) (getf row :candidate-id))
+                 :test #'equal))
+         (record
+           (find (getf winner :candidate-id)
+                 (getf confirmation-result :candidate-results)
+                 :key (lambda (row) (getf row :candidate-id))
+                 :test #'equal))
+         (initial-seeds
+           (append (getf request :seeds)
+                   (getf request :tournament-seeds)))
+         (confirmation-seeds
+           (append (getf confirmation-request :seeds)
+                   (getf confirmation-request :tournament-seeds)))
+         (last-stage
+           (and record
+                (car (last (getf record :tournament-stages))))))
+    (when (and spec record
+               (= (length (getf confirmation-request :candidates)) 1)
+               (= (length (getf confirmation-result :candidate-results)) 1)
+               (eq (getf confirmation-result :status) :complete)
+               (eq (getf confirmation-result :protocol)
+                   +official-admission-protocol+)
+               (equal (getf request :incumbent-sha256)
+                      (getf confirmation-request :incumbent-sha256))
+               (equal (getf request :incumbent-path)
+                      (getf confirmation-request :incumbent-path))
+               (equal (getf request :gym-environment-name)
+                      (getf confirmation-request :gym-environment-name))
+               (= (getf request :num-observations)
+                  (getf confirmation-request :num-observations))
+               (= (getf request :num-actions)
+                  (getf confirmation-request :num-actions))
+               (= (getf confirmation-request :incumbent-version)
+                  (getf confirmation-result :incumbent-version))
+               (equal (getf confirmation-result :winner-id)
+                      (getf winner :candidate-id))
+               (equal (getf spec :candidate-path)
+                      (getf winner :candidate-path))
+               (equal (getf spec :candidate-sha256)
+                      (incubation-file-sha256
+                       (getf spec :candidate-path)))
+               (equal (getf record :candidate-path)
+                      (getf spec :candidate-path))
+               (equal (getf confirmation-request :seeds)
+                      (getf confirmation-result :seeds))
+               (equal (getf confirmation-request :tournament-seeds)
+                      (getf confirmation-result :tournament-seeds))
+               (null (intersection initial-seeds confirmation-seeds
+                                   :test #'=))
+               (getf record :tournament-selected)
+               (official-admission-evidence-eligible-p record)
+               last-stage
+               (>= (getf last-stage :episode-count 0) 100))
+      record)))
+
 (defun maybe-import-incubation-admission (warm-start-path)
   "Admit verified specialist evidence into a matching official warm start.
 
@@ -364,17 +462,29 @@ historical best directly.  The request is consumed at most once per process."
                  (null *online-candidate-job*)
                  (null *official-admission-full-queue*))
       (error "Specialist admission import requires an idle official-guided warm start."))
+    (unless *incubation-confirmation-request*
+      (error "Specialist import requires a fresh independent confirmation request."))
     (let* ((request
              (rare-failure-read-form
               *incubation-admission-import-request*))
            (result
              (rare-failure-read-form (getf request :result-path)))
+           (confirmation-request
+             (rare-failure-read-form *incubation-confirmation-request*))
+           (confirmation-result
+             (rare-failure-read-form
+              (getf confirmation-request :result-path)))
            (winner
              (find (getf result :winner-id)
                    (getf result :candidate-results)
                    :key (lambda (record)
                           (getf record :candidate-id))
-                   :test #'equal)))
+                   :test #'equal))
+           (confirmed
+             (and winner
+                  (incubation-confirmed-winner
+                   request confirmation-request
+                   confirmation-result winner))))
       (unless (and (eq (getf request :protocol)
                        +official-admission-protocol+)
                    (eq (getf result :status) :complete)
@@ -412,20 +522,22 @@ historical best directly.  The request is consumed at most once per process."
                                      (getf candidate :candidate-path))))))
                     (getf request :candidates)))
         (error "Specialist admission does not match the current warm start or its frozen artifacts."))
+      (unless confirmed
+        (error "Specialist winner lacks positive independent 100-episode official confirmation."))
       (let ((anchors
               (official-admission-install-batch-evidence
-               (getf result :candidate-results))))
-        (when winner
-          (setf *official-admission-full-queue*
-                (list
-                 (list :candidate-path
-                         (getf winner :candidate-path)
-                       :candidate-generation *generation*
-                       :candidate-imitation-score
-                         (getf winner :candidate-imitation-score)
-                       :lanes (copy-list (getf winner :lanes))
-                       :admission-evidence (copy-tree winner)))))
-        (setf *incubation-admission-import-request* nil)
+               (getf confirmation-result :candidate-results))))
+        (setf *official-admission-full-queue*
+              (list
+               (list :candidate-path
+                       (getf confirmed :candidate-path)
+                     :candidate-generation *generation*
+                     :candidate-imitation-score
+                       (getf confirmed :candidate-imitation-score)
+                     :lanes (copy-list (getf confirmed :lanes))
+                     :admission-evidence (copy-tree confirmed))))
+        (setf *incubation-admission-import-request* nil
+              *incubation-confirmation-request* nil)
         (persist-official-guided-runtime-state)
         (emit-message
          (format nil

@@ -60,15 +60,40 @@ fi
             (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/admission-summary.sexp"))' \
   --eval '(cl-tpg::incubation-write-winner-path
             (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/admission-result.lisp")
-            (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/winner-path.txt"))'
+            (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/winner-path.txt"))' \
+  --eval '(cl-tpg::incubation-write-winner-id
+            (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/admission-result.lisp")
+            (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/winner-id.txt"))'
 if [[ -s "$output/winner-path.txt" ]]; then
   winner=$(cat "$output/winner-path.txt")
+  action_seed_root="$((seed_root + 2000000))"
   OPPORTUNITY_AUDIT_COUNT=20 bash scripts/run-opportunity-discovery \
-    "$checkpoint" "$environment" 22000000 "$output/incumbent-audit"
+    "$checkpoint" "$environment" "$action_seed_root" "$output/incumbent-audit"
   OPPORTUNITY_AUDIT_COUNT=20 bash scripts/run-opportunity-discovery \
-    "$winner" "$environment" 22000000 "$output/winner-audit"
+    "$winner" "$environment" "$action_seed_root" "$output/winner-audit"
   python3 scripts/summarize-action-execution.py \
     "$audit/catalogue.tsv" "$output/incumbent-audit/steps.tsv" \
     "$output/winner-audit/steps.tsv" "$output/user2-restore-soft-metric.json" \
     --target 8 --response 2
+  export INCUBATION_WINNER_ID="$(cat "$output/winner-id.txt")"
+  export INCUBATION_CONFIRMATION_ROOT="$((seed_root + 6000000))"
+  /usr/bin/sbcl --noinform --non-interactive \
+    --eval '(require :asdf)' \
+    --eval '(asdf:load-system :cl-tpg)' \
+    --eval '(cl-tpg::write-incubation-admission-request
+              (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/candidate-summary.sexp")
+              (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/confirmation-request.lisp")
+              (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/confirmation-result.lisp")
+              (uiop:getenv "INCUBATION_ENVIRONMENT")
+              (parse-integer (uiop:getenv "INCUBATION_CONFIRMATION_ROOT"))
+              :candidate-ids (list (uiop:getenv "INCUBATION_WINNER_ID")))'
+  /usr/bin/sbcl --dynamic-space-size 4096 --noinform --non-interactive \
+    --load scripts/run-official-admission-evaluation.lisp \
+    --end-toplevel-options "$output/confirmation-request.lisp"
+  /usr/bin/sbcl --noinform --non-interactive \
+    --eval '(require :asdf)' \
+    --eval '(asdf:load-system :cl-tpg)' \
+    --eval '(cl-tpg::summarize-incubation-confirmation
+              (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/confirmation-result.lisp")
+              (concatenate (quote string) (uiop:getenv "INCUBATION_OUTPUT") "/confirmation-summary.sexp"))'
 fi

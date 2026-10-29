@@ -82,6 +82,11 @@ This is analysis only: it reports actual selected User2 Restore actions and
 episode returns, not a training gate. A result of zero means this run has not
 shown that the behavior was learned.
 
+The winner is then fixed and compared alone against the incumbent on another
+100 fresh paired seeds. A nonpositive result cannot be imported, even if the
+first tournament selected it. This confirmation request and result are kept
+separately from the multi-candidate tournament.
+
 Example command after the response screen has finished:
 
 ```bash
@@ -101,9 +106,11 @@ is inserted into a live population solely because it passed a local probe.
 To import an admission result into a live population, start an official-guided
 warm start from the *exact incumbent checkpoint named in the request* with
 `*official-admission-enabled*` true and set
-`*incubation-admission-import-request*` to the absolute request path before
+`*incubation-admission-import-request*` and
+`*incubation-confirmation-request*` to their absolute request paths before
 calling the warm-start function. Startup checks source and candidate hashes,
-environment, action contract and seed lists. It installs at most the existing
-bounded evidence anchors, then queues the tournament winner for ordinary
-fresh-seed Stage-4 promotion. No historical best file is overwritten on
-import. A different or changed incumbent is rejected.
+environment, action contract and disjoint seed lists. Only a positive
+independent 100-episode confirmation can install bounded evidence anchors and
+queue the fixed winner for ordinary fresh-seed Stage-4 promotion. No
+historical best file is overwritten on import. A different or changed
+incumbent is rejected.
