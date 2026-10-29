@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 OUTPUT_DIRECTORY" >&2
+  exit 2
+fi
+repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+checkpoint=/home/hardison/bes-artifacts/validations/meander-bid-guidance-gen463-20261026/checkpoints/bid-guidance-gen463.lisp
+manifest=$repo/experiments/matched-counterfactual-lanes.sexp
+output=$1
+mkdir -p "$output"
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export CL_SOURCE_REGISTRY='(:source-registry (:directory "/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit/") :ignore-inherited-configuration)'
+export SWEEP_CHECKPOINT="$checkpoint" SWEEP_MANIFEST="$manifest" SWEEP_OUTPUT="$output/events.tsv"
+sha256sum "$checkpoint" "$manifest" "$repo/official-counterfactual-pilot.lisp" \
+  "$repo/matched-counterfactual-screen.lisp" "$repo/response-sweep.lisp" \
+  "$repo/scripts/analyze-response-sweep.py" "$repo/experiments/response-sweep.md" \
+  > "$output/input-sha256.txt"
+cd "$repo"
+/usr/bin/sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --load official-counterfactual-pilot.lisp \
+  --load matched-counterfactual-screen.lisp \
+  --load response-sweep.lisp \
+  --eval '(cl-tpg::run-response-sweep
+            (uiop:getenv "SWEEP_CHECKPOINT")
+            (uiop:getenv "SWEEP_MANIFEST")
+            (uiop:getenv "SWEEP_OUTPUT"))'
+python3 scripts/analyze-response-sweep.py "$output"
