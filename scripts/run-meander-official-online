@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+source_checkpoint=$repo/validated-checkpoints/meander-v8/meander-62-36-v8.lisp
+expected_sha=52d6598e1cdd3b4839e60465cd67ab79e768125baa31522aec40ef485031afa3
+run=${1:?Usage: run-meander-official-online EMPTY_RUN_DIRECTORY}
+checkpoint=$run/checkpoints
+port=8082
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+
+if [[ "$(sha256sum "$source_checkpoint" | cut -d ' ' -f 1)" != "$expected_sha" ]]; then
+  echo "Protected v8 checkpoint hash changed" >&2
+  exit 2
+fi
+if [[ -e "$run" && -n "$(ls -A "$run")" ]]; then
+  echo "Refusing to reuse nonempty run directory: $run" >&2
+  exit 2
+fi
+if ss -ltn | grep -qE "LISTEN.+:$port([[:space:]]|$)"; then
+  echo "BES port $port is already in use" >&2
+  exit 2
+fi
+
+mkdir -p "$checkpoint"
+exec > >(tee -a "$run/server.log") 2>&1
+export PATH="$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export CL_SOURCE_REGISTRY="(:source-registry (:directory \"$repo/\") :ignore-inherited-configuration)"
+cd "$repo"
+sha256sum "$source_checkpoint" scripts/run-meander-official-online \
+  active-specialist-online.lisp > "$run/input-sha256.txt"
+
+cat > "$run/resume-search.sexp" <<EOF
+(:type :resume-search
+ :mode :official-online
+ :gym-environment-name "Cage2-meander-100-v0"
+ :dataset-name :none
+ :best-team-path "$source_checkpoint"
+ :checkpoint-directory "$checkpoint/"
+ :num-observations 62 :num-actions 36
+ :instruction-set-profile :reduced-eq
+ :read-only-register-profile :cage2-categorical-v1
+ :instruction-mutation-mode :field-local
+ :effective-aware-mutation-enabled :enabled
+ :decoy-order-mode :fixed :cage2-opening-mode :fixed
+ :teacher-forcing-rollout-mode :teacher :teacher-backend :heuristic
+ :population-size 160 :init-num-learners 3 :max-num-learners 32
+ :p-add 0.2d0 :p-del 0.1d0 :p-mut 0.5d0 :p-act 0.2d0 :p-swap 0.1d0
+ :gap 0.5d0 :init-program-size 100 :max-program-size 256
+ :p-add-instr 0.9d0 :p-del-instr 0.5d0 :p-swap-instrs 1.0d0
+ :p-mut-constant 0.5d0 :p-mut-constant-sign 0.1d0
+ :migration-interval 50 :batch-size 1000 :online-fitness-episodes 1
+ :hamming-space-enabled :disabled :hamming-dataset-name :none
+ :recurrent-policy-enabled :disabled :seed 153)
+EOF
+
+/usr/bin/sbcl --dynamic-space-size 4096 --noinform \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --eval '(setf cl-tpg::*server-port* 8082)' \
+  --eval '(cl-tpg:start-server)' \
+  --eval '(loop (sleep 3600))' &
+server_pid=$!
+for _ in {1..60}; do
+  if ss -ltn | grep -qE "LISTEN.+:$port([[:space:]]|$)"; then
+    break
+  fi
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    echo "BES server exited during startup" >&2
+    exit 1
+  fi
+  sleep 1
+done
+if ! ss -ltn | grep -qE "LISTEN.+:$port([[:space:]]|$)"; then
+  echo "BES server failed to bind port $port" >&2
+  exit 1
+fi
+
+DISPLAY=:0 emacs -Q -l "$repo/emacs/tpg.el" \
+  --eval '(setq tpg-service-port 8082 server-name "bes-meander-official-online")' \
+  --eval '(progn (server-start) (tpg) (tpg-start-auto-refresh))' \
+  > "$run/emacs.log" 2>&1 &
+echo $! > "$run/emacs.pid"
+
+"$bridge_bin/python" "$repo/scripts/bes-send-command.py" \
+  --port "$port" --file "$run/resume-search.sexp"
+echo "Teacher-free online search requested; protected source: $source_checkpoint"
+echo "Emacs monitor: port $port; artifacts: $run"
+wait "$server_pid"

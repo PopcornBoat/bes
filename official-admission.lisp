@@ -411,7 +411,9 @@
           (decf remaining))))
 
     ;; Farthest-first policies under the exact ranked row behavior already scored.
-    (loop repeat (official-admission-lane-count :behavioral-diversity)
+    (loop repeat (if *grouped-team-row-behaviors*
+                     (official-admission-lane-count :behavioral-diversity)
+                     0)
           do
       (let ((best-entry nil)
             (best-distance -1.0d0))
@@ -436,7 +438,9 @@
                  nominations best-entry :behavioral-diversity)))))
 
     ;; One late-trajectory critical-error candidate.
-    (let ((remaining (official-admission-lane-count :critical-error)))
+    (let ((remaining (if *grouped-case-groups*
+                         (official-admission-lane-count :critical-error)
+                         0)))
       (dolist (entry (official-admission-critical-entries scores))
         (when (and (plusp remaining)
                    (not (official-admission-team-nominated-p

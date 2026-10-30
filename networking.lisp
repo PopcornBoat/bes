@@ -598,7 +598,8 @@ return their fixed configured addresses."
   (and (or (eq mode :online)
 		   (eq mode :offline)
            (eq mode :teacher-forcing)
-           (eq mode :official-guided))
+           (eq mode :official-guided)
+           (eq mode :official-online))
        ;; 2. Online and teacher modes use an environment; offline uses data.
        (case mode
 	 (:online (and gym-environment-name
@@ -628,6 +629,19 @@ return their fixed configured addresses."
                (eq cage2-opening-mode :fixed)
                (eq teacher-forcing-rollout-mode :dagger)
                (valid-teacher-backend-p teacher-backend)
+               (not recurrent-policy-enabled)
+               (not hamming-space-enabled)))
+         (:official-online
+          (and gym-environment-name
+               (eq dataset-name :none)
+               (cl-gym:cage2-environment-p gym-environment-name)
+               (let ((name (string-downcase gym-environment-name)))
+                 (or (search "b_line" name) (search "meander" name)))
+               (eql num-observations +cage2-scan-observation-size+)
+               (eql num-actions +num-semantic-36-actions+)
+               (eq decoy-order-mode :fixed)
+               (eq cage2-opening-mode :fixed)
+               (eq teacher-backend :heuristic)
                (not recurrent-policy-enabled)
                (not hamming-space-enabled)))
 	 (:offline (and dataset-name

@@ -46,4 +46,5 @@
 	       (:file "compression-reseed")
 	       (:file "population-diversity-pulse")
 	       (:file "main")
-	       (:file "active-specialist-incubation")))
+	       (:file "active-specialist-incubation")
+	       (:file "active-specialist-online")))

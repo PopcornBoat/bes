@@ -43,6 +43,8 @@
      (if (eq *teacher-forcing-rollout-mode* :dagger)
          "teacher-forcing-dagger"
          "teacher-forcing"))
+    ((eq *current-search-mode* :official-online)
+     "official-online-specialist")
     ((eq *current-search-mode* :official-guided)
       (cond
         (*population-diversity-pulse-enabled*
@@ -87,7 +89,7 @@ A configuration keeps overwriting its own immediate-best file, while agent,
 observation/action shape, mode, and Hamming variants can coexist in one
 checkpoint directory."
   (format nil
-          "~A-~D-~D-~A-operators-~A~A~A~A-order-~A-teacher-~A-opening-~A-hamming-~A-memory-~A.lisp"
+          "~A-~D-~D-~A-operators-~A~A~A~A-order-~A-~A-~A-opening-~A-hamming-~A-memory-~A.lisp"
           (checkpoint-agent-type)
           *num-observations*
           *num-actions*
@@ -112,7 +114,14 @@ checkpoint directory."
               "-categorical-predicate-on"
               "")
           (string-downcase (symbol-name *decoy-order-mode*))
-          (string-downcase (symbol-name *teacher-backend*))
+          (if (eq *current-search-mode* :official-online)
+              "controller"
+              "teacher")
+          (string-downcase
+           (symbol-name
+            (if (eq *current-search-mode* :official-online)
+                *cage2-controller-decoy-order-profile*
+                *teacher-backend*)))
           (string-downcase (symbol-name *cage2-opening-mode*))
           (if *hamming-space-enabled* "on" "off")
           (if *recurrent-policy-enabled* "recurrent" "stateless")))
@@ -239,14 +248,17 @@ checkpoint directory."
     :recurrent-policy-enabled ,recurrent-policy-enabled
     :teacher-backend ,teacher-backend
     :official-guided-seed-streams
-      ,(and (eq *current-search-mode* :official-guided)
+      ,(and (official-guided-mode-p)
             (copy-tree *official-guided-seed-streams*))
     :official-guided-incumbent-version
-      ,(and (eq *current-search-mode* :official-guided)
+      ,(and (official-guided-mode-p)
             *official-guided-incumbent-version*)
     :official-guided-best-evaluation
-      ,(and (eq *current-search-mode* :official-guided)
+      ,(and (official-guided-mode-p)
             (copy-tree *official-guided-best-evaluation*))
+    :active-specialist-state
+      ,(and (eq *current-search-mode* :official-online)
+            (active-specialist-state-copy))
     :online-feedback-state
       ,(and (fboundp 'online-feedback-active-p)
             (online-feedback-state-copy))
@@ -398,7 +410,7 @@ checkpoint directory."
    :dataset-name *current-dataset-name*
     :dataset-fingerprint *current-dataset-fingerprint*
     :online-reference-episodes
-      (and (member *current-search-mode* '(:online :official-guided)
+      (and (member *current-search-mode* '(:online :official-guided :official-online)
                    :test #'eq)
            +cage2-online-reference-episodes+)
     :mixed-training-lineage *mixed-training-lineage*
@@ -433,8 +445,8 @@ checkpoint directory."
    (cond
      ((eq *current-search-mode* :teacher-forcing)
       (teacher-forcing-fitness-protocol))
-     ((eq *current-search-mode* :official-guided)
-      +official-guided-fitness-protocol+)
+     ((official-guided-mode-p)
+      (current-official-racing-protocol))
      ((cl-gym:cage2-environment-p *current-gym-environment-name*)
       +cage2-online-fitness-protocol+)
      (*offline-reference-dataset*

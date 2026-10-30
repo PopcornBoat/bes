@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 5 ]]; then
+  echo "Usage: $0 CHECKPOINT ENVIRONMENT SEED_ROOT OUTPUT_DIR REPO" >&2
+  exit 2
+fi
+checkpoint=$1 environment=$2 seed_root=$3 output=$4 repo=$5
+mkdir -p "$output"
+cd "$repo"
+
+# Every phase reads the same frozen incumbent. A failed phase leaves no
+# completion marker, so the live search never imports partial evidence.
+bash scripts/run-opportunity-discovery "$checkpoint" "$environment" \
+  "$seed_root" "$output/audit"
+bash scripts/run-opportunity-screen "$checkpoint" "$environment" \
+  "$output/audit/opportunities.sexp" \
+  "$output/audit/opportunities.json" \
+  "$((seed_root + 1000000))" "$output/screen"
+bash scripts/run-specialist-incubation "$checkpoint" "$environment" \
+  "$output/screen" "$output/audit" \
+  "$((seed_root + 2000000))" "$output/incubation"
+printf '%s\n' complete > "$output/cycle-complete"

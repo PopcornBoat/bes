@@ -1,5 +1,8 @@
 # BES Semantic-36 Policy Evolution
 
+The teacher-free online specialist experiment is documented in
+[experiments/teacher-free-online-specialists.md](experiments/teacher-free-online-specialists.md).
+
 This repository extends the Common Lisp BES/TPG implementation for official
 CAGE2 policy learning. The active research line evolves a standalone TPG
 policy while keeping environment state, action availability, and concrete

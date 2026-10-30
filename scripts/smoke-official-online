@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export CL_SOURCE_REGISTRY="(:source-registry (:directory \"$repo/\") :ignore-inherited-configuration)"
+export BES_SMOKE_CHECKPOINT="$repo/validated-checkpoints/meander-v8/meander-62-36-v8.lisp"
+cd "$repo"
+bash -n scripts/run-active-specialist-cycle
+/usr/bin/sbcl --dynamic-space-size 4096 --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-system :cl-tpg)' \
+  --eval '(let ((cl-tpg::*current-search-mode* :official-online)
+                (cl-tpg::*current-gym-environment-name* "Cage2-meander-100-v0")
+                (cl-tpg::*num-observations* 62)
+                (cl-tpg::*num-actions* 36)
+                (cl-tpg::*instruction-set-profile* :reduced-eq)
+                (cl-tpg::*read-only-register-profile* :cage2-categorical-v1)
+                (cl-tpg::*online-fitness-episodes* 1)
+                (cl-tpg::*online-fitness-episode-seeds* (list 153))
+                (cl-tpg::*decoy-order-mode* :fixed)
+                (cl-tpg::*cage2-opening-mode* :fixed)
+                (cl-tpg::*recurrent-policy-enabled* nil)
+                (cl-tpg::*hamming-space-enabled* nil)
+                (cl-tpg::*running* t))
+            (cl-tpg::configure-fitness-function
+             :official-online "Cage2-meander-100-v0" nil)
+            (let ((team (cl-tpg::load-best-team
+                         (uiop:getenv "BES_SMOKE_CHECKPOINT"))))
+              (format t "~%SMOKE-OFFICIAL-RETURN=~A~%"
+                      (funcall cl-tpg::*fitness-fn* team))))'

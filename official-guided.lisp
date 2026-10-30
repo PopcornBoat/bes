@@ -1,8 +1,13 @@
 (in-package :cl-tpg)
 
 (defun official-guided-mode-p ()
-  "Return true when the frozen official-guided official-guided protocol is active."
-  (eq *current-search-mode* :official-guided))
+  "Return true for modes that use independent official racing and seed streams."
+  (member *current-search-mode* '(:official-guided :official-online) :test #'eq))
+
+(defun current-official-racing-protocol ()
+  (if (eq *current-search-mode* :official-online)
+      +official-online-fitness-protocol+
+      +official-guided-fitness-protocol+))
 
 (defun official-guided-u64 (value)
   "Return the low unsigned 64 bits of VALUE."
@@ -213,7 +218,7 @@
 (defun official-guided-runtime-state ()
   "Return the small recoverable state journaled beside the best checkpoint."
   (list :version 12
-        :fitness-protocol +official-guided-fitness-protocol+
+        :fitness-protocol (current-official-racing-protocol)
         :checkpoint-filename (best-team-checkpoint-filename)
         :generation *generation*
         :search-seed *current-search-seed*
@@ -255,6 +260,9 @@
           (and *official-admission-enabled*
                (fboundp 'official-admission-state-copy)
                (official-admission-state-copy))
+        :active-specialist-state
+          (and (eq *current-search-mode* :official-online)
+               (active-specialist-state-copy))
         :incumbent-version *official-guided-incumbent-version*
         :best-evaluation (copy-tree *official-guided-best-evaluation*)
         :teacher-dagger-behavior-state
@@ -320,14 +328,14 @@
            (cond
              ((and output-journal
                    (eq (getf output-journal :fitness-protocol)
-                       +official-guided-fitness-protocol+)
+                       (current-official-racing-protocol))
                    (string=
                     (getf output-journal :checkpoint-filename "")
                     checkpoint-filename))
               output-journal)
              ((and source-journal
                    (eq (getf source-journal :fitness-protocol)
-                       +official-guided-fitness-protocol+)
+                       (current-official-racing-protocol))
                    (string=
                     (getf source-journal :checkpoint-filename "")
                     checkpoint-filename))
@@ -407,8 +415,15 @@
                (getf metadata :official-guided-best-evaluation))))
     (when behavioral-state
       (restore-behavioral-locality-state behavioral-state))
-    (when dagger-behavior-state
+    (when (and (eq *current-search-mode* :official-guided)
+               dagger-behavior-state)
       (restore-teacher-dagger-behavior-state dagger-behavior-state))
+    (when (eq *current-search-mode* :official-online)
+      (restore-active-specialist-state
+       (if (and journal-matches-p
+                (>= journal-version metadata-version))
+           (getf journal :active-specialist-state)
+           (getf metadata :active-specialist-state))))
     (when (and *grouped-selection-enabled* grouped-selection-state)
       (restore-grouped-selection-state grouped-selection-state))
     (when (and *targeted-routing-repair-enabled*
@@ -592,7 +607,7 @@
       (official-guided-comparison-statistics
        candidate-returns incumbent-returns)
     (append
-     (list :protocol +official-guided-fitness-protocol+
+     (list :protocol (current-official-racing-protocol)
           :stage stage
           :accepted (not (null accepted))
           :imitation-score imitation-score

@@ -667,7 +667,8 @@ Any other launch value remains fixed for controlled comparison runs."
 
 (defun update-online-fitness-stage ()
   "Apply and report the episode stage used by this online CAGE2 generation."
-  (when (and (eq *current-search-mode* :online)
+  (when (and (member *current-search-mode* '(:online :official-online)
+                     :test #'eq)
              (cl-gym:cage2-environment-p *current-gym-environment-name*))
     (let ((episodes (online-fitness-episodes-for-generation *generation*)))
       (unless (= episodes *online-fitness-episodes*)
@@ -1220,7 +1221,7 @@ promotion still requires the stricter positive one-standard-error improvement."
    :gym-environment-name *current-gym-environment-name*
    :online-fitness-episodes *online-fitness-episodes*
    :search-seed *current-search-seed*
-   :fitness-evaluation-protocol +official-guided-fitness-protocol+
+   :fitness-evaluation-protocol (current-official-racing-protocol)
    :action-agreement-signature (action-agreement-signature)
    :online-reference-episodes
      (car (last +official-guided-promotion-stages+))
@@ -1533,6 +1534,7 @@ promotion still requires the stricter positive one-standard-error improvement."
            :result-path (namestring result-path)
            :candidate-generation generation
            :candidate-imitation-score imitation-score
+           :search-mode *current-search-mode*
            :incumbent-version *official-guided-incumbent-version*
            :gym-environment-name *current-gym-environment-name*
            :num-observations *num-observations*
@@ -2468,7 +2470,8 @@ promotion still requires the stricter positive one-standard-error improvement."
       (handler-case
           (let* ((*running* t)
                  (*search-active* nil)
-                 (*current-search-mode* :official-guided)
+                 (*current-search-mode*
+                   (getf request :search-mode :official-guided))
                  (*current-gym-environment-name*
                    (getf request :gym-environment-name))
                  (*num-observations* (getf request :num-observations))
@@ -2885,7 +2888,8 @@ checkpoint and branch archaeology."
         *targeted-combined-repair-enabled* nil
         *targeted-routing-repair-enabled* nil
         *targeted-specialist-composition-enabled* nil
-        *official-admission-enabled* (eq mode :official-guided)
+        *official-admission-enabled*
+          (member mode '(:official-guided :official-online) :test #'eq)
         ;; The proportional 400-generation restart showed no useful effect.
         ;; Keep its implementation loadable but inactive in this treatment.
         *population-diversity-pulse-enabled* nil)
@@ -2915,7 +2919,19 @@ checkpoint and branch archaeology."
                   (not *recurrent-policy-enabled*)
                   (not *hamming-space-enabled*))
        (error "Official-guided direct policy requires a supported teacher, stateless DAgger, fixed opening/order, and Hamming disabled."))
-     (configure-teacher-forcing-fitness gym-environment-name))))
+     (configure-teacher-forcing-fitness gym-environment-name))
+    (:official-online
+     (unless (and (= *num-observations* +cage2-scan-observation-size+)
+                  (= *num-actions* +num-semantic-36-actions+)
+                  (eq *decoy-order-mode* :fixed)
+                  (eq *cage2-opening-mode* :fixed)
+                  (not *recurrent-policy-enabled*)
+                  (not *hamming-space-enabled*))
+       (error "Official-online specialist search requires stateless 62/36 with fixed Controller and no Hamming projection."))
+     ;; The backend flag selects the existing fixed Controller profile, but
+     ;; no teacher is queried and every population score is official return.
+     (setf *teacher-backend* :heuristic)
+     (make-fitness-function :gym-environment-name gym-environment-name))))
 
 (defun safe-evaluate-team (team)
   (cons team
@@ -2940,6 +2956,12 @@ checkpoint and branch archaeology."
   (setf *online-fitness-episode-seeds* nil
         *offline-fitness-batch-indices* nil
         *offline-fitness-batch-episode-indices* nil)
+  (when (eq *current-search-mode* :official-online)
+    ;; Every root sees the same official episodes in this generation. The
+    ;; persisted training stream is independent of racing and discovery.
+    (setf *online-fitness-episode-seeds*
+          (official-guided-take-seeds
+           :training *online-fitness-episodes*)))
   (when (member *current-search-mode*
                 '(:teacher-forcing :official-guided)
                 :test #'eq)
@@ -3555,7 +3577,7 @@ through serialization/deserialization and save it to disk."
     ;; DAgger follows the evolving learner distribution, not the protected
     ;; official incumbent.  The independent snapshot is consumed next
     ;; generation and cannot be mutated by selection or reproduction.
-    (when (and (official-guided-mode-p)
+    (when (and (eq *current-search-mode* :official-guided)
                (eq *teacher-forcing-rollout-mode* :dagger))
       (install-teacher-dagger-behavior-team
        generation-best-team generation-best *generation*))
@@ -3566,6 +3588,8 @@ through serialization/deserialization and save it to disk."
        (if (official-admission-active-p)
            (progn
              (poll-official-admission-evaluation)
+             (when (eq *current-search-mode* :official-online)
+               (poll-active-specialist-cycle))
              (maybe-launch-next-admitted-candidate)
              (maybe-launch-official-admission-batch scores sorted))
            (progn
@@ -3635,7 +3659,7 @@ through serialization/deserialization and save it to disk."
             (when (official-guided-mode-p)
               (incf *official-guided-incumbent-version*)
               (setf *official-guided-best-evaluation*
-                    (list :protocol +official-guided-fitness-protocol+
+                    (list :protocol (current-official-racing-protocol)
                           :stage :provisional
                           :accepted t
                           :imitation-score generation-best
@@ -3696,8 +3720,22 @@ through serialization/deserialization and save it to disk."
       (setf worst-entries
             (grouped-selection-delete-entries
              scores sorted generation-best-team n-remove)))
+    (when (and (official-admission-active-p)
+               (not (grouped-selection-active-p)))
+      ;; In teacher-free online search, ordinary scalar selection must also
+      ;; give independently confirmed anchors their bounded inheritance window.
+      (let* ((protected (official-admission-evidence-protected-teams))
+             (eligible
+               (remove-if (lambda (entry)
+                            (member (car entry) protected :test #'eq))
+                          (reverse sorted))))
+        (setf worst-entries
+              (subseq eligible 0 (min n-remove (length eligible))))))
     (dolist (entry worst-entries)
       (delete-team (car entry)))
+    (when (and (official-admission-active-p)
+               (not (grouped-selection-active-p)))
+      (official-admission-evidence-note-selection (root-teams)))
     (teacher-guided-finish-selection)
     (when (near-miss-active-p)
       (near-miss-prune-live-team-map))
@@ -3895,6 +3933,8 @@ through serialization/deserialization and save it to disk."
     (when (near-miss-active-p)
       (near-miss-advance-generation))
     (maybe-run-behavioral-locality-sampling)
+    (when (eq *current-search-mode* :official-online)
+      (maybe-launch-active-specialist-cycle))
     (when (official-guided-mode-p)
       (persist-official-guided-runtime-state))))
 
@@ -3918,6 +3958,7 @@ through serialization/deserialization and save it to disk."
       (setf *teams* nil)
       (setf *generation* 1)
       (reset-online-candidate-evaluation-state)
+      (reset-active-specialist-runtime)
       (reset-behavioral-locality-state)
       (reset-official-return-credit-state)
       (near-miss-reset-state)
@@ -3941,7 +3982,7 @@ through serialization/deserialization and save it to disk."
         (initialize-coordinated-repair-bundle-state seed))
       (make-initial-population)
 
-      (when (and (official-guided-mode-p)
+      (when (and (eq *current-search-mode* :official-guided)
                  (eq *teacher-forcing-rollout-mode* :dagger))
         (install-teacher-dagger-behavior-team
          (first (root-teams)) nil 0))
@@ -4041,9 +4082,9 @@ the same train/reference file fingerprint."
                    (equal saved-hamming-fingerprint
                           *current-hamming-dataset-fingerprint*))
                (cond
-                ((eq *current-search-mode* :official-guided)
+                ((official-guided-mode-p)
                  (and (eq saved-protocol
-                          +official-guided-fitness-protocol+)
+                          (current-official-racing-protocol))
                       (equal saved-agreement-signature
                              (action-agreement-signature))))
                 ((eq *current-search-mode* :teacher-forcing)
@@ -4233,7 +4274,7 @@ racing and all three fresh promotion stages."
                 (copy-tree
                  (getf checkpoint-metadata
                        :official-guided-best-evaluation))
-                (list :protocol +official-guided-fitness-protocol+
+                (list :protocol (current-official-racing-protocol)
                       :stage :imported-incumbent
                       :accepted t
                       :imitation-score (cdr loaded-entry)
@@ -4250,6 +4291,27 @@ racing and all three fresh promotion stages."
       (ensure-official-guided-incumbent-checkpoint)
       (persist-official-guided-runtime-state))
     scores))
+
+(defun initialize-official-online-best (loaded-best-team saved-best-fitness)
+  "Protect a warm-start incumbent without evaluating or querying a teacher."
+  (setf *best-team* (deep-copy-team-via-serialization loaded-best-team)
+        *best-fitness* saved-best-fitness
+        *official-guided-incumbent-version*
+          (max 1 *official-guided-incumbent-version*)
+        *official-guided-best-evaluation*
+          (list :protocol (current-official-racing-protocol)
+                :stage :imported-incumbent
+                :accepted t
+                :official-mean saved-best-fitness
+                :episode-count 0)
+        *teacher-dagger-behavior-team-snapshot* nil)
+  (emit-message
+   (format nil
+           "Teacher-free official warm start retained incumbent: saved-100-step-score=~A version=~D."
+           saved-best-fitness *official-guided-incumbent-version*))
+  (when *checkpoint-directory*
+    (ensure-official-guided-incumbent-checkpoint)
+    (persist-official-guided-runtime-state)))
 
 (defun run-search-from-best-team
        (mode gym-environment-name dataset-name seed best-team-path)
@@ -4278,6 +4340,7 @@ normal evolution."
       (setf *teams* nil)
       (setf *generation* 1)
       (reset-online-candidate-evaluation-state)
+      (reset-active-specialist-runtime)
       (reset-behavioral-locality-state)
       (reset-official-return-credit-state)
       (near-miss-reset-state)
@@ -4355,14 +4418,18 @@ normal evolution."
 
           ;; Official-guided resume must never let imitation alone replace the
           ;; official incumbent. Other modes retain the historical behavior.
-          (if (official-guided-mode-p)
-              (initialize-official-guided-best-from-current-population
-               loaded-best-team
-               (or saved-best-fitness comparable-fitness)
-               checkpoint-metadata)
-              (initialize-best-from-current-population
-               loaded-best-team
-               comparable-fitness)))
+          (cond
+            ((eq mode :official-online)
+             (initialize-official-online-best
+              loaded-best-team saved-best-fitness))
+            ((official-guided-mode-p)
+             (initialize-official-guided-best-from-current-population
+              loaded-best-team
+              (or saved-best-fitness comparable-fitness)
+              checkpoint-metadata))
+            (t
+             (initialize-best-from-current-population
+              loaded-best-team comparable-fitness))))
         (maybe-import-incubation-admission best-team-path))
 
       ;; Warm start intentionally reconstructs a fresh population. Compression

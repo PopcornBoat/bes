@@ -385,6 +385,11 @@ User2 probes to distinct concrete Decoys. TPG begins acting at step 3.")
 donor-free multi-source admission, independent paired racing, and a
 multi-horizon tail-aware final audit.")
 
+(defconstant +official-online-fitness-protocol+
+  :official-online-specialist-v1
+  "Teacher-free official-return population fitness with independent staged
+official racing and active specialist discovery.")
+
 (defconstant +official-guided-racing-episodes+ 5
   "Cheap paired official episodes used to reject a challenger before promotion.")
 
