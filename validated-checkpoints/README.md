@@ -134,6 +134,11 @@ from the official environment, 1,000 episodes at each horizon.
 | --- | ---: | ---: | ---: | ---: |
 | [B-line v14](bline-v14/README.md) | -4.4237 | -7.8812 | -16.1792 | **-28.4841** |
 | [Meander v8](meander-v8/README.md) | -5.5516 | -10.2254 | -23.6118 | **-39.3888** |
+| [Meander v9](meander-v9/README.md) | -5.5782 | -8.9695 | -17.8195 | **-32.3672** |
+
+Meander v9 warm-started from v8 and used teacher-free official online
+specialist discovery. Its gain over v8 is concentrated in longer episodes;
+the v9 checkpoint and independent validation log are preserved together.
 
 B-line v14 was evolved from a protected predecessor, not copied from the
 compiled heuristic. Across eight fresh seed roots (800 B-line-100 episodes),
@@ -150,7 +155,7 @@ That comparison is recorded locally at
 the versioned v8 full-validation output is in
 `meander-v8/full-validation-telemetry.log`.
 
-The checkpoint files and their detailed provenance are in the two linked
+The checkpoint files and their detailed provenance are in the linked
 subdirectories. These are validated starting points for subsequent work, not
 a guarantee that every new stochastic training run will reproduce their
 scores.
