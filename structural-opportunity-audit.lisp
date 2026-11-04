@@ -61,6 +61,33 @@
 (defun structural-opportunity-path-string (path)
   (format nil "~{~A~^>~}" (mapcar #'team-id path)))
 
+(defun structural-opportunity-write-execution (stream seed episode-return state)
+  "Record one executed official action without duplicating the observation."
+  (let* ((pair (getf state :executed-pair))
+         (index (and pair (semantic-36-pair-index
+                           (first pair) (second pair))))
+         (proposal (first (getf state :ranking)))
+         (proposal-index (and proposal
+                              (semantic-36-pair-index
+                               (first proposal) (second proposal))))
+         (before (getf state :controller-before)))
+    (format stream "~{~A~^	~}~%"
+            (list seed (getf state :step) (getf state :reward)
+                  episode-return (or proposal-index -1) (or index -1)
+                  (getf state :incumbent-concrete)
+                  (getf state :actual-concrete)
+                  (getf before :decoy-mask) (getf before :step)
+                  (format nil "~{~A~^,~}" (getf before :scan))
+                  (format nil "~{~A~^,~}"
+                          (remove nil
+                                  (mapcar (lambda (ranked-pair)
+                                            (semantic-36-pair-index
+                                             (first ranked-pair)
+                                             (second ranked-pair)))
+                                          (getf state :ranking))))
+                  (if (getf state :terminated) 1 0)
+                  (if (getf state :truncated) 1 0)))))
+
 (defun run-structural-opportunity-audit
        (checkpoint output-file &key (seed-root 11000000) (count 100)
                                (environment-name "Cage2-meander-100-v0"))
@@ -122,6 +149,27 @@ def _bes_official_state_digest(env):
             for pair = (semantic-36-index-pair index)
             do (format catalogue "~D~C~D~C~D~%"
                        index #\Tab (first pair) #\Tab (second pair))))
+    (with-open-file (executions
+                      (make-pathname :name "executions-v2" :type "tsv"
+                                     :defaults (pathname output-file))
+                      :direction :output :if-exists :supersede
+                      :if-does-not-exist :create)
+      (write-line
+       "seed	step	reward	episode_return	proposed_index	selected_index	incumbent_concrete	actual_concrete	decoy_mask_before	controller_step_before	scan_before	ranked_indices	terminated	truncated"
+       executions))
+    (with-open-file (environment
+                      (make-pathname :name "environment" :type "txt"
+                                     :defaults (pathname output-file))
+                      :direction :output :if-exists :supersede
+                      :if-does-not-exist :create)
+      (write-line environment-name environment))
+    (with-open-file (global-support
+                      (make-pathname :name "global-support" :type "txt"
+                                     :defaults (pathname output-file))
+                      :direction :output :if-exists :supersede
+                      :if-does-not-exist :create)
+      (format global-support "~D~%"
+              (structural-opportunity-mask-for-team team t)))
     (unwind-protect
          (with-open-file (out output-file :direction :output
                               :if-exists :supersede
@@ -198,6 +246,15 @@ def _bes_official_state_digest(env):
                                                0
                                                (execute-team-to-terminal
                                                 team observation))))))))
+                    (with-open-file
+                        (executions
+                          (make-pathname :name "executions-v2" :type "tsv"
+                                         :defaults (pathname output-file))
+                          :direction :output :if-exists :append)
+                      (loop for state across (getf episode :steps)
+                            do (structural-opportunity-write-execution
+                                executions seed (getf episode :return)
+                                state)))
                     (finish-output out)
                     (when (zerop (mod (1+ index) 10))
                       (format t "Level-1 official rollouts ~D/~D~%"

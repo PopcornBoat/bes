@@ -121,6 +121,8 @@
                              (list
                               :actual-concrete actual
                               :reward (coerce reward 'double-float)
+                              :terminated terminated
+                              :truncated truncated
                               :next-observation
                                 (copy-seq next-observation)
                               :controller-after
