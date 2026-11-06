@@ -25,9 +25,8 @@ that each added mechanism improves reward on its own:
 The causal distinction matters: Controller v2 and grouped epsilon-lexicase have
 direct controlled evidence above; the compiled heuristic establishes capacity;
 the remaining retained components either keep the experiment valid or form the
-working search route. Failed or inconclusive treatments are kept out of this
-success-only page and evaluated separately in
-[the patch-evidence ledger](../docs/patch-evidence.md).
+working search route. The historical patch ledger is available at the Git tag
+`archive/experience-guided-analysis` in `docs/patch-evidence.md`.
 
 ## Policy contract
 

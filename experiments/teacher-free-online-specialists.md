@@ -1,8 +1,8 @@
 # Teacher-free online specialist search
 
-This experiment warm-starts from the frozen Meander v8 graph. It does not
-pre-import a repaired graph. The previous one-shot opportunity pipeline is a
-diagnostic baseline and is not the training mode used here.
+The run that produced Meander v9 warm-started from frozen v8 and discovered
+specialists during training. The maintained launcher now warm-starts from
+validated v9 to continue that line.
 
 Run `scripts/run-meander-official-online RUN_DIRECTORY` in a tmux session.
 The launcher uses port 8082, starts an independent Emacs monitor, and sends a

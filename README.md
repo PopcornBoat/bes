@@ -19,7 +19,7 @@ A saved best is an independent serialized graph copy. Warm start intentionally r
 ## Workflow
 
 1. Set up the official CAGE2 Python bridge and confirm the WSL paths with `scripts/bes-doctor`.
-2. For teacher-guided training, use the `offline-dagger` branch and its `experiments/official-guided-semantic36.sexp` configuration.
+2. For teacher-guided training, use the `offline-dagger` worktree and the opponent-specific request in [EXPERIMENTS.md](EXPERIMENTS.md).
 3. For teacher-free online training, use `online-official-specialists` and a protected checkpoint. The B-line and Meander launchers are `scripts/run-bline-official-online` and `scripts/run-meander-official-online`.
 4. Follow the run with Emacs telemetry or the launcher log. Perform independent full validation before calling a checkpoint successful.
 5. Use `scripts/bes-test` for the maintained core suite and `scripts/bes-test --core` for the expanded suite.
