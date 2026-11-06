@@ -46,36 +46,12 @@
     ((eq *current-search-mode* :official-online)
      "official-online-specialist")
     ((eq *current-search-mode* :official-guided)
-      (cond
-        (*population-diversity-pulse-enabled*
-         "official-guided-population-diversity-pulse")
-        (*coordinated-repair-bundles-enabled*
-         "official-guided-coordinated-repair-bundles")
-        (*incumbent-conservative-repair-enabled*
-         "official-guided-incumbent-conservative-repair")
-        (*teacher-guided-predicate-injection-enabled*
-         "official-guided-teacher-guided-predicate")
-        (*near-miss-lineages-enabled*
-         "official-guided-near-miss-lineage")
-        (*teacher-directed-repair-enabled*
-         "official-guided-teacher-directed-repair")
-        (*rare-failure-targeted-return-credit-enabled*
-         "official-guided-targeted-return-credit")
-        (*official-return-credit-enabled*
-         "official-guided-return-credit-lineage")
-        ((and *targeted-combined-repair-enabled*
-              *targeted-routing-repair-enabled*
-              *targeted-specialist-composition-enabled*)
-         "official-guided-combined-repair")
-        (*targeted-specialist-composition-enabled*
-         "official-guided-specialist-composition")
-        (*targeted-routing-repair-enabled*
-         "official-guided-routing-repair")
-        (*grouped-selection-enabled*
-         "official-guided-grouped-lexicase")
-        (*semantic-locality-control-enabled*
-         "official-guided-locality-control")
-        (t "official-guided-dagger")))
+     (cond
+       (*grouped-selection-enabled*
+        "official-guided-grouped-lexicase")
+       (*semantic-locality-control-enabled*
+        "official-guided-locality-control")
+       (t "official-guided-dagger")))
     (*current-dataset-name* "offline")
     ((and *current-gym-environment-name*
           (not (eq *current-gym-environment-name* :none)))
@@ -83,13 +59,9 @@
     (t "unknown")))
 
 (defun best-team-checkpoint-filename ()
-  "Return a stable, configuration-describing best-team filename.
-
-A configuration keeps overwriting its own immediate-best file, while agent,
-observation/action shape, mode, and Hamming variants can coexist in one
-checkpoint directory."
+  "Return the existing stable best-team filename for active configurations."
   (format nil
-          "~A-~D-~D-~A-operators-~A~A~A~A-order-~A-~A-~A-opening-~A-hamming-~A-memory-~A.lisp"
+          "~A-~D-~D-~A-operators-~A~A~A-order-~A-~A-~A-opening-~A-hamming-~A-memory-~A.lisp"
           (checkpoint-agent-type)
           *num-observations*
           *num-actions*
@@ -101,18 +73,12 @@ checkpoint directory."
                       (string-downcase
                        (symbol-name *read-only-register-profile*))))
           (if (and (eq *instruction-mutation-mode* :legacy)
-                   (not *effective-aware-mutation-enabled*)
-                   (not *compression-reseed-enabled*))
+                   (not *effective-aware-mutation-enabled*))
               ""
-              (format nil
-                      "-mutation-~A-effective-~A-compression-~A"
+              (format nil "-mutation-~A-effective-~A-compression-off"
                       (string-downcase
                        (symbol-name *instruction-mutation-mode*))
-                      (if *effective-aware-mutation-enabled* "on" "off")
-                      (if *compression-reseed-enabled* "on" "off")))
-          (if *categorical-predicate-mutation-enabled*
-              "-categorical-predicate-on"
-              "")
+                      (if *effective-aware-mutation-enabled* "on" "off")))
           (string-downcase (symbol-name *decoy-order-mode*))
           (if (eq *current-search-mode* :official-online)
               "controller"
@@ -147,20 +113,6 @@ checkpoint directory."
                              *instruction-mutation-mode*)
                            (effective-aware-mutation-enabled
                              *effective-aware-mutation-enabled*)
-                           (compression-reseed-enabled
-                             *compression-reseed-enabled*)
-                           (categorical-predicate-mutation-enabled
-                             *categorical-predicate-mutation-enabled*)
-                           (teacher-guided-predicate-injection-enabled
-                             *teacher-guided-predicate-injection-enabled*)
-                           (incumbent-conservative-repair-enabled
-                             *incumbent-conservative-repair-enabled*)
-                           (coordinated-repair-bundles-enabled
-                             *coordinated-repair-bundles-enabled*)
-                           (population-diversity-pulse-enabled
-                             *population-diversity-pulse-enabled*)
-                           (population-diversity-pulse-wipe-fraction
-                             *population-diversity-pulse-wipe-fraction*)
                            (terminal-action-format *terminal-action-format*))
   "Serialize TEAM and its historical-fitness context into a checkpoint envelope."
   (unless (valid-instruction-set-profile-p instruction-set-profile)
@@ -199,49 +151,6 @@ checkpoint directory."
     :instruction-mutation-mode ,instruction-mutation-mode
     :effective-aware-mutation-enabled
       ,(not (null effective-aware-mutation-enabled))
-    :compression-reseed-enabled ,(not (null compression-reseed-enabled))
-    :compression-reseed-protocol
-      ,(and compression-reseed-enabled +compression-reseed-protocol+)
-    :compression-reseed-state
-      ,(and compression-reseed-enabled
-            (fboundp 'compression-reseed-state-copy)
-            (compression-reseed-state-copy))
-    :categorical-predicate-mutation-enabled
-      ,(not (null categorical-predicate-mutation-enabled))
-    :categorical-predicate-mutation-probability
-      ,(and categorical-predicate-mutation-enabled
-            *categorical-predicate-mutation-probability*)
-    :teacher-guided-predicate-injection-enabled
-      ,(not (null teacher-guided-predicate-injection-enabled))
-    :teacher-guided-predicate-protocol
-      ,(and teacher-guided-predicate-injection-enabled
-            +teacher-guided-predicate-protocol+)
-    :incumbent-conservative-repair-enabled
-      ,(not (null incumbent-conservative-repair-enabled))
-    :incumbent-conservative-repair-protocol
-      ,(and incumbent-conservative-repair-enabled
-            +incumbent-conservative-repair-protocol+)
-    :coordinated-repair-bundles-enabled
-      ,(not (null coordinated-repair-bundles-enabled))
-    :coordinated-repair-bundle-protocol
-      ,(and coordinated-repair-bundles-enabled
-            +coordinated-repair-bundle-protocol+)
-    :coordinated-repair-bundle-state
-      ,(and coordinated-repair-bundles-enabled
-            (fboundp 'coordinated-repair-bundle-state-copy)
-            (coordinated-repair-bundle-state-copy))
-    :population-diversity-pulse-enabled
-      ,(not (null population-diversity-pulse-enabled))
-    :population-diversity-pulse-protocol
-      ,(and population-diversity-pulse-enabled
-            +population-diversity-pulse-protocol+)
-    :population-diversity-pulse-wipe-fraction
-      ,(and population-diversity-pulse-enabled
-            population-diversity-pulse-wipe-fraction)
-    :population-diversity-pulse-state
-      ,(and population-diversity-pulse-enabled
-            (fboundp 'population-diversity-pulse-state-copy)
-            (population-diversity-pulse-state-copy))
     :terminal-action-format ,terminal-action-format
     :decoy-order-mode ,decoy-order-mode
     :cage2-opening-mode ,cage2-opening-mode
@@ -259,34 +168,10 @@ checkpoint directory."
     :active-specialist-state
       ,(and (eq *current-search-mode* :official-online)
             (active-specialist-state-copy))
-    :online-feedback-state
-      ,(and (fboundp 'online-feedback-active-p)
-            (online-feedback-state-copy))
     :grouped-selection-state
       ,(and *grouped-selection-enabled*
             (fboundp 'grouped-selection-state-copy)
             (grouped-selection-state-copy))
-    :targeted-routing-repair-state
-      ,(and *targeted-routing-repair-enabled*
-            (fboundp 'targeted-routing-repair-state-copy)
-            (targeted-routing-repair-state-copy))
-    :teacher-guided-predicate-state
-      ,(and (or teacher-guided-predicate-injection-enabled
-                incumbent-conservative-repair-enabled)
-            (fboundp 'teacher-guided-predicate-state-copy)
-            (teacher-guided-predicate-state-copy))
-    :targeted-specialist-composition-state
-      ,(and *targeted-specialist-composition-enabled*
-            (fboundp 'targeted-specialist-composition-state-copy)
-            (targeted-specialist-composition-state-copy))
-    :official-return-credit-state
-      ,(and *official-return-credit-enabled*
-            (fboundp 'official-return-credit-state-copy)
-            (official-return-credit-state-copy))
-    :near-miss-lineages-state
-      ,(and *near-miss-lineages-enabled*
-            (fboundp 'near-miss-state-copy)
-            (near-miss-state-copy))
     :behavioral-locality-state
       ,(and *behavioral-locality-enabled*
             (fboundp 'behavioral-locality-state-copy)
@@ -323,20 +208,6 @@ checkpoint directory."
                                   *instruction-mutation-mode*)
                                 (effective-aware-mutation-enabled
                                   *effective-aware-mutation-enabled*)
-                                (compression-reseed-enabled
-                                  *compression-reseed-enabled*)
-                                (categorical-predicate-mutation-enabled
-                                  *categorical-predicate-mutation-enabled*)
-                                (teacher-guided-predicate-injection-enabled
-                                  *teacher-guided-predicate-injection-enabled*)
-                                (incumbent-conservative-repair-enabled
-                                  *incumbent-conservative-repair-enabled*)
-                                (coordinated-repair-bundles-enabled
-                                  *coordinated-repair-bundles-enabled*)
-                                (population-diversity-pulse-enabled
-                                  *population-diversity-pulse-enabled*)
-                                (population-diversity-pulse-wipe-fraction
-                                  *population-diversity-pulse-wipe-fraction*)
                                 (terminal-action-format
                                   *terminal-action-format*))
   "Write TEAM, FITNESS, and provenance metadata to PATH."
@@ -370,19 +241,6 @@ checkpoint directory."
            :instruction-mutation-mode instruction-mutation-mode
            :effective-aware-mutation-enabled
              effective-aware-mutation-enabled
-           :compression-reseed-enabled compression-reseed-enabled
-           :categorical-predicate-mutation-enabled
-             categorical-predicate-mutation-enabled
-           :teacher-guided-predicate-injection-enabled
-             teacher-guided-predicate-injection-enabled
-           :incumbent-conservative-repair-enabled
-             incumbent-conservative-repair-enabled
-           :coordinated-repair-bundles-enabled
-             coordinated-repair-bundles-enabled
-           :population-diversity-pulse-enabled
-             population-diversity-pulse-enabled
-           :population-diversity-pulse-wipe-fraction
-             population-diversity-pulse-wipe-fraction
            :terminal-action-format terminal-action-format
            :decoy-order-mode decoy-order-mode
            :cage2-opening-mode cage2-opening-mode
@@ -419,19 +277,6 @@ checkpoint directory."
     :read-only-register-profile *read-only-register-profile*
     :instruction-mutation-mode *instruction-mutation-mode*
     :effective-aware-mutation-enabled *effective-aware-mutation-enabled*
-    :compression-reseed-enabled *compression-reseed-enabled*
-    :categorical-predicate-mutation-enabled
-      *categorical-predicate-mutation-enabled*
-    :teacher-guided-predicate-injection-enabled
-      *teacher-guided-predicate-injection-enabled*
-    :incumbent-conservative-repair-enabled
-      *incumbent-conservative-repair-enabled*
-    :coordinated-repair-bundles-enabled
-      *coordinated-repair-bundles-enabled*
-    :population-diversity-pulse-enabled
-      *population-diversity-pulse-enabled*
-    :population-diversity-pulse-wipe-fraction
-      *population-diversity-pulse-wipe-fraction*
     :terminal-action-format *terminal-action-format*
     :decoy-order-mode *decoy-order-mode*
     :cage2-opening-mode *cage2-opening-mode*

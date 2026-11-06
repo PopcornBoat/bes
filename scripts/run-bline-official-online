@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source_checkpoint=$repo/validated-checkpoints/bline-v14/bline-62-36-v14.lisp
 expected_sha=0d023ad8ad0f8191751e2a205b09c8bc5d3a15c2f17e1ca604ca0a3830fd0aa4
 run=${1:?Usage: run-meander-official-online EMPTY_RUN_DIRECTORY}

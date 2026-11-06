@@ -19,18 +19,16 @@ if [[ "${1:-}" == --core ]]; then
     tests/effective-code.lisp
     tests/instruction-set.lisp
     tests/read-only-registers.lisp
-    tests/local-mutation-compression.lisp
     tests/official-guided.lisp
     tests/official-admission.lisp
     tests/robustness-validation.lisp
     tests/grouped-selection.lisp
     tests/disagreement-audit.lisp
-    tests/population-diversity-pulse.lisp
   )
 elif [[ $# -gt 0 ]]; then
   tests=("$@")
 else
-  tests=(tests/combined-repair.lisp)
+  tests=(tests/semantic-36-action.lisp tests/controller.lisp tests/official-guided.lisp tests/official-admission.lisp)
 fi
 
 args=(

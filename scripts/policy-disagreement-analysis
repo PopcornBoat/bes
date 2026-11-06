@@ -11,7 +11,7 @@ evolved_checkpoint=$1
 compiled_checkpoint=$2
 output_directory=$3
 seeds=${4:-153,42,2026}
-repo=/home/hardison/bes
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
 
 mkdir -p "$output_directory"

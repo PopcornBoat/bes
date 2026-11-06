@@ -9,51 +9,11 @@
   (unless condition
     (error "ROR check failed: ~A" message)))
 
-(defun ror-read-request ()
-  (with-open-file
-      (stream (asdf:system-relative-pathname
-               "cl-tpg" "experiments/read-only-registers.sexp")
-              :direction :input)
-    (read stream)))
-
-(defun ror-valid-request-p (request)
-  (cl-tpg::valid-search-parameters-p
-   (getf request :mode) (getf request :gym-environment-name)
-   (getf request :dataset-name) (getf request :num-observations)
-   (getf request :num-actions) (getf request :population-size)
-   (getf request :init-num-learners) (getf request :max-num-learners)
-   (getf request :p-add) (getf request :p-del) (getf request :p-mut)
-   (getf request :p-act) (getf request :p-swap) (getf request :gap)
-   (getf request :init-program-size) (getf request :max-program-size)
-   (getf request :p-add-instr) (getf request :p-del-instr)
-   (getf request :p-swap-instrs) (getf request :p-mut-constant)
-   (getf request :p-mut-constant-sign) (getf request :migration-interval)
-   (getf request :batch-size) (getf request :seed)
-   (eq (getf request :hamming-space-enabled) :enabled)
-   (getf request :hamming-dataset-name) (getf request :decoy-order-mode)
-   (getf request :cage2-opening-mode)
-   (eq (getf request :recurrent-policy-enabled) :enabled)
-   (getf request :teacher-forcing-rollout-mode) (getf request :teacher-backend)
-   (getf request :instruction-set-profile) (getf request :instruction-mutation-mode)
-   (eq (getf request :effective-aware-mutation-enabled) :enabled)
-   (eq (getf request :compression-reseed-enabled) :enabled)
-   (eq (getf request :compression-reseed-force-next-event) :enabled)
-   (getf request :read-only-register-profile)
-   (eq (getf request :categorical-predicate-mutation-enabled :disabled)
-       :enabled)))
-
 (check-ror
  (and (cl-tpg::valid-read-only-register-profile-p :disabled)
       (cl-tpg::valid-read-only-register-profile-p :cage2-categorical-v1)
       (not (cl-tpg::valid-read-only-register-profile-p :unknown)))
  "only versioned ROR profiles are accepted")
-
-(let ((request (ror-read-request)))
-  (check-ror (not (ror-valid-request-p request))
-             "the live profile rejects the superseded ROR treatment request")
-  (setf (getf request :read-only-register-profile) :unknown)
-  (check-ror (not (ror-valid-request-p request))
-             "server validation rejects an unknown ROR profile"))
 
 (let ((cl-tpg::*read-only-register-profile* :cage2-categorical-v1))
   (check-ror

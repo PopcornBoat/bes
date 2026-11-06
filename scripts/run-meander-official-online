@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
-source_checkpoint=$repo/validated-checkpoints/meander-v8/meander-62-36-v8.lisp
-expected_sha=52d6598e1cdd3b4839e60465cd67ab79e768125baa31522aec40ef485031afa3
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source_checkpoint=$repo/validated-checkpoints/meander-v9/meander-62-36-v9.lisp
+expected_sha=27904a890c08c131fa8260e7619c7653e52dc9a768a19060b010dbdeb6b978a9
 run=${1:?Usage: run-meander-official-online EMPTY_RUN_DIRECTORY}
 checkpoint=$run/checkpoints
 port=8082
 bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
 
 if [[ "$(sha256sum "$source_checkpoint" | cut -d ' ' -f 1)" != "$expected_sha" ]]; then
-  echo "Protected v8 checkpoint hash changed" >&2
+  echo "Protected v9 checkpoint hash changed" >&2
   exit 2
 fi
 if [[ -e "$run" && -n "$(ls -A "$run")" ]]; then

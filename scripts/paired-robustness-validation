@@ -13,7 +13,7 @@ output_directory=$4
 roots=${5:-314159,271828,161803,577215,141421,173205,223607,244949}
 episodes_per_root=${6:-100}
 horizons=${7:-30,50,100}
-repo=/home/hardison/bes
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
 
 [[ -f "$incumbent_checkpoint" && -f "$challenger_checkpoint" ]] || {

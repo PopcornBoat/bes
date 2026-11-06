@@ -8,13 +8,7 @@
  :instruction-set-profile :reduced-eq
  :read-only-register-profile :cage2-categorical-v1
  :instruction-mutation-mode :field-local
- :categorical-predicate-mutation-enabled :disabled
- :teacher-guided-predicate-injection-enabled :disabled
- :incumbent-conservative-repair-enabled :disabled
- :coordinated-repair-bundles-enabled :disabled
- :population-diversity-pulse-enabled :disabled
  :effective-aware-mutation-enabled :enabled
- :compression-reseed-enabled :disabled
  :decoy-order-mode :fixed
  :cage2-opening-mode :fixed
  :teacher-forcing-rollout-mode :dagger

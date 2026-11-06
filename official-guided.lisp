@@ -227,35 +227,6 @@
           (and *grouped-selection-enabled*
                (fboundp 'grouped-selection-state-copy)
                (grouped-selection-state-copy))
-        :targeted-routing-repair-state
-          (and *targeted-routing-repair-enabled*
-               (fboundp 'targeted-routing-repair-state-copy)
-               (targeted-routing-repair-state-copy))
-        :teacher-guided-predicate-state
-          (and (or *teacher-guided-predicate-injection-enabled*
-                   *incumbent-conservative-repair-enabled*)
-               (fboundp 'teacher-guided-predicate-state-copy)
-               (teacher-guided-predicate-state-copy))
-        :targeted-specialist-composition-state
-          (and *targeted-specialist-composition-enabled*
-               (fboundp 'targeted-specialist-composition-state-copy)
-               (targeted-specialist-composition-state-copy))
-        :coordinated-repair-bundle-state
-          (and *coordinated-repair-bundles-enabled*
-               (fboundp 'coordinated-repair-bundle-state-copy)
-               (coordinated-repair-bundle-state-copy))
-        :official-return-credit-state
-          (and *official-return-credit-enabled*
-               (fboundp 'official-return-credit-state-copy)
-               (official-return-credit-state-copy))
-        :near-miss-lineages-state
-          (and *near-miss-lineages-enabled*
-               (fboundp 'near-miss-state-copy)
-               (near-miss-state-copy))
-        :near-miss-summary
-          (and *near-miss-lineages-enabled*
-               (fboundp 'near-miss-summary)
-               (near-miss-summary))
         :official-admission-state
           (and *official-admission-enabled*
                (fboundp 'official-admission-state-copy)
@@ -365,36 +336,6 @@
                     (>= journal-version metadata-version))
                (getf journal :grouped-selection-state)
                (getf metadata :grouped-selection-state)))
-         (targeted-routing-repair-state
-           (if (and journal-matches-p
-                    (>= journal-version metadata-version))
-               (getf journal :targeted-routing-repair-state)
-               (getf metadata :targeted-routing-repair-state)))
-         (teacher-guided-predicate-state
-           (if (and journal-matches-p
-                    (>= journal-version metadata-version))
-               (getf journal :teacher-guided-predicate-state)
-               (getf metadata :teacher-guided-predicate-state)))
-         (targeted-specialist-composition-state
-           (if (and journal-matches-p
-                    (>= journal-version metadata-version))
-               (getf journal :targeted-specialist-composition-state)
-               (getf metadata :targeted-specialist-composition-state)))
-         (coordinated-repair-bundle-state
-           (if (and journal-matches-p
-                    (>= journal-version metadata-version))
-               (getf journal :coordinated-repair-bundle-state)
-               (getf metadata :coordinated-repair-bundle-state)))
-         (official-return-credit-state
-           (if (and journal-matches-p
-                    (>= journal-version metadata-version))
-               (getf journal :official-return-credit-state)
-               (getf metadata :official-return-credit-state)))
-         (near-miss-state
-           (if (and journal-matches-p
-                    (>= journal-version metadata-version))
-               (getf journal :near-miss-lineages-state)
-               (getf metadata :near-miss-lineages-state)))
          (official-admission-state
            (if (and journal-matches-p
                     (>= journal-version metadata-version))
@@ -426,34 +367,6 @@
            (getf metadata :active-specialist-state))))
     (when (and *grouped-selection-enabled* grouped-selection-state)
       (restore-grouped-selection-state grouped-selection-state))
-    (when (and *targeted-routing-repair-enabled*
-               targeted-routing-repair-state)
-      (restore-targeted-routing-repair-state targeted-routing-repair-state))
-    (when (and (or *teacher-guided-predicate-injection-enabled*
-                   *incumbent-conservative-repair-enabled*)
-               teacher-guided-predicate-state)
-      (restore-teacher-guided-predicate-state
-       teacher-guided-predicate-state))
-    (when (and *targeted-specialist-composition-enabled*
-               targeted-specialist-composition-state)
-      (restore-targeted-specialist-composition-state
-       targeted-specialist-composition-state))
-    (when (and *coordinated-repair-bundles-enabled*
-               coordinated-repair-bundle-state)
-      (restore-coordinated-repair-bundle-state
-       coordinated-repair-bundle-state))
-    (when (and *official-return-credit-enabled*
-               official-return-credit-state)
-      (restore-official-return-credit-state
-       official-return-credit-state))
-    (when *near-miss-lineages-enabled*
-      (let ((incumbent-hash
-              (and *loaded-best-team*
-                   (near-miss-team-graph-hash *loaded-best-team*))))
-        (if near-miss-state
-            (near-miss-restore-state near-miss-state incumbent-hash)
-            (near-miss-initialize-state
-             *current-search-seed* *loaded-best-team*))))
     (when (and *official-admission-enabled* official-admission-state)
       (restore-official-admission-state official-admission-state))
     (values chosen-state journal-matches-p)))

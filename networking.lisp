@@ -403,19 +403,7 @@ return their fixed configured addresses."
                                     (instruction-set-profile :full)
                                     (instruction-mutation-mode :legacy)
                                     (effective-aware-mutation-enabled nil)
-                                    (compression-reseed-enabled nil)
-                                    (compression-reseed-force-next-event nil)
-                                    (read-only-register-profile :disabled)
-                                    (categorical-predicate-mutation-enabled
-                                      nil)
-                                    (teacher-guided-predicate-injection-enabled
-                                      nil)
-                                    (incumbent-conservative-repair-enabled
-                                      nil)
-                                    (coordinated-repair-bundles-enabled nil)
-                                    (population-diversity-pulse-enabled nil)
-                                    (population-diversity-pulse-wipe-fraction
-                                      +population-diversity-pulse-default-wipe-fraction+))
+                                    (read-only-register-profile :disabled))
   "Set the hyperparameters according to the TCP request."
 
   (setf *population-size* population-size)
@@ -496,71 +484,7 @@ return their fixed configured addresses."
            instruction-mutation-mode))
   (setf *instruction-mutation-mode* instruction-mutation-mode
         *effective-aware-mutation-enabled*
-          (not (null effective-aware-mutation-enabled))
-        *compression-reseed-enabled*
-          (not (null compression-reseed-enabled))
-        *compression-reseed-force-next-event*
-          (not (null compression-reseed-force-next-event))
-        *categorical-predicate-mutation-enabled*
-          (not (null categorical-predicate-mutation-enabled))
-        *teacher-guided-predicate-injection-enabled*
-          (not (null teacher-guided-predicate-injection-enabled))
-        *incumbent-conservative-repair-enabled*
-          (not (null incumbent-conservative-repair-enabled))
-        *coordinated-repair-bundles-enabled*
-          (not (null coordinated-repair-bundles-enabled))
-        *population-diversity-pulse-enabled*
-          (not (null population-diversity-pulse-enabled)))
-
-  (unless (and (realp population-diversity-pulse-wipe-fraction)
-               (> population-diversity-pulse-wipe-fraction 0)
-               (<= population-diversity-pulse-wipe-fraction 1))
-    (error "Population diversity wipe fraction must be in (0,1], got ~S."
-           population-diversity-pulse-wipe-fraction))
-  (setf *population-diversity-pulse-wipe-fraction*
-        (coerce population-diversity-pulse-wipe-fraction 'double-float))
-
-  (when (and *teacher-guided-predicate-injection-enabled*
-             *incumbent-conservative-repair-enabled*)
-    (error "Population-parent and incumbent-conservative guided repair are mutually exclusive."))
-
-  (when (and *coordinated-repair-bundles-enabled*
-             (or *teacher-guided-predicate-injection-enabled*
-                 *incumbent-conservative-repair-enabled*))
-    (error "Coordinated repair bundles are isolated from single-issue guided repair."))
-
-  (when (and *compression-reseed-enabled*
-             (or (not (eq *instruction-mutation-mode* :field-local))
-                 (not *effective-aware-mutation-enabled*)))
-    (error "Compression/reseed requires FIELD-LOCAL and effective-aware mutation."))
-
-  (when (and *compression-reseed-force-next-event*
-             (not *compression-reseed-enabled*))
-    (error "A forced compression event requires compression/reseed to be enabled."))
-
-  (when (and *categorical-predicate-mutation-enabled*
-             (or (not (eq *instruction-mutation-mode* :field-local))
-                 (not (member :eq (active-instruction-opcodes) :test #'eq))
-                 (zerop (active-read-only-register-count))))
-    (error "Categorical predicate mutation requires FIELD-LOCAL, EQ, and active RORs."))
-
-  (when (and *teacher-guided-predicate-injection-enabled*
-             (or (not (eq *instruction-mutation-mode* :field-local))
-                 (not (member :eq (active-instruction-opcodes) :test #'eq))
-                 (zerop (active-read-only-register-count))))
-    (error "Teacher-guided predicate injection requires FIELD-LOCAL, EQ, and active RORs."))
-
-  (when (and *incumbent-conservative-repair-enabled*
-             (or (not (eq *instruction-mutation-mode* :field-local))
-                 (not (member :eq (active-instruction-opcodes) :test #'eq))
-                 (zerop (active-read-only-register-count))))
-    (error "Incumbent-conservative repair requires FIELD-LOCAL, EQ, and active RORs."))
-
-  (when (and *coordinated-repair-bundles-enabled*
-             (or (not (eq *instruction-mutation-mode* :field-local))
-                 (not (member :eq (active-instruction-opcodes) :test #'eq))
-                 (zerop (active-read-only-register-count))))
-    (error "Coordinated repair bundles require FIELD-LOCAL, EQ, and active RORs."))
+          (not (null effective-aware-mutation-enabled)))
 
   (setf *checkpoint-directory* checkpoint-directory))
 
@@ -582,17 +506,7 @@ return their fixed configured addresses."
                                   &optional
                                   (instruction-mutation-mode :legacy)
                                   (effective-aware-mutation-enabled nil)
-                                  (compression-reseed-enabled nil)
-                                  (compression-reseed-force-next-event nil)
-                                  (read-only-register-profile :disabled)
-                                  (categorical-predicate-mutation-enabled nil)
-                                  (teacher-guided-predicate-injection-enabled
-                                    nil)
-                                  (incumbent-conservative-repair-enabled nil)
-                                  (coordinated-repair-bundles-enabled nil)
-                                  (population-diversity-pulse-enabled nil)
-                                  (population-diversity-pulse-wipe-fraction
-                                    +population-diversity-pulse-default-wipe-fraction+))
+                                  (read-only-register-profile :disabled))
   "Returns T if the search parameters are valid. NIL otherwise."
        ;; 1. Check the supported search modes.
   (and (or (eq mode :online)
@@ -676,69 +590,6 @@ return their fixed configured addresses."
        (valid-instruction-set-profile-p instruction-set-profile)
        (valid-read-only-register-profile-p read-only-register-profile)
        (valid-instruction-mutation-mode-p instruction-mutation-mode)
-       ;; The live worktree keeps legacy implementations loadable for old
-       ;; checkpoints, but refuses to start superseded experimental treatments.
-       (not (or compression-reseed-enabled
-                compression-reseed-force-next-event
-                categorical-predicate-mutation-enabled
-                teacher-guided-predicate-injection-enabled
-                incumbent-conservative-repair-enabled
-                coordinated-repair-bundles-enabled))
-       (or (not compression-reseed-enabled)
-           (and (eq mode :official-guided)
-                (eq instruction-mutation-mode :field-local)
-                effective-aware-mutation-enabled
-                (not recurrent-policy-enabled)))
-       (or (not compression-reseed-force-next-event)
-           compression-reseed-enabled)
-       (or (not categorical-predicate-mutation-enabled)
-           (and (eq instruction-mutation-mode :field-local)
-                (member :eq
-                        (active-instruction-opcodes instruction-set-profile)
-                        :test #'eq)
-                (plusp
-                 (length
-                 (active-read-only-register-values
-                   read-only-register-profile)))))
-       (or (not teacher-guided-predicate-injection-enabled)
-           (and (eq mode :official-guided)
-                (eq instruction-mutation-mode :field-local)
-                (member :eq
-                        (active-instruction-opcodes instruction-set-profile)
-                        :test #'eq)
-                (plusp
-                 (length
-                  (active-read-only-register-values
-                   read-only-register-profile)))))
-       (or (not incumbent-conservative-repair-enabled)
-           (and (eq mode :official-guided)
-                (not teacher-guided-predicate-injection-enabled)
-                (eq instruction-mutation-mode :field-local)
-                (member :eq
-                        (active-instruction-opcodes instruction-set-profile)
-                        :test #'eq)
-                (plusp
-                 (length
-                  (active-read-only-register-values
-                   read-only-register-profile)))))
-       (or (not coordinated-repair-bundles-enabled)
-           (and (eq mode :official-guided)
-                (not teacher-guided-predicate-injection-enabled)
-                (not incumbent-conservative-repair-enabled)
-                (eq instruction-mutation-mode :field-local)
-                (member :eq
-                        (active-instruction-opcodes instruction-set-profile)
-                        :test #'eq)
-                (plusp
-                 (length
-                 (active-read-only-register-values
-                   read-only-register-profile)))))
-       (or (not population-diversity-pulse-enabled)
-           (and (eq mode :official-guided)
-                (not recurrent-policy-enabled)
-                (realp population-diversity-pulse-wipe-fraction)
-                (> population-diversity-pulse-wipe-fraction 0)
-                (<= population-diversity-pulse-wipe-fraction 1)))
        (or (not (and (member mode '(:teacher-forcing :official-guided)
                                     :test #'eq)
                      (eq teacher-backend :heuristic)))
@@ -824,32 +675,8 @@ return their fixed configured addresses."
         (effective-aware-mutation-enabled
           (eq (getf msg :effective-aware-mutation-enabled :disabled)
               :enabled))
-        (compression-reseed-enabled
-          (eq (getf msg :compression-reseed-enabled :disabled)
-              :enabled))
-        (compression-reseed-force-next-event
-          (eq (getf msg :compression-reseed-force-next-event :disabled)
-              :enabled))
         (read-only-register-profile
           (getf msg :read-only-register-profile :disabled))
-        (categorical-predicate-mutation-enabled
-          (eq (getf msg :categorical-predicate-mutation-enabled :disabled)
-              :enabled))
-        (teacher-guided-predicate-injection-enabled
-          (eq (getf msg :teacher-guided-predicate-injection-enabled :disabled)
-              :enabled))
-        (incumbent-conservative-repair-enabled
-          (eq (getf msg :incumbent-conservative-repair-enabled :disabled)
-              :enabled))
-        (coordinated-repair-bundles-enabled
-          (eq (getf msg :coordinated-repair-bundles-enabled :disabled)
-              :enabled))
-        (population-diversity-pulse-enabled
-          (eq (getf msg :population-diversity-pulse-enabled :disabled)
-              :enabled))
-        (population-diversity-pulse-wipe-fraction
-          (getf msg :population-diversity-pulse-wipe-fraction
-                +population-diversity-pulse-default-wipe-fraction+))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -862,41 +689,17 @@ return their fixed configured addresses."
 
     (emit-message
      (format nil
-             "PARAM DEBUG: mode=~A profile=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A categorical-predicate=~A teacher-guided-predicate=~A incumbent-conservative-repair=~A coordinated-bundles=~A diversity-pulse=~A diversity-wipe=~A effective-aware=~A compression-reseed=~A force-compression=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
-             mode
-             +live-search-profile+
-             gym-environment-name
-             dataset-name
-             num-observations
-             num-actions
-             instruction-set-profile
-             read-only-register-profile
-             instruction-mutation-mode
-             categorical-predicate-mutation-enabled
-             teacher-guided-predicate-injection-enabled
-             incumbent-conservative-repair-enabled
-             coordinated-repair-bundles-enabled
-             population-diversity-pulse-enabled
-             population-diversity-pulse-wipe-fraction
-             effective-aware-mutation-enabled
-             compression-reseed-enabled
-             compression-reseed-force-next-event
-             decoy-order-mode
+             "PARAM DEBUG: mode=~A profile=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A effective-aware=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             mode +live-search-profile+ gym-environment-name dataset-name
+             num-observations num-actions instruction-set-profile
+             read-only-register-profile instruction-mutation-mode
+             effective-aware-mutation-enabled decoy-order-mode
              cage2-opening-mode
              (if recurrent-policy-enabled :recurrent :stateless)
-             teacher-forcing-rollout-mode
-             teacher-backend
-             population-size
-             init-num-learners
-             max-num-learners
-             gap
-             migration-interval
-             batch-size
-             online-fitness-episodes
-             hamming-space-enabled
-             hamming-dataset-name
-             checkpoint-directory
-             seed))
+             teacher-forcing-rollout-mode teacher-backend population-size
+             init-num-learners max-num-learners gap migration-interval
+             batch-size online-fitness-episodes hamming-space-enabled
+             hamming-dataset-name checkpoint-directory seed))
 
     (emit-message
      (format nil
@@ -915,49 +718,20 @@ return their fixed configured addresses."
              p-mut-constant-sign))
 
     (if (valid-search-parameters-p
-         mode
-         gym-environment-name
-         dataset-name
-         num-observations
-         num-actions
-         population-size
-         init-num-learners
-         max-num-learners
-         p-add
-         p-del
-         p-mut
-         p-act
-         p-swap
-         gap
-         init-program-size
-         max-program-size
-         p-add-instr
-         p-del-instr
-         p-swap-instrs
-         p-mut-constant
-         p-mut-constant-sign
-         migration-interval
-         batch-size
-         seed
-         hamming-space-enabled
-         hamming-dataset-name
-         decoy-order-mode
-         cage2-opening-mode
-         recurrent-policy-enabled
-         teacher-forcing-rollout-mode
-         teacher-backend
-         instruction-set-profile
-         instruction-mutation-mode
-         effective-aware-mutation-enabled
-         compression-reseed-enabled
-         compression-reseed-force-next-event
-         read-only-register-profile
-         categorical-predicate-mutation-enabled
-         teacher-guided-predicate-injection-enabled
-         incumbent-conservative-repair-enabled
-         coordinated-repair-bundles-enabled
-         population-diversity-pulse-enabled
-         population-diversity-pulse-wipe-fraction)
+         mode gym-environment-name dataset-name
+         num-observations num-actions population-size
+         init-num-learners max-num-learners
+         p-add p-del p-mut p-act p-swap
+         gap init-program-size max-program-size
+         p-add-instr p-del-instr p-swap-instrs
+         p-mut-constant p-mut-constant-sign
+         migration-interval batch-size seed
+         hamming-space-enabled hamming-dataset-name
+         decoy-order-mode cage2-opening-mode
+         recurrent-policy-enabled teacher-forcing-rollout-mode
+         teacher-backend instruction-set-profile
+         instruction-mutation-mode effective-aware-mutation-enabled
+         read-only-register-profile)
 
         (progn
           (unless (begin-search-operation)
@@ -965,27 +739,13 @@ return their fixed configured addresses."
             (return-from handle-start-search))
 
           (set-global-parameters
-           population-size
-           num-observations
-           num-actions
-           init-num-learners
-           max-num-learners
-           p-add
-           p-del
-           p-mut
-           p-act
-           p-swap
-           gap
-           init-program-size
-           max-program-size
-           p-add-instr
-           p-del-instr
-           p-swap-instrs
-           p-mut-constant
-           p-mut-constant-sign
-           migration-interval
-           batch-size
-           online-fitness-episodes
+           population-size num-observations num-actions
+           init-num-learners max-num-learners
+           p-add p-del p-mut p-act p-swap
+           gap init-program-size max-program-size
+           p-add-instr p-del-instr p-swap-instrs
+           p-mut-constant p-mut-constant-sign
+           migration-interval batch-size online-fitness-episodes
            :checkpoint-directory checkpoint-directory
            :hamming-space-enabled hamming-space-enabled
            :hamming-dataset-name hamming-dataset-name
@@ -998,22 +758,7 @@ return their fixed configured addresses."
            :instruction-mutation-mode instruction-mutation-mode
            :effective-aware-mutation-enabled
              effective-aware-mutation-enabled
-           :compression-reseed-enabled compression-reseed-enabled
-           :compression-reseed-force-next-event
-             compression-reseed-force-next-event
-           :read-only-register-profile read-only-register-profile
-           :categorical-predicate-mutation-enabled
-             categorical-predicate-mutation-enabled
-           :teacher-guided-predicate-injection-enabled
-             teacher-guided-predicate-injection-enabled
-           :incumbent-conservative-repair-enabled
-             incumbent-conservative-repair-enabled
-           :coordinated-repair-bundles-enabled
-             coordinated-repair-bundles-enabled
-           :population-diversity-pulse-enabled
-             population-diversity-pulse-enabled
-           :population-diversity-pulse-wipe-fraction
-             population-diversity-pulse-wipe-fraction)
+           :read-only-register-profile read-only-register-profile)
 
           (push
            (bt:make-thread
@@ -1113,32 +858,8 @@ return their fixed configured addresses."
         (effective-aware-mutation-enabled
           (eq (getf msg :effective-aware-mutation-enabled :disabled)
               :enabled))
-        (compression-reseed-enabled
-          (eq (getf msg :compression-reseed-enabled :disabled)
-              :enabled))
-        (compression-reseed-force-next-event
-          (eq (getf msg :compression-reseed-force-next-event :disabled)
-              :enabled))
         (read-only-register-profile
           (getf msg :read-only-register-profile :disabled))
-        (categorical-predicate-mutation-enabled
-          (eq (getf msg :categorical-predicate-mutation-enabled :disabled)
-              :enabled))
-        (teacher-guided-predicate-injection-enabled
-          (eq (getf msg :teacher-guided-predicate-injection-enabled :disabled)
-              :enabled))
-        (incumbent-conservative-repair-enabled
-          (eq (getf msg :incumbent-conservative-repair-enabled :disabled)
-              :enabled))
-        (coordinated-repair-bundles-enabled
-          (eq (getf msg :coordinated-repair-bundles-enabled :disabled)
-              :enabled))
-        (population-diversity-pulse-enabled
-          (eq (getf msg :population-diversity-pulse-enabled :disabled)
-              :enabled))
-        (population-diversity-pulse-wipe-fraction
-          (getf msg :population-diversity-pulse-wipe-fraction
-                +population-diversity-pulse-default-wipe-fraction+))
         (seed (getf msg :seed)))
 
     (format t "~S~%" msg)
@@ -1162,49 +883,20 @@ return their fixed configured addresses."
                (pathname best-team-path))))))
 
     (if (valid-search-parameters-p
-         mode
-         gym-environment-name
-         dataset-name
-         num-observations
-         num-actions
-         population-size
-         init-num-learners
-         max-num-learners
-         p-add
-         p-del
-         p-mut
-         p-act
-         p-swap
-         gap
-         init-program-size
-         max-program-size
-         p-add-instr
-         p-del-instr
-         p-swap-instrs
-         p-mut-constant
-         p-mut-constant-sign
-         migration-interval
-         batch-size
-         seed
-         hamming-space-enabled
-         hamming-dataset-name
-         decoy-order-mode
-         cage2-opening-mode
-         recurrent-policy-enabled
-         teacher-forcing-rollout-mode
-         teacher-backend
-         instruction-set-profile
-         instruction-mutation-mode
-         effective-aware-mutation-enabled
-         compression-reseed-enabled
-         compression-reseed-force-next-event
-         read-only-register-profile
-         categorical-predicate-mutation-enabled
-         teacher-guided-predicate-injection-enabled
-         incumbent-conservative-repair-enabled
-         coordinated-repair-bundles-enabled
-         population-diversity-pulse-enabled
-         population-diversity-pulse-wipe-fraction)
+         mode gym-environment-name dataset-name
+         num-observations num-actions population-size
+         init-num-learners max-num-learners
+         p-add p-del p-mut p-act p-swap
+         gap init-program-size max-program-size
+         p-add-instr p-del-instr p-swap-instrs
+         p-mut-constant p-mut-constant-sign
+         migration-interval batch-size seed
+         hamming-space-enabled hamming-dataset-name
+         decoy-order-mode cage2-opening-mode
+         recurrent-policy-enabled teacher-forcing-rollout-mode
+         teacher-backend instruction-set-profile
+         instruction-mutation-mode effective-aware-mutation-enabled
+         read-only-register-profile)
 
         (progn
           (unless (begin-search-operation)
@@ -1212,27 +904,13 @@ return their fixed configured addresses."
             (return-from handle-resume-search))
 
           (set-global-parameters
-           population-size
-           num-observations
-           num-actions
-           init-num-learners
-           max-num-learners
-           p-add
-           p-del
-           p-mut
-           p-act
-           p-swap
-           gap
-           init-program-size
-           max-program-size
-           p-add-instr
-           p-del-instr
-           p-swap-instrs
-           p-mut-constant
-           p-mut-constant-sign
-           migration-interval
-           batch-size
-           online-fitness-episodes
+           population-size num-observations num-actions
+           init-num-learners max-num-learners
+           p-add p-del p-mut p-act p-swap
+           gap init-program-size max-program-size
+           p-add-instr p-del-instr p-swap-instrs
+           p-mut-constant p-mut-constant-sign
+           migration-interval batch-size online-fitness-episodes
            :checkpoint-directory checkpoint-directory
            :hamming-space-enabled hamming-space-enabled
            :hamming-dataset-name hamming-dataset-name
@@ -1245,22 +923,7 @@ return their fixed configured addresses."
            :instruction-mutation-mode instruction-mutation-mode
            :effective-aware-mutation-enabled
              effective-aware-mutation-enabled
-           :compression-reseed-enabled compression-reseed-enabled
-           :compression-reseed-force-next-event
-             compression-reseed-force-next-event
-           :read-only-register-profile read-only-register-profile
-           :categorical-predicate-mutation-enabled
-             categorical-predicate-mutation-enabled
-           :teacher-guided-predicate-injection-enabled
-             teacher-guided-predicate-injection-enabled
-           :incumbent-conservative-repair-enabled
-             incumbent-conservative-repair-enabled
-           :coordinated-repair-bundles-enabled
-             coordinated-repair-bundles-enabled
-           :population-diversity-pulse-enabled
-             population-diversity-pulse-enabled
-           :population-diversity-pulse-wipe-fraction
-             population-diversity-pulse-wipe-fraction)
+           :read-only-register-profile read-only-register-profile)
 
           (push
            (bt:make-thread

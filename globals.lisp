@@ -90,100 +90,8 @@ explicit route for inactive code to reconnect to the bid computation.")
 (defparameter *whole-instruction-replacement-probability* 0.05d0
   "Escape probability for field-local whole-instruction replacement.")
 
-(defparameter *categorical-predicate-mutation-enabled* nil
-  "When true, field-local mutation may atomically form EQ(OBS-i, ROR-c).
-
-The destination register is preserved, so this operator repairs predicate
-reachability without directly choosing a policy action or bypassing TPG
-selection, behavioral-locality control, or official promotion.")
-
-(defparameter *categorical-predicate-mutation-probability* 0.10d0
-  "Probability of a complete categorical predicate edit per field mutation.")
-
-(defparameter *teacher-guided-predicate-injection-enabled* nil
-  "When true, use systematic DAgger disagreements to synthesize exact
-categorical bid gates for the teacher's target/response pair.  Generated
-children still pass behavioral-locality, collateral, grouped-selection, and
-official paired-evaluation gates; the teacher is never consulted at deployment.")
-
-(defparameter *incumbent-conservative-repair-enabled* nil
-  "When true, synthesize conjunctive categorical specialists only from the
-frozen official incumbent.  This treatment is isolated from population-parent
-single-predicate injection and remains disabled by default.")
-
-(defparameter *coordinated-repair-bundles-enabled* nil
-  "When true, create one child containing a coordinated set of specialists for
-teacher Top-k categories that repeatedly go missing together.  The operator is
-teacher-guided only during training; accepted checkpoints remain ordinary TPGs.")
-
-(defconstant +compression-reseed-protocol+ :compression-reseed-v1
-  "Versioned stateless R0 intron-compression and population-reseed protocol.")
-
-(defparameter *compression-reseed-enabled* nil
-  "When true, permit guarded compression-and-reseed events during evolution.")
-
-(defparameter *compression-reseed-force-next-event* nil
-  "When true, bypass only scheduling gates for the next safe compression attempt.
-
-The one-shot request is consumed when graph analysis begins. Intron-ratio,
-stateless execution, deep-copy, archive-equivalence, and population-capacity
-checks remain mandatory.")
-
-(defparameter *compression-reseed-min-generation* 1000
-  "Earliest generation at which compression may be considered.")
-
-(defparameter *compression-reseed-check-interval* 1000
-  "Generation interval between scheduled compression attempts.")
-
-(defparameter *compression-reseed-min-intron-ratio* 0.95d0
-  "Minimum protected-incumbent intron ratio required for compression.")
-
-(defparameter *compression-reseed-plateau-generations* 400
-  "Minimum generations without an official incumbent change before compression.")
-
-(defparameter *compression-reseed-cooldown-generations* 1000
-  "Minimum generation distance between compression events.")
-
-(defparameter *compression-reseed-population-fraction* 0.10d0
-  "Maximum root-population fraction injected by one compression event.")
-
-(defvar *compression-reseed-last-event-generation* nil)
-(defvar *compression-reseed-last-improvement-generation* 1)
-(defvar *compression-reseed-last-incumbent-version* 0)
-(defvar *compression-reseed-event-count* 0)
-(defvar *compression-reseed-last-record* nil)
-
-(defconstant +population-diversity-pulse-protocol+
-  :population-diversity-partial-restart-v2
-  "Versioned plateau-triggered proportional warm-start restart protocol.")
-
-(defconstant +live-search-profile+ :live-diversity-v2
-  "Maintained search profile with failed experimental mechanisms dormant.")
-
-(defconstant +population-diversity-pulse-rng-salt+ 5404787
-  "Independent deterministic salt for periodic diversity cohorts.")
-
-(defparameter *population-diversity-pulse-enabled* nil
-  "When true, replace a population fraction after a long official plateau.")
-
-(defparameter *population-diversity-pulse-plateau-generations* 400
-  "Official-incumbent plateau required before a diversity pulse.")
-
-(defparameter *population-diversity-pulse-cooldown-generations* 400
-  "Minimum generation distance between diversity pulses.")
-
-(defconstant +population-diversity-pulse-default-wipe-fraction+ 0.50d0
-  "Default root-population fraction replaced by a partial restart.")
-
-(defparameter *population-diversity-pulse-wipe-fraction*
-  +population-diversity-pulse-default-wipe-fraction+
-  "Fraction of live roots removed and rebuilt by one diversity pulse.")
-
-(defvar *population-diversity-pulse-last-event-generation* nil)
-(defvar *population-diversity-pulse-last-improvement-generation* 1)
-(defvar *population-diversity-pulse-last-incumbent-version* 0)
-(defvar *population-diversity-pulse-event-count* 0)
-(defvar *population-diversity-pulse-last-record* nil)
+(defconstant +live-search-profile+ :maintained-search-v1
+  "Maintained DAgger and teacher-free official search profile.")
 
 (defun valid-instruction-set-profile-p (profile)
   "Return true for a supported instruction creation profile."
@@ -409,34 +317,6 @@ Stage 4 performs the final multi-horizon tail-aware promotion audit.")
 (defconstant +official-guided-catastrophic-return-per-step+ -1.0d0
   "A return at or below horizon times this value is counted as catastrophic.")
 
-(defconstant +near-miss-lineages-protocol+
-  :bounded-near-miss-lineage-near-miss-v1
-  "Version tag for detached near-miss search memory.")
-
-(defconstant +near-miss-max-lineages+ 2
-  "Maximum detached near-miss basins retained at once.")
-
-(defconstant +near-miss-reproduction-quota+ 0.10d0
-  "Maximum fraction of existing offspring slots sourced from lineage heads.")
-
-(defconstant +near-miss-lineage-submission-period+ 5
-  "At most one in five official challenger slots may be lineage-sourced.")
-
-(defparameter +near-miss-local-screen-and-confirm-counts+ '(5 20)
-  "Fresh 100-step screen count followed by a disjoint multi-horizon confirm count.")
-
-(defconstant +near-miss-local-confirm-standard-errors+ 1.0d0
-  "Paired uncertainty margin required against the current lineage head.")
-
-(defconstant +near-miss-max-reproduction-opportunities+ 80
-  "Maximum explicitly allocated offspring slots over one lineage lifetime.")
-
-(defconstant +near-miss-max-evaluated-descendants+ 12
-  "Maximum completed local descendant comparisons over one lineage lifetime.")
-
-(defconstant +near-miss-max-age-generations+ 250
-  "Hard generation lifetime for one near-miss lineage.")
-
 (defparameter +official-guided-reference-roots+ '(153 42 2026)
   "Fixed roots used only for monitoring, never selection or promotion.")
 
@@ -489,23 +369,6 @@ a single challenger.  The winner still requires a disjoint full confirmation.")
 
 (defconstant +official-admission-evidence-max-parent-weight+ 4
   "Maximum parent-pool multiplicity assigned to an evidence anchor.")
-
-(defconstant +official-return-credit-protocol+
-  :paired-parent-child-return-credit-return-credit-lineage-v2
-  "Version tag for return-credit lineage official child-versus-direct-parent lineage credit.")
-
-(defparameter +official-return-credit-stages+ '(5 20)
-  "Cumulative paired official episodes used to reject and then approve one
-direct child.  The first stage can only reject; the final stage can approve.")
-
-(defconstant +official-return-credit-standard-errors+ 1.0d0
-  "Paired standard-error margin required for a return-credit anchor.")
-
-(defconstant +official-return-credit-protection-generations+ 12
-  "Selection cycles for which an approved lineage anchor is forced to survive.")
-
-(defconstant +official-return-credit-max-active-lineages+ 3
-  "Maximum number of independently protected return-credit lineages.")
 
 (defconstant +behavioral-locality-protocol+
   :behavioral-locality-behavioral-locality-v1
@@ -573,124 +436,6 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
 (defconstant +targeted-systematic-minimum-episodes+ 2
   "Minimum distinct episodes required for one targeted repair systematic error issue.")
 
-(defconstant +targeted-routing-repair-protocol+
-  :error-directed-routing-repair-v1
-  "Version tag for targeted routing repair targeted routing variation.")
-
-(defconstant +targeted-routing-repair-rng-salt+ 2404729
-  "Independent deterministic salt for targeted routing repair scheduling draws.")
-
-(defconstant +targeted-routing-repair-quota+ 0.10d0
-  "Fraction of reproduced roots reserved for attempted targeted repair.")
-
-(defconstant +targeted-routing-repair-max-attempts+ 8
-  "Maximum learner-program variants tried for one targeted repair slot.")
-
-(defconstant +targeted-routing-repair-minimum-rows+ 3
-  "Minimum matching current-generation rows required to attempt a repair.")
-
-(defconstant +targeted-routing-repair-max-collateral-rank-rate+ 0.05d0
-  "Maximum fraction of non-target probes whose teacher rank may regress.")
-
-(defconstant +targeted-specialist-composition-protocol+
-  :error-directed-specialist-composition-v1
-  "Version tag for the isolated specialist composition composition treatment.")
-
-(defconstant +targeted-specialist-composition-rng-salt+ 3404729
-  "Independent deterministic salt for specialist composition scheduling and donor draws.")
-
-(defconstant +targeted-specialist-composition-quota+ 0.10d0
-  "Fraction of reproduced roots reserved for specialist-composition attempts.")
-
-(defconstant +targeted-specialist-composition-max-parents+ 8
-  "Maximum candidate parents inspected for one composition slot.")
-
-(defconstant +targeted-specialist-composition-max-donors+ 8
-  "Maximum group-qualified live donor teams inspected per parent.")
-
-(defconstant +targeted-specialist-composition-max-attempts+ 8
-  "Maximum bidder variants tried for one selected specialist source.")
-
-(defconstant +targeted-combined-repair-protocol+
-  :error-directed-combined-repair-v1
-  "Version tag for combined targeted repair case-directed routing/composition variation.")
-
-(defconstant +teacher-directed-repair-protocol+
-  :teacher-directed-bidder-repair-v1
-  "Version tag for teacher-directed repair deterministic disagreement repair.")
-
-(defconstant +teacher-directed-repair-max-parents+ 8
-  "Maximum candidate roots inspected for one directed repair slot.")
-
-(defconstant +teacher-directed-repair-max-features+ 8
-  "Maximum invariant observation features retained for repair gates.")
-
-(defconstant +teacher-directed-repair-max-candidates+ 32
-  "Maximum synthesized bidder gates evaluated for one parent and issue.")
-
-(defconstant +teacher-directed-repair-bid-margin+ 1.0d0
-  "Positive bid margin applied when a repair gate exactly matches.")
-
-(defconstant +teacher-directed-repair-mismatch-penalty+ 1000.0d0
-  "Penalty multiplier suppressing a synthesized bidder off its target gate.")
-
-(defconstant +coordinated-repair-bundle-protocol+
-  :coordinated-repair-bundles-v1
-  "Version tag for coordinated multi-specialist repair variation.")
-
-(defconstant +coordinated-repair-bundle-rng-salt+ 4404729
-  "Independent deterministic salt for coordinated repair scheduling.")
-
-(defconstant +coordinated-repair-bundle-quota+ 0.10d0
-  "Fraction of offspring slots reserved for coordinated bundle attempts.")
-
-(defconstant +coordinated-repair-bundle-min-members+ 2
-  "Minimum number of co-missing teacher categories in one repair bundle.")
-
-(defconstant +coordinated-repair-bundle-max-members+ 3
-  "Maximum number of specialists installed together in one repair child.")
-
-(defconstant +coordinated-repair-bundle-max-conjunctions+ 8
-  "Maximum categorical gates considered for each bundle member.")
-
-(defconstant +coordinated-repair-bundle-background-limit+ 128
-  "Maximum current on-policy background rows used for collateral screening.")
-
-(defconstant +teacher-guided-predicate-protocol+
-  :teacher-guided-categorical-predicate-v1
-  "Version tag for disagreement-directed exact categorical bid gates.")
-
-(defconstant +teacher-guided-predicate-rng-salt+ 4404741
-  "Independent deterministic salt for guided-predicate scheduling draws.")
-
-(defconstant +teacher-guided-predicate-quota+ 0.10d0
-  "Fraction of reproduced roots reserved for guided-predicate attempts.")
-
-(defconstant +teacher-guided-predicate-max-parents+ 8
-  "Maximum live parents inspected for one guided-predicate slot.")
-
-(defconstant +teacher-guided-predicate-max-predicates+ 12
-  "Maximum highest-separation predicates tried for one parent and issue.")
-
-(defconstant +teacher-guided-predicate-protected-survivors+ 1
-  "Maximum accepted guided repair protected for its first evaluated selection.")
-
-(defconstant +incumbent-conservative-repair-protocol+
-  :incumbent-anchored-conjunctive-repair-v1
-  "Version tag for conservative repairs of the frozen official incumbent.")
-
-(defconstant +incumbent-conservative-atomic-candidates+ 24
-  "Highest-precision atomic predicates retained before conjunction search.")
-
-(defconstant +incumbent-conservative-max-conjunctions+ 12
-  "Maximum conjunctive gates evaluated for one incumbent disagreement group.")
-
-(defconstant +incumbent-conservative-background-limit+ 256
-  "Maximum current on-policy background observations used for collateral checks.")
-
-(defconstant +incumbent-conservative-bid-quantile+ 0.50d0
-  "Incumbent winning-bid quantile used as a conservative specialist threshold.")
-
 (defconstant +official-guided-seed-payload-bits+ 28
   "Low seed bits reserved for one deterministic stream payload.")
 
@@ -701,41 +446,6 @@ accept the first native mutation unchanged, preserving non-local escape moves.")
 (defconstant +online-candidate-evaluation-interval+ 10
   "Generations accumulated before submitting one online generation-best
 candidate to the independent reference evaluator.")
-
-(defparameter *online-feedback-racing-enabled* nil
-  "Use fresh paired official racing and signed constant probes in online CAGE2.")
-
-(defconstant +online-feedback-protocol+ :paired-online-feedback-v1)
-(defparameter +online-feedback-racing-stages+ '(3 10 30))
-(defconstant +online-feedback-promotion-episodes+ 100)
-(defconstant +online-feedback-nomination-limit+ 5)
-(defconstant +online-feedback-constant-step+ 0.1d0)
-(defconstant +online-feedback-maximum-constant-step+ 1.0d0)
-(defconstant +online-feedback-probe-observation-limit+ 72)
-(defconstant +online-feedback-probe-site-attempts+ 32)
-(defconstant +online-feedback-probe-max-top1-change+ 0.20d0)
-(defconstant +online-feedback-probe-max-ranking-change+ 0.50d0)
-(defconstant +online-feedback-probe-max-concrete-change+ 0.20d0)
-
-(defvar *online-feedback-racing-cursor* 0)
-(defvar *online-feedback-promotion-cursor* 0)
-(defvar *online-feedback-seed-root* nil)
-(defvar *online-feedback-incumbent-version* 0)
-(defvar *online-feedback-nominations* nil)
-(defvar *online-feedback-random-seen* 0)
-(defvar *online-feedback-probes* nil)
-(defvar *online-feedback-probe-observations* nil
-  "Fixed official observations used to screen directional behavior changes.")
-(defvar *online-feedback-probe-contexts* nil
-  "Fixed observations paired with pre-action Controller state snapshots.")
-(defvar *online-feedback-observation-hook* nil
-  "Dynamically bound callback for collecting observations during one rollout.")
-(defvar *online-feedback-controller-hook* nil
-  "Optional callback before the Controller commits the selected action.")
-(defvar *online-feedback-transition-hook* nil
-  "Optional diagnostic callback for the selected and executed CAGE2 action.")
-(defvar *online-feedback-step-hook* nil
-  "Optional diagnostic callback after a real CAGE2 step, including its reward.")
 
 (defconstant +online-candidate-screen-episodes+ 20
   "Prefix of the fixed reference bank used for the cheap candidate screen.")
@@ -1071,65 +781,10 @@ The matching incumbent checkpoint is required; import never replaces best.")
 (defvar *online-staged-best-nomination-lanes* nil
   "Admission lanes associated with the staged full-racing challenger.")
 
-(defvar *official-return-credit-enabled* nil
-  "When true, positive paired child/direct-parent evidence may establish a
-bounded protected lineage.  It never promotes the global incumbent directly.")
-
-(defvar *near-miss-lineages-enabled* nil
-  "When true, retain a bounded detached archive of full-Stage-4 near misses.")
-
-(defvar *near-miss-lineages* nil
-  "Detached near-miss lineage archive records; graph payloads live in private files.")
-
-(defvar *near-miss-team-lineages* nil
-  "EQ map from live descendants to (LINEAGE-ID HEAD-VERSION).")
-
-(defvar *near-miss-run-id* nil
-  "Persistent identity used to audit one recovered near-miss archive run.")
-
-(defvar *near-miss-next-lineage-id* 0)
-(defvar *near-miss-variation-root* nil)
-(defvar *near-miss-variation-cursor* 0)
-(defvar *near-miss-submission-count* 0)
-(defvar *near-miss-lineage-submission-count* 0)
-(defvar *near-miss-lineage-official-rollouts* 0)
-(defvar *near-miss-nonlineage-official-rollouts* 0)
-(defvar *near-miss-admission-count* 0)
-(defvar *near-miss-duplicate-count* 0)
-(defvar *near-miss-expiry-count* 0)
-(defvar *near-miss-head-update-count* 0)
-
-(defvar *online-staged-best-near-miss-lineage-id* nil)
-(defvar *online-staged-best-near-miss-head-version* nil)
-
 (defvar *rare-failure-targeted-return-credit-enabled* nil
   "When true, rare-failure diagnostics combines Case-A/B targeted proposals with the existing
 paired official-return credit gate.  Known diagnostic seeds are never used by
 this switch for selection or promotion.")
-
-(defvar *official-return-credit-approved-count* 0
-  "Number of return-approved anchors installed during the current run.")
-
-(defvar *official-return-credit-rejected-count* 0
-  "Number of completed direct-parent credit comparisons not approved.")
-
-(defvar *official-return-credit-active-lineages* nil
-  "Serializable plists for currently protected return-credit lineage lineage anchors.")
-
-(defvar *official-return-credit-team-lineages* nil
-  "EQ table mapping live roots to inherited return-credit lineage lineage identifiers.")
-
-(defvar *official-return-credit-next-lineage-id* 0
-  "Monotone identifier cursor for new return-credit lineage return-credit lineages.")
-
-(defvar *official-return-credit-neutral-submissions* 0
-  "Number of neutral fallback children submitted when no changed child existed.")
-
-(defvar *online-staged-best-credit-priority* nil
-  "return-credit lineage admission priority of the frozen staged official challenger.")
-
-(defvar *online-staged-best-credit-lineage-id* nil
-  "Inherited return-credit lineage lineage identifier of the staged challenger, if any.")
 
 (defvar *grouped-selection-enabled* nil
   "When true, replace aggregate truncation with grouped survivor lexicase.")
@@ -1172,78 +827,6 @@ this switch for selection or promotion.")
 
 (defvar *targeted-disagreement-audit-enabled* nil
   "When true, classify DAgger errors for targeted repair without changing evolution.")
-
-(defvar *targeted-routing-repair-enabled* nil
-  "When true, reserve a small offspring quota for targeted routing repair.")
-
-(defvar *targeted-routing-repair-rng-root* nil
-  "Root of the independent counter-based targeted routing repair scheduling stream.")
-
-(defvar *targeted-routing-repair-rng-cursor* 0
-  "Number of deterministic targeted routing repair scheduling draws already consumed.")
-
-(defvar *targeted-routing-repair-age* 0
-  "Number of completed targeted routing repair reproduction generations.")
-
-(defvar *targeted-routing-repair-generation-records* nil
-  "Targeted-repair decisions waiting to be journaled this generation.")
-
-(defvar *targeted-specialist-composition-enabled* nil
-  "When true, reserve a small offspring quota for specialist composition composition.")
-
-(defvar *targeted-specialist-composition-rng-root* nil
-  "Root of the independent counter-based specialist composition scheduling stream.")
-
-(defvar *targeted-specialist-composition-rng-cursor* 0
-  "Number of deterministic specialist composition scheduling/donor draws consumed.")
-
-(defvar *targeted-specialist-composition-age* 0
-  "Number of completed specialist composition reproduction generations.")
-
-(defvar *targeted-specialist-composition-generation-records* nil
-  "Specialist-composition decisions waiting to be journaled this generation.")
-
-(defvar *targeted-combined-repair-enabled* nil
-  "When true, share one repair quota between Case-A routing and Case-B1 composition.")
-
-(defvar *targeted-combined-repair-generation-records* nil
-  "Case-directed combined targeted repair dispatch decisions waiting to be journaled.")
-
-(defvar *teacher-directed-repair-enabled* nil
-  "When true, synthesize teacher-directed local bidder corrections.")
-
-(defvar *teacher-directed-repair-generation-records* nil
-  "teacher-directed repair directed repair decisions waiting for generation journaling.")
-
-(defvar *coordinated-repair-bundle-rng-root* nil
-  "Root of the independent coordinated-repair scheduling stream.")
-
-(defvar *coordinated-repair-bundle-rng-cursor* 0
-  "Number of deterministic coordinated-repair scheduling draws consumed.")
-
-(defvar *coordinated-repair-bundle-age* 0
-  "Number of completed coordinated-repair reproduction generations.")
-
-(defvar *coordinated-repair-bundle-generation-records* nil
-  "Serializable coordinated-repair decisions awaiting generation journaling.")
-
-(defvar *coordinated-repair-bundle-attempted-this-generation* nil
-  "Ephemeral guard preventing duplicate deterministic bundles in one generation.")
-
-(defvar *teacher-guided-predicate-rng-root* nil
-  "Root of the independent counter-based guided-predicate stream.")
-
-(defvar *teacher-guided-predicate-rng-cursor* 0
-  "Number of deterministic guided-predicate draws consumed.")
-
-(defvar *teacher-guided-predicate-age* 0
-  "Number of completed guided-predicate reproduction generations.")
-
-(defvar *teacher-guided-predicate-generation-records* nil
-  "Guided-predicate decisions waiting for generation journaling.")
-
-(defvar *teacher-guided-predicate-live-records* nil
-  "EQ table mapping newly generated guided children to repair records.")
 
 (defvar *grouped-selection-generation-record* nil
   "Pending serializable grouped selection record for the current generation.")

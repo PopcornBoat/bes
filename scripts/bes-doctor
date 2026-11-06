@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-repo=/home/hardison/bes
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bridge=/home/hardison/venv-base
 python="$bridge/cage2_bridge/.venv/bin/python"
 failed=0

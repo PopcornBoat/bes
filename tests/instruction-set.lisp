@@ -9,54 +9,6 @@
   (unless condition
     (error "Instruction-set check failed: ~A" message)))
 
-(defun instruction-set-test-read-request (relative-path)
-  (with-open-file
-      (stream (asdf:system-relative-pathname "cl-tpg" relative-path)
-              :direction :input)
-    (read stream)))
-
-(defun instruction-set-test-valid-request-p (request)
-  (cl-tpg::valid-search-parameters-p
-   (getf request :mode)
-   (getf request :gym-environment-name)
-   (getf request :dataset-name)
-   (getf request :num-observations)
-   (getf request :num-actions)
-   (getf request :population-size)
-   (getf request :init-num-learners)
-   (getf request :max-num-learners)
-   (getf request :p-add)
-   (getf request :p-del)
-   (getf request :p-mut)
-   (getf request :p-act)
-   (getf request :p-swap)
-   (getf request :gap)
-   (getf request :init-program-size)
-   (getf request :max-program-size)
-   (getf request :p-add-instr)
-   (getf request :p-del-instr)
-   (getf request :p-swap-instrs)
-   (getf request :p-mut-constant)
-   (getf request :p-mut-constant-sign)
-   (getf request :migration-interval)
-   (getf request :batch-size)
-   (getf request :seed)
-   (eq (getf request :hamming-space-enabled) :enabled)
-   (getf request :hamming-dataset-name)
-   (getf request :decoy-order-mode)
-   (getf request :cage2-opening-mode)
-   (eq (getf request :recurrent-policy-enabled) :enabled)
-   (getf request :teacher-forcing-rollout-mode)
-   (getf request :teacher-backend)
-   (getf request :instruction-set-profile)
-   (getf request :instruction-mutation-mode :legacy)
-   (eq (getf request :effective-aware-mutation-enabled :disabled) :enabled)
-   (eq (getf request :compression-reseed-enabled :disabled) :enabled)
-   (eq (getf request :compression-reseed-force-next-event :disabled) :enabled)
-   (getf request :read-only-register-profile :disabled)
-   (eq (getf request :categorical-predicate-mutation-enabled :disabled)
-       :enabled)))
-
 (check-instruction-set
  (equal (cl-tpg::active-instruction-opcodes :full)
         '(:add :sub :mul :div :max :exp :log :sin :cos :tan :mod))
@@ -113,46 +65,6 @@
             0)
       0.0d0)
    "EQ returns zero for a categorical mismatch"))
-
-(let ((full
-        (instruction-set-test-read-request
-         "experiments/instruction-set-full.sexp"))
-      (reduced
-        (instruction-set-test-read-request
-         "experiments/instruction-set-reduced.sexp")))
-  (check-instruction-set
-   (instruction-set-test-valid-request-p full)
-   "the full-profile controlled request passes server validation")
-  (check-instruction-set
-   (instruction-set-test-valid-request-p reduced)
-   "the reduced-profile controlled request passes server validation")
-  (setf (getf reduced :instruction-set-profile) :unknown)
-  (check-instruction-set
-   (not (instruction-set-test-valid-request-p reduced))
-   "server validation rejects an unknown profile"))
-
-(let ((request
-        (instruction-set-test-read-request
-         "experiments/effective-local-compression.sexp")))
-  (check-instruction-set
-   (not (instruction-set-test-valid-request-p request))
-   "the live profile rejects the superseded compression treatment")
-  (setf (getf request :effective-aware-mutation-enabled) :disabled)
-  (check-instruction-set
-   (not (instruction-set-test-valid-request-p request))
-   "compression is rejected without effective-aware selection"))
-
-(let ((request
-        (instruction-set-test-read-request
-         "experiments/categorical-equality.sexp")))
-  (check-instruction-set
-   (not (instruction-set-test-valid-request-p request))
-   "the live profile rejects the superseded ROR+EQ treatment request")
-  (check-instruction-set
-   (and (eq (getf request :instruction-set-profile) :reduced-eq)
-        (eq (getf request :read-only-register-profile)
-            :cage2-categorical-v1))
-   "the ROR+EQ request keeps both experimental factors explicit"))
 
 ;; Fresh instructions and instruction additions obey the selected profile.
 (let ((cl-tpg::*instruction-set-profile* :reduced)
@@ -229,7 +141,6 @@
 (let* ((cl-tpg::*instruction-set-profile* :reduced)
        (cl-tpg::*instruction-mutation-mode* :field-local)
        (cl-tpg::*effective-aware-mutation-enabled* t)
-       (cl-tpg::*compression-reseed-enabled* t)
        (cl-tpg::*current-search-mode* :online)
        (cl-tpg::*current-gym-environment-name* "Cage2-b_line-100-v0")
        (cl-tpg::*num-observations* 62)
@@ -246,11 +157,8 @@
    "checkpoint metadata records the active profile")
   (check-instruction-set
    (and (eq (getf data :instruction-mutation-mode) :field-local)
-        (getf data :effective-aware-mutation-enabled)
-        (getf data :compression-reseed-enabled)
-        (eq (getf data :compression-reseed-protocol)
-            cl-tpg::+compression-reseed-protocol+))
-   "checkpoint metadata records local/effective/compression provenance")
+        (getf data :effective-aware-mutation-enabled))
+   "checkpoint metadata records field-local and effective-aware mutation")
   (check-instruction-set
    (search "operators-reduced"
            (cl-tpg::best-team-checkpoint-filename))

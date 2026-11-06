@@ -276,32 +276,11 @@ Supports:
                                              root-team
                                              observation
                                              environment-name))))))
-                         (when (and policy-observation
-                                    cl-tpg::*online-feedback-observation-hook*)
-                           (funcall
-                            cl-tpg::*online-feedback-observation-hook*
-                            policy-observation timestep))
-                         (when (and controller policy-observation
-                                    cl-tpg::*online-feedback-controller-hook*)
-                           (funcall
-                            cl-tpg::*online-feedback-controller-hook*
-                            policy-observation timestep controller decision))
                          (multiple-value-bind (obs rew term trunc info)
                              (step env action)
                            (when controller
                              (commit-controller-step
                               controller decision info))
-                           (when cl-tpg::*online-feedback-transition-hook*
-                             (funcall
-                              cl-tpg::*online-feedback-transition-hook*
-                              policy-observation timestep action
-                              (cage2-info-value info "concrete_action")))
-                           (when cl-tpg::*online-feedback-step-hook*
-                             (funcall
-                              cl-tpg::*online-feedback-step-hook*
-                              policy-observation timestep action
-                              (cage2-info-value info "concrete_action")
-                              rew obs term trunc))
                            (incf episode-reward rew)
                            (setf observation obs)
                            (when (or term trunc)

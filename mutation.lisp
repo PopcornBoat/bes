@@ -251,24 +251,6 @@ allowing permanent positive bloat pressure."
          instruction slot :const (perturbed-constant-value old))
         (/= old (instruction-source-value-at instruction slot))))))
 
-(defun mutate-instruction-categorical-predicate (instruction)
-  "Atomically turn INSTRUCTION into EQ(OBS-i, ROR-c), preserving DEST.
-
-This compound edit crosses the otherwise multi-step opcode/source-type/source-
-index fitness valley. Observation and category selection remain stochastic;
-the operator supplies representation reachability, not a hand-coded rule."
-  (unless (and (member :eq (active-instruction-opcodes) :test #'eq)
-               (plusp (active-read-only-register-count)))
-    (error "Categorical predicate mutation requires EQ and active RORs."))
-  (setf (instruction-op instruction) :eq
-        (instruction-arity instruction) 2)
-  (set-instruction-source
-   instruction :src1 :obs (random *num-observations*))
-  (set-instruction-source
-   instruction :src2 :ror (random (active-read-only-register-count)))
-  (note-mutation-event :categorical-predicate-mutation)
-  t)
-
 (defun field-local-mutation-kinds (instruction)
   "Return field-level edits currently applicable to INSTRUCTION."
   (let ((kinds '(:opcode :destination :source-type)))
@@ -294,10 +276,6 @@ the operator supplies representation reachability, not a hand-coded rule."
       (t
        (let ((index (field-local-instruction-index program)))
          (cond
-           ((and *categorical-predicate-mutation-enabled*
-                 (coin-flip *categorical-predicate-mutation-probability*))
-            (mutate-instruction-categorical-predicate
-             (aref instructions index)))
            ((coin-flip *whole-instruction-replacement-probability*)
             (setf (aref instructions index) (make-instruction))
             (note-mutation-event :whole-instruction-replacement))

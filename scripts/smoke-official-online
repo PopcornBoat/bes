@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-repo=/home/hardison/bes-artifacts/worktrees/structural-opportunity-audit
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH=/home/hardison/venv-base/cage2_bridge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export CL_SOURCE_REGISTRY="(:source-registry (:directory \"$repo/\") :ignore-inherited-configuration)"
 export BES_SMOKE_CHECKPOINT="$repo/validated-checkpoints/meander-v8/meander-62-36-v8.lisp"
