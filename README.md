@@ -1,5 +1,7 @@
 # BES policy evolution
 
+This research branch adds [fixed-seed privileged official search](docs/privileged-official-search.md).
+
 BES trains standalone Semantic-36 TPG policies for official CAGE2. The maintained policy reads 62 inputs (52 raw observations and 10 scan-state values), proposes ranked `(target, response)` actions, and uses the deterministic Controller for action availability and fixed Decoy order. B-line and Meander have separate policies and opponent-specific Controller settings.
 
 ## Maintained branches

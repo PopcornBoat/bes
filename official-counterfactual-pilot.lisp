@@ -17,13 +17,14 @@
 
 (defun official-pilot-assert-prefix (baseline record step)
   (dolist (key '(:state-digest :policy-observation :controller-before
-                 :incumbent-pair :incumbent-concrete :ranking))
+                 :incumbent-pair :incumbent-concrete :ranking
+                 :active-path :terminal-team :privileged-before))
     (unless (equalp (getf baseline key) (getf record key))
       (error "Official replay mismatch at step ~D, field ~S." step key))))
 
 (defun official-pilot-run-episode
        (env controller team environment-name seed
-        &key intervention-step intervention-pair expected-prefix)
+        &key intervention-step intervention-pair expected-prefix observer)
   "Run one official episode; verify the entire prefix before one intervention."
   (call-with-fresh-policy-episode
    (lambda ()
@@ -42,10 +43,12 @@
                        (opening
                          (cl-gym::cage2-fixed-opening-action
                           environment-name timestep))
-                       (ranking
+                       (ranked-results
                          (and (null opening)
-                              (execute-team-semantic-ranked
-                               team policy-observation)))
+                              (multiple-value-list
+                               (execute-team-semantic-ranked
+                                team policy-observation))))
+                       (ranking (first ranked-results))
                        (incumbent-decision
                          (if opening
                              (cage2-controller-resolve-pair-ranking
@@ -67,6 +70,10 @@
                          (list
                           :step timestep
                           :state-digest state-digest
+                          :active-path (mapcar #'team-id (second ranked-results))
+                          :terminal-team (and (third ranked-results)
+                                              (team-id (third ranked-results)))
+                          :privileged-before (and observer (funcall observer env))
                           :policy-observation (copy-seq policy-observation)
                           :controller-before controller-before
                           :incumbent-pair
@@ -120,6 +127,7 @@
                              record
                              (list
                               :actual-concrete actual
+                              :privileged-after (and observer (funcall observer env))
                               :reward (coerce reward 'double-float)
                               :terminated terminated
                               :truncated truncated
@@ -133,7 +141,7 @@
                         (let ((baseline
                                 (elt expected-prefix timestep)))
                           (dolist (key '(:actual-concrete :reward
-                                         :next-observation :controller-after))
+                                         :next-observation :controller-after :privileged-after))
                             (unless (equalp (getf baseline key)
                                             (getf record key))
                               (error "Official replay transition mismatch at step ~D, field ~S."
@@ -421,8 +429,10 @@ def _bes_official_state_digest(env):
                                  (coerce (getf event :policy-observation)
                                          'list)
                                :root-winning-bid
-                                 (incumbent-conservative-root-winning-bid
-                                  team (getf event :policy-observation))
+                                 (reduce #'max (team-learners team)
+                                         :key (lambda (learner)
+                                                (bid learner
+                                                     (getf event :policy-observation))))
                                :baseline-concrete
                                  (getf event :incumbent-concrete)
                                :alternative-concrete
