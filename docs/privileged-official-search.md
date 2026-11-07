@@ -21,17 +21,26 @@ components, executed Red/Blue actions and Red progress where available.
 5. Rank completed interventions by full remaining-return difference. This is a
    same-prefix intervention measurement under a frozen continuation policy.
 6. For the highest positive opportunities, enumerate one- and two-feature
-   equality predicates across all 62 current inputs. Try a narrow single gate
-   and two narrow double gates, bid margins 250/1000, and insertion at the root
+   equality predicates across all 62 current inputs. Rank them by signed
+   cross-seed evidence, then try up to three distinct gates, bid margins
+   250/1000, and insertion at the root
    or active terminal team. These are serialized learner additions to independent
    graph copies. Preserve the existing Decoy scheduler and opening.
 7. Evaluate each active genotype over complete discovery episodes. Reload its
    saved checkpoint and require exactly reproduced returns. Keep the highest
-   full-policy mean only when it improves on the parent.
+   full-policy mean only when it improves on the parent and passes paired
+   Op_Server0 checks. Any increase in loss, Red-controlled steps, or maximum
+   uninterrupted Red-control duration on any discovery seed rejects the child.
+   A zero-loss/uncontrolled baseline requires zero loss/control from the child.
 8. Repeat from that candidate, up to the round budget. A round with no improvement
    ends the run. Its best path is written to `search-summary.sexp`.
 
-Gate selection uses current observations and their baseline activation counts.
+Gate selection uses signed intervention evidence across at least two discovery
+seeds. Deltas are averaged within each seed before calculating a mean and SE.
+Eligible gates have positive mean minus SE and positive seed means in at least
+60% of their exposed seeds. This is a search heuristic. Complete candidate
+rollouts still decide whether the change works. Activation-equivalent gates are
+deduplicated on the baseline archive.
 Internal state is recorded to explain reward effects. It never enters runtime
 predicates. Seed and step select experimental intervention points only. Learned
 genotypes contain ordinary TPG programs and terminals, so they run through the
@@ -44,18 +53,20 @@ From WSL:
 ```bash
 cd /home/hardison/bes
 scripts/run-brute-official-search /home/hardison/bes-artifacts/runtime/brute-meander-153 \
-  --red meander --seeds 153 --rounds 1
+  --red meander --seeds 153,42197,68329 --rounds 1
 ```
 
 The default source is frozen Meander v9. For B-line, `--red b_line` selects
 frozen v14. To select another source, pass `--checkpoint PATH`.
 
-The default intervention set is steps 3..99 and all 36 actions, with at most
-3500 executable trials per round. Budget-limited enumeration follows seed,
+The default discovery seeds are 153, 42197 and 68329. The default intervention
+set is steps 3..99 and all 36 actions, with at most 12000 executable trials per
+round. Budget-limited enumeration follows seed,
 step, then action order. Multi-seed runs should raise the branch budget to cover
 all seeds. Default synthesis evaluates at most 24 variants from up to four
-positive opportunities. Variant generation follows opportunity rank, gate,
-insertion and margin order. Increase `--max-candidates` for broader synthesis.
+positive opportunities. At most one opportunity per exact observation is nominated, and each receives
+a bounded share of candidate slots. Variant generation visits margins, insertion
+locations and gates in that order. Increase `--max-candidates` for broader synthesis.
 Up to three greedy rounds are allowed by default.
 
 Run inside tmux and redirect output to a log. Monitor with `tail -f LOG`.
@@ -78,6 +89,17 @@ An episode interrupted before completion may have consumed additional transition
   record gate definitions, full discovery returns and baseline behavior changes.
 - `search-summary.sexp` identifies the final discovery best and its evidence level.
 
+## Reuse and failure attribution
+
+Pass --prior-evidence /path/to/old/round-1 to reuse matching same-checkpoint
+interventions. The runner verifies checkpoint, opponent, horizon, bridge and
+CybORG hashes, hashes the imported trials, and validates every cached baseline
+event against the newly replayed prefix.
+
+Known failed confirmation episodes may become discovery stress cases in the
+next experiment. Record that change of role and reserve a new confirmation block.
+Unsafe candidate traces and per-seed safety violations are saved for attribution.
+
 ## Interpretation
 
 The search is bounded and covers a specific family of edits. Exhausting its
@@ -95,3 +117,9 @@ The initial engineering smoke uses the previously studied Meander v8,
 seed 153 and User1/User2 Restore. It checks replay, observer isolation,
 interventions, standalone serialization and rejection of harmful candidates.
 That control is separate from new opportunity discovery on v9 or B-line v14.
+
+
+The first v1 source-seed winner failed a 50-pair fresh screen. The evidence-guided
+v2 revision uses those failures to justify signed multi-seed gate scoring,
+opportunity diversity and explicit paired Op_Server0 protection. The protected
+host is an evaluator constraint and never appears as a hidden runtime feature.

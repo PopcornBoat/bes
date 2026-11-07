@@ -80,3 +80,19 @@ def _bes_privileged_state(env):
                    if base.current_step > 0 else {},
     }
     return json.dumps(payload, sort_keys=True, allow_nan=False)
+
+
+def _bes_protected_host_metrics(snapshots, host):
+    loss = 0.0
+    controlled_steps = 0
+    streak = 0
+    maximum_streak = 0
+    for snapshot in snapshots:
+        state = json.loads(snapshot)
+        loss += max(0.0, -sum(state["host_penalties"].get(host, (0, 0))))
+        controlled = any(session["host"] == host and session["active"]
+                         for session in state["sessions"].get("Red", ()))
+        controlled_steps += int(controlled)
+        streak = streak + 1 if controlled else 0
+        maximum_streak = max(maximum_streak, streak)
+    return [loss, controlled_steps, maximum_streak]

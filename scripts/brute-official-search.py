@@ -57,11 +57,13 @@ def main():
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--red", choices=("meander", "b_line"), default="meander")
     parser.add_argument("--horizon", type=int, choices=(30, 50, 100), default=100)
-    parser.add_argument("--seeds", type=integers, default=[153])
+    parser.add_argument("--seeds", type=integers, default=[153, 42197, 68329])
     parser.add_argument("--steps", type=integers)
+    parser.add_argument("--prior-evidence", type=Path,
+                        help="Reuse first-round interventions from the same frozen source/environment")
     parser.add_argument("--actions", type=integers, default=list(range(36)))
     parser.add_argument("--rounds", type=int, default=3)
-    parser.add_argument("--max-branches", type=int, default=3500,
+    parser.add_argument("--max-branches", type=int, default=12000,
                         help="Maximum executable state/action interventions per round")
     parser.add_argument("--max-candidates", type=int, default=24)
     parser.add_argument("--top-opportunities", type=int, default=4)
@@ -72,7 +74,7 @@ def main():
         else "bline-v14/bline-62-36-v14.lisp")
     checkpoint = checkpoint.resolve()
     args.steps = args.steps if args.steps is not None else list(range(3, args.horizon))
-    if (any(x < 0 or x >= 2**31 for x in args.seeds)
+    if (any(x < 0 or x >= 2**32 for x in args.seeds)
             or any(x < 3 or x >= args.horizon for x in args.steps)
             or any(x < 0 or x >= 36 for x in args.actions)
             or min(args.rounds, args.max_branches, args.max_candidates, args.top_opportunities) <= 0):
@@ -102,6 +104,19 @@ def main():
                       source_sha256={name: sha(repo / name) for name in sources},
                       commit=subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"],
                                                      text=True).strip())
+        if args.prior_evidence:
+            args.prior_evidence = args.prior_evidence.resolve()
+            prior_manifest = args.prior_evidence.parent / "manifest.json"
+            previous = json.loads(prior_manifest.read_text())
+            for key in ("checkpoint_sha256", "bridge_sha256", "cyborg_source_sha256", "red", "horizon"):
+                if previous.get(key) != config.get(key):
+                    parser.error(f"Prior evidence does not match current {key}")
+            evidence_hash = hashlib.sha256()
+            for path in sorted(args.prior_evidence.glob("trial-*.sexp")):
+                evidence_hash.update(path.name.encode())
+                evidence_hash.update(path.read_bytes())
+            config["prior_evidence_sha256"] = evidence_hash.hexdigest()
+            config["prior_evidence"] = str(args.prior_evidence)
         manifest = output / "manifest.json"
         if manifest.exists():
             previous = json.loads(manifest.read_text())
@@ -119,10 +134,13 @@ def main():
             "checkpoint": str(output / "source.lisp"), "output": str(output),
             "environment": f"Cage2-{args.red}-{args.horizon}-v0",
             "seeds": args.seeds, "steps": args.steps, "actions": args.actions,
+            "prior-evidence": str(args.prior_evidence) if args.prior_evidence else None,
             "rounds": args.rounds, "max-branches": args.max_branches,
             "max-candidates": args.max_candidates, "top-opportunities": args.top_opportunities,
         }
         def encode(value):
+            if value is None:
+                return "nil"
             if isinstance(value, list):
                 return "(" + " ".join(map(str, value)) + ")"
             return str(value) if isinstance(value, int) else lisp_string(value)

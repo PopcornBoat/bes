@@ -11,12 +11,31 @@
        (probe (make-array 62 :element-type 'double-float :initial-element 0.0d0))
        (other (copy-seq probe)))
   (setf (aref probe 61) 2.0d0)
-  (dolist (gate (brute-predicate-variants probe (list probe other)))
+  (let* ((records (loop for seed in '(153 42)
+                        append (list (list :seed seed :pair '(8 2) :delta 4.0d0
+                                          :event (list :policy-observation probe))
+                                     (list :seed seed :pair '(8 2) :delta -5.0d0
+                                          :event (list :policy-observation other)))))
+         (gates (brute-predicate-variants probe (list probe other) records '(8 2))))
+    (assert gates)
+    (assert (not (brute-predicate-variants probe (list probe other)
+                                          (subseq records 0 2) '(8 2))))
+    (dolist (gate gates)
     (assert (brute-gate-matches-p gate probe))
     (assert (every (lambda (p) (<= 0 (first p) 61)) gate))
     (let* ((program (incubation-gate-program gate 250.0d0))
            (registers (execute-program program probe)))
-      (assert (plusp (aref registers +bid-register+)))))
+      (assert (plusp (aref registers +bid-register+))))
+      (assert (not (brute-gate-matches-p gate other)))))
+  (assert (not (brute-safety-regressions
+                '((:loss 0 :controlled-steps 0 :maximum-control-streak 0))
+                '((:loss 0 :controlled-steps 0 :maximum-control-streak 0)))))
+  (assert (brute-safety-regressions
+           '((:loss 0 :controlled-steps 0 :maximum-control-streak 0))
+           '((:loss 1 :controlled-steps 0 :maximum-control-streak 0))))
+  (assert (brute-safety-regressions
+           '((:loss 0 :controlled-steps 0 :maximum-control-streak 0))
+           '((:loss 0 :controlled-steps 1 :maximum-control-streak 1))))
   (let* ((learner (make-learner :program (incubation-gate-program '((61 2)) 250.0d0)
                                :action (make-action :type :atomic
                                          :action (make-target-response-36-action

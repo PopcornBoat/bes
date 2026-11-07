@@ -2,7 +2,7 @@
 
 ;; Offline analysis may inspect simulator internals. Every policy invocation
 ;; below still receives the original Controller's 62-dimensional observation.
-(defparameter +privileged-search-protocol+ :fixed-seed-privileged-search-v1)
+(defparameter +privileged-search-protocol+ :evidence-guided-privileged-search-v2)
 
 (defun brute-append-record (path record)
   (with-open-file (stream path :direction :output :if-exists :append
@@ -58,28 +58,88 @@
               (aref (active-read-only-register-values) (second predicate))))
          predicates))
 
-(defun brute-predicate-variants (probe background)
-  "Enumerate all current-input one- and two-feature equality gates.
+(defun brute-gate-evidence (predicates records pair)
+  "Average intervention deltas within seeds before comparing seed means."
+  (let ((by-seed (make-hash-table :test #'eql)))
+    (dolist (record records)
+      (when (and (equal pair (getf record :pair))
+                 (brute-gate-matches-p
+                  predicates (getf (getf record :event) :policy-observation)))
+        (push (getf record :delta) (gethash (getf record :seed) by-seed))))
+    (let* ((means (loop for values being the hash-values of by-seed
+                        collect (arithmetic-mean values)))
+           (count (length means))
+           (mean (if means (arithmetic-mean means) 0.0d0))
+           (se (if (> count 1) (sample-standard-error means) 0.0d0)))
+      (list :predicates predicates :seed-count count
+            :positive-seeds (count-if #'plusp means)
+            :negative-seeds (count-if #'minusp means)
+            :mean mean :se se :score (- mean se)))))
 
-Rank by activation frequency on the frozen policy's observed states. Simulator
-internals, episode number and step number are excluded from gate features."
-  (let* ((values (active-read-only-register-values))
+(defun brute-predicate-variants (probe background &optional records pair)
+  "Select up to three behaviorally distinct gates using signed official evidence.
+
+The evidence unit is an episode seed, not adjacent observation rows.
+A gate needs positive evidence across at least two discovery seeds.
+Only the existing 62 current-input features can occur in a gate."
+  (let* ((pair-records (remove-if-not (lambda (row) (equal pair (getf row :pair)))
+                                       records))
+         (values (active-read-only-register-values))
          (atoms
            (loop for value across probe for index from 0
                  for ror = (position value values :test #'=)
                  when ror collect (list index ror)))
-         (single (mapcar #'list atoms))
-         (double
-           (loop for tail on atoms append
-                 (loop for other in (rest tail)
-                       collect (list (first tail) other)))))
-    (flet ((activation (predicates)
-             (count-if (lambda (obs) (brute-gate-matches-p predicates obs))
-                       background)))
-      (append (subseq (stable-sort single #'< :key #'activation)
-                      0 (min 1 (length single)))
-              (subseq (stable-sort double #'< :key #'activation)
-                      0 (min 2 (length double)))))))
+         (gates
+           (append (mapcar #'list atoms)
+                   (loop for tail on atoms append
+                         (loop for other in (rest tail)
+                               collect (list (first tail) other)))))
+         (ranked
+           (stable-sort
+            (loop for gate in gates
+                  for evidence = (brute-gate-evidence gate pair-records pair)
+                  when (and (>= (getf evidence :seed-count) 2)
+                            (plusp (getf evidence :score))
+                            (>= (/ (getf evidence :positive-seeds)
+                                   (getf evidence :seed-count)) 0.6d0))
+                    collect evidence)
+            #'> :key (lambda (row) (getf row :score))))
+         (seen (make-hash-table :test #'equal)) (selected nil))
+    (dolist (row ranked (nreverse selected))
+      (let* ((gate (getf row :predicates))
+             (signature
+               (loop for observation in background
+                     collect (brute-gate-matches-p gate observation))))
+        (unless (gethash signature seen)
+          (setf (gethash signature seen) t)
+          (push gate selected)
+          (when (= (length selected) 3) (return (nreverse selected))))))))
+
+(defun brute-episode-safety (episode)
+  "Privileged safety diagnostics are available only to the training evaluator."
+  (let ((metrics
+          (coerce
+           (py4cl2:pycall "_bes_protected_host_metrics"
+                          (map 'list (lambda (row) (getf row :privileged-after))
+                               (getf episode :steps))
+                          "Op_Server0")
+           'list)))
+    (list :host "Op_Server0" :seed (getf episode :seed) :loss (first metrics)
+          :controlled-steps (second metrics) :maximum-control-streak (third metrics))))
+
+(defun brute-safety-regressions (baselines candidates)
+  "Reject any paired increase in Op_Server0 loss or Red control duration."
+  (unless (= (length baselines) (length candidates))
+    (error "Protected-host comparisons require exactly paired episode metrics."))
+  (loop for baseline in baselines for candidate in candidates for index from 0
+        do (unless (eql (getf baseline :seed) (getf candidate :seed))
+             (error "Protected-host comparison seed mismatch."))
+        append
+        (loop for key in '(:loss :controlled-steps :maximum-control-streak)
+              when (> (getf candidate key) (+ (getf baseline key) 1.0d-8))
+                collect (list :seed (getf baseline :seed) :seed-index index :metric key
+                              :baseline (getf baseline key)
+                              :candidate (getf candidate key)))))
 
 (defun brute-save-policy (team score path metadata environment)
   (write-best-team-checkpoint
@@ -136,7 +196,7 @@ internals, episode number and step number are excluded from gate features."
      path)))
 
 (defun brute-round (checkpoint directory environment seeds steps actions
-                     max-branches max-candidates top-opportunities)
+                     max-branches max-candidates top-opportunities prior-evidence)
   (let* ((source (multiple-value-list (load-best-team checkpoint)))
          (team (brute-canonicalize-ids (first source))) (metadata (third source))
          (env (cl-gym::make environment))
@@ -146,7 +206,8 @@ internals, episode number and step number are excluded from gate features."
          (observer (lambda (env) (py4cl2:pycall "_bes_privileged_state" env)))
          (work-log (merge-pathnames "completed-rollouts.sexp" directory))
          (baselines nil) (records nil) (background nil) (trials 0)
-         (best-path checkpoint) (best-mean nil) (variants nil))
+         (best-path checkpoint) (best-mean nil) (variants nil)
+         (baseline-safety nil))
     (unless (and (= (getf metadata :num-observations) 62)
                  (eq (getf metadata :terminal-action-format) :target-response-36)
                  (not (getf metadata :recurrent-policy-enabled)))
@@ -168,12 +229,14 @@ internals, episode number and step number are excluded from gate features."
                       (brute-episode env controller team environment seed work-log)))
                (brute-verify-observer baseline plain)
                (push (cons seed baseline) baselines)
+               (push (brute-episode-safety baseline) baseline-safety)
                (write-readable-object-atomically
                 baseline (merge-pathnames (format nil "baseline-~D.sexp" seed)
                                           directory))
                (loop for state across (getf baseline :steps)
                      do (push (getf state :policy-observation) background))))
            (setf baselines (nreverse baselines)
+                 baseline-safety (nreverse baseline-safety)
                  best-mean (arithmetic-mean
                             (mapcar (lambda (entry)
                                       (getf (cdr entry) :return)) baselines)))
@@ -195,9 +258,21 @@ internals, episode number and step number are excluded from gate features."
                                         (merge-pathnames
                                          (format nil "trial-~D-~D-~D.sexp"
                                                  seed step index) directory))
+                                      (prior (and prior-evidence
+                                                  (merge-pathnames
+                                                   (file-namestring path)
+                                                   (uiop:ensure-directory-pathname prior-evidence))))
+                                      (cached (or (probe-file path)
+                                                  (and prior (probe-file prior))))
                                       (record
-                                        (if (probe-file path)
-                                            (rare-failure-read-form path)
+                                        (if cached
+                                            (let ((result (rare-failure-read-form cached)))
+                                              (official-pilot-assert-prefix
+                                               (getf result :event) event step)
+                                              (unless (= (getf result :baseline-return)
+                                                         (getf baseline :return))
+                                                (error "Cached baseline return changed."))
+                                              result)
                                             (let* ((branch
                                                      (brute-episode
                                                       env controller team environment
@@ -250,26 +325,45 @@ internals, episode number and step number are excluded from gate features."
                     :baseline-mean parent-mean :trials trials :opportunities records)
               (merge-pathnames "opportunities.sexp" directory))
              (let ((candidate-count 0) (opportunity-count 0)
-                   (seen (make-hash-table :test #'equal)))
+                   (seen (make-hash-table :test #'equal))
+                   (nominated-states (make-hash-table :test #'equalp))
+                   (gate-cache (make-hash-table :test #'equalp)))
                (dolist (record records)
                  (when (and (plusp (getf record :delta))
-                            (< opportunity-count top-opportunities))
+                            (< opportunity-count top-opportunities)
+                            (not (gethash (getf (getf record :event) :policy-observation)
+                                          nominated-states)))
                    (let* ((event (getf record :event))
                           (probe (getf event :policy-observation))
                           (pair (getf record :pair))
-                          (gates (brute-predicate-variants probe background)))
-                     (incf opportunity-count)
-                     (dolist (gate gates)
+                          (gates
+                            (multiple-value-bind (cached present)
+                                (gethash (list probe pair) gate-cache)
+                              (if present cached
+                                  (setf (gethash (list probe pair) gate-cache)
+                                        (brute-predicate-variants
+                                         probe background records pair)))))
+                          (opportunity-generated 0))
+                     (when gates
+                       (incf opportunity-count)
+                       (setf (gethash probe nominated-states) t))
+                     (format t "~&GATES seed=~D step=~D action=~S evidence-gates=~D~%"
+                             (getf record :seed) (getf record :step) pair (length gates))
+                     (dolist (margin '(250.0d0 1000.0d0))
                        (dolist (insertion '(:terminal :root))
-                         (dolist (margin '(250.0d0 1000.0d0))
+                         (dolist (gate gates)
                            (let ((key (list pair gate insertion margin)))
                              (when (and (< candidate-count max-candidates)
+                                        (< opportunity-generated
+                                           (ceiling max-candidates top-opportunities))
                                         (not (gethash key seen)))
                                (setf (gethash key seen) t)
                                (incf candidate-count)
+                               (incf opportunity-generated)
                                (let* ((id (format nil "candidate-~D" candidate-count))
                                       (spec (list :id id :probe probe :target (first pair)
                                                   :response (second pair) :predicates gate
+                                                  :gate-evidence (brute-gate-evidence gate records pair)
                                                   :margin margin :insertion insertion
                                                   :terminal (getf event :terminal-team)))
                                       (path (merge-pathnames
@@ -287,14 +381,17 @@ internals, episode number and step number are excluded from gate features."
                                           ((not (equal pair (incubation-policy-pair child probe)))
                                            (list :id id :spec spec :status :inactive))
                                           (t
-                                           (let* ((returns
+                                           (let* ((episodes
                                                     (loop for seed in seeds
                                                           collect
-                                                          (getf
                                                            (brute-episode
                                                             env controller child environment
-                                                            seed work-log)
-                                                           :return)))
+                                                            seed work-log :observer observer)))
+                                                  (returns (mapcar (lambda (e) (getf e :return))
+                                                                   episodes))
+                                                  (safety (mapcar #'brute-episode-safety episodes))
+                                                  (violations (brute-safety-regressions
+                                                               baseline-safety safety))
                                                   (mean (arithmetic-mean returns))
                                                   (collateral
                                                     (loop for obs in background
@@ -313,7 +410,20 @@ internals, episode number and step number are excluded from gate features."
                                                               seed work-log) :return)
                                                      unless (= actual expected)
                                                        do (error "Saved candidate replay differs.")))
-                                             (list :id id :spec spec :status :evaluated
+                                             (loop for episode in episodes
+                                                   for metrics in safety
+                                                   for original in baseline-safety
+                                                   when (brute-safety-regressions
+                                                         (list original) (list metrics))
+                                                     do (write-readable-object-atomically
+                                                         episode
+                                                         (merge-pathnames
+                                                          (format nil "~A-unsafe-seed-~D.sexp"
+                                                                  id (getf episode :seed))
+                                                          directory)))
+                                             (list :id id :spec spec
+                                                   :status (if violations :unsafe :evaluated)
+                                                   :safety safety :safety-violations violations
                                                    :checkpoint (namestring path)
                                                    :returns returns :mean mean
                                                    :delta (- mean parent-mean)
@@ -321,7 +431,8 @@ internals, episode number and step number are excluded from gate features."
                                                    :background-count (length background)))))))
                                  (write-readable-object-atomically outcome result-path)
                                  (push outcome variants)
-                                 (when (and (getf outcome :mean)
+                                 (when (and (eq (getf outcome :status) :evaluated)
+                                            (getf outcome :mean)
                                             (> (getf outcome :mean) best-mean))
                                    (setf best-mean (getf outcome :mean)
                                          best-path (getf outcome :checkpoint)))
@@ -331,6 +442,7 @@ internals, episode number and step number are excluded from gate features."
              (let ((summary (list :source checkpoint :source-mean parent-mean
                                   :best-path best-path :best-mean best-mean
                                   :improved (> best-mean parent-mean)
+                                  :baseline-safety baseline-safety :seeds seeds
                                   :trials trials :candidates (nreverse variants))))
                (write-readable-object-atomically summary
                                         (merge-pathnames "round-summary.sexp" directory))
@@ -339,7 +451,7 @@ internals, episode number and step number are excluded from gate features."
 
 (defun run-privileged-brute-search
        (&key checkpoint output environment seeds steps actions rounds
-             max-branches max-candidates top-opportunities)
+             max-branches max-candidates top-opportunities prior-evidence)
   (let* ((*num-observations* 62) (*num-actions* 36)
          (*factored-actions-enabled* t) (*terminal-action-format* :target-response-36)
          (*instruction-set-profile* :reduced-eq)
@@ -359,7 +471,8 @@ internals, episode number and step number are excluded from gate features."
           for summary =
             (if (probe-file completed) (rare-failure-read-form completed)
                 (brute-round current round-directory environment seeds steps actions
-                             max-branches max-candidates top-opportunities))
+                             max-branches max-candidates top-opportunities
+                             (and (= round 1) prior-evidence)))
           do (push summary summaries)
              (setf current (getf summary :best-path))
              (format t "~&ROUND ~D source=~A best=~A improved=~A~%"
