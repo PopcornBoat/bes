@@ -24,8 +24,17 @@
 
 (defun official-pilot-run-episode
        (env controller team environment-name seed
-        &key intervention-step intervention-pair expected-prefix observer)
-  "Run one official episode; verify the entire prefix before one intervention."
+        &key intervention-step intervention-pair
+             (intervention-ranking nil ranking-supplied-p)
+             expected-concrete expected-prefix observer)
+  "Verify a frozen prefix, execute one resolved ranking, then resume TEAM."
+  (when (and (null intervention-step)
+             (or intervention-pair ranking-supplied-p expected-concrete))
+    (error "Intervention actions require an explicit step."))
+  (when intervention-step
+    (unless (and (integerp intervention-step) (not (minusp intervention-step))
+                 (if ranking-supplied-p (null intervention-pair) intervention-pair))
+      (error "An intervention requires a step and exactly one pair or ranking.")))
   (call-with-fresh-policy-episode
    (lambda ()
      (cage2-controller-reset controller)
@@ -63,8 +72,11 @@
                               (= timestep intervention-step)))
                        (decision
                          (if intervention-p
-                             (cage2-controller-resolve-pair-ranking
-                              controller (list intervention-pair))
+                             (if ranking-supplied-p
+                                 (cage2-controller-resolve-ranking
+                                  controller intervention-ranking)
+                                 (cage2-controller-resolve-pair-ranking
+                                  controller (list intervention-pair)))
                              incumbent-decision))
                        (record
                          (list
@@ -83,6 +95,9 @@
                                         (mapcar
                                          #'semantic-action-category-pair
                                          ranking))
+                          :requested-ranking
+                            (and intervention-p ranking-supplied-p
+                                 (mapcar #'semantic-action-category-pair intervention-ranking))
                           :executed-pair (official-pilot-pair decision)
                           :executed-concrete
                             (cage2-controller-decision-concrete-action
@@ -105,8 +120,11 @@
                            (getf record :executed-concrete))
                       (error "Intervention at step ~D changed no concrete action."
                              timestep))
-                    (unless (equal intervention-pair
-                                   (getf record :executed-pair))
+                    (when (and expected-concrete
+                               (/= expected-concrete (getf record :executed-concrete)))
+                      (error "Intervention resolved to an unexpected concrete action."))
+                    (unless (or ranking-supplied-p
+                                (equal intervention-pair (getf record :executed-pair)))
                       (error "Intervention pair ~S resolved as ~S."
                              intervention-pair
                              (getf record :executed-pair)))
@@ -120,6 +138,9 @@
                     (let ((actual
                             (cl-gym::cage2-info-value
                              info "concrete_action")))
+                      (unless (eql actual (getf record :executed-concrete))
+                        (error "Bridge executed ~S but Controller selected ~S."
+                               actual (getf record :executed-concrete)))
                       (cl-gym::commit-controller-step
                        controller decision info)
                       (setf record

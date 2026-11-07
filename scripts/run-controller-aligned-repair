@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+exec /home/hardison/venv-base/cage2_bridge/.venv/bin/python \
+  "$(dirname "$0")/controller-aligned-repair.py" "$@"

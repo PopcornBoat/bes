@@ -96,3 +96,12 @@ def _bes_protected_host_metrics(snapshots, host):
         streak = streak + 1 if controlled else 0
         maximum_streak = max(maximum_streak, streak)
     return [loss, controlled_steps, maximum_streak]
+
+
+def _bes_host_access(snapshot, host):
+    """Training-only nomination hint. Official interventions determine value."""
+    sessions = [s for s in json.loads(snapshot)["sessions"].get("Red", ())
+                if s["host"] == host and s["active"]]
+    if any(s["username"] in ("root", "SYSTEM") for s in sessions):
+        return 2
+    return int(bool(sessions))

@@ -150,6 +150,12 @@ def main():
         env = os.environ.copy()
         env["CL_SOURCE_REGISTRY"] = f'(:source-registry (:directory "{repo}/") :ignore-inherited-configuration)'
         env["PATH"] = "/home/hardison/venv-base/cage2_bridge/.venv/bin:" + env.get("PATH", "")
+        env["BRUTE_ENV_SIGNATURE"] = hashlib.sha256(json.dumps({
+            "bridge": config["bridge_sha256"], "cyborg": config["cyborg_source_sha256"],
+            "execution": {name: config["source_sha256"][name] for name in (
+                "agreement.lisp", "controller.lisp", "gym.lisp", "team.lisp",
+                "program.lisp", "instruction.lisp", "action.lisp")}
+        }, sort_keys=True).encode()).hexdigest()
         command = ["/usr/bin/sbcl", "--dynamic-space-size", "4096", "--noinform",
                    "--non-interactive", "--eval", "(require :asdf)",
                    "--eval", "(asdf:load-system :cl-tpg)",

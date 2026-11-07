@@ -2,7 +2,7 @@
 
 ;; Offline analysis may inspect simulator internals. Every policy invocation
 ;; below still receives the original Controller's 62-dimensional observation.
-(defparameter +privileged-search-protocol+ :evidence-guided-privileged-search-v2)
+(defparameter +privileged-search-protocol+ :controller-aligned-privileged-search-v3)
 
 (defun brute-append-record (path record)
   (with-open-file (stream path :direction :output :if-exists :append
@@ -51,6 +51,87 @@
          (not (cage2-controller-decision-fallback-p decision))
          (/= (getf event :incumbent-concrete)
              (cage2-controller-decision-concrete-action decision)))))
+
+(defun brute-resolve-team (team controller event)
+  "Resolve the complete TPG ranking from an immutable Controller context."
+  (brute-restore-controller controller (getf event :controller-before))
+  (let* ((ranking (execute-team-semantic-ranked
+                   team (getf event :policy-observation)))
+         (decision (cage2-controller-resolve-ranking controller ranking)))
+    (values decision ranking)))
+
+(defun brute-credit-key (context concrete)
+  "Separate frozen parent/continuation/environment identities and full prefixes."
+  (let ((event (getf context :event)))
+    (list (getf context :identity) (getf context :seed)
+          (getf context :prefix) (getf event :step)
+          (getf event :state-digest) (getf event :controller-before)
+          (getf event :policy-observation) concrete)))
+
+(defun brute-credit-statistics (rows)
+  "Treat unmeasured actions as unknown and average known effects within seed."
+  (let ((seeds (make-hash-table :test #'eql)) (known 0) (unknown 0))
+    (dolist (row rows)
+      (if (eq (getf row :status) :unknown)
+          (incf unknown)
+          (progn
+            (incf known)
+            (push (getf row :delta) (gethash (getf row :seed) seeds)))))
+    (let ((means (loop for values being the hash-values of seeds
+                       collect (arithmetic-mean values))))
+      (list :known known :unknown unknown :seed-count (length means)
+            :mean (and means (arithmetic-mean means))
+            :se (and (> (length means) 1) (sample-standard-error means))
+            :effects rows))))
+
+(defun brute-index-action-evidence (records baselines identity)
+  "Index official measurements by what the simulator actually executed."
+  (let ((contexts (make-hash-table :test #'equal))
+        (cache (make-hash-table :test #'equalp)) (ordered nil))
+    (dolist (record records)
+      (let* ((seed (getf record :seed))
+             (event (getf record :event))
+             (step (getf event :step))
+             (context
+               (or (gethash (list seed step) contexts)
+                   (let* ((episode (cdr (assoc seed baselines)))
+                          (new (list :identity identity :seed seed :event event
+                                     :prefix
+                                       (loop for row across (getf episode :steps)
+                                             repeat step collect (getf row :actual-concrete)))))
+                     (unless episode (error "Missing source episode for action evidence."))
+                     (setf (gethash (list seed step) contexts) new)
+                     (push new ordered)
+                     new)))
+             (concrete (getf (getf record :intervention) :actual-concrete))
+             (key (brute-credit-key context concrete)))
+        (multiple-value-bind (previous present) (gethash key cache)
+          (when (and present (/= previous (getf record :delta)))
+            (error "Conflicting returns for the same frozen concrete intervention.")))
+        (setf (gethash key cache) (getf record :delta))))
+    (values (nreverse ordered) cache)))
+
+(defun brute-candidate-effect-evidence (parent child controller contexts cache)
+  "Credit the resolved child action, including fallback and global Decoy choice."
+  (brute-credit-statistics
+   (loop for context in contexts
+         for event = (getf context :event)
+         for before = (brute-resolve-team parent controller event)
+         for after = (brute-resolve-team child controller event)
+         for old = (cage2-controller-decision-concrete-action before)
+         for new = (cage2-controller-decision-concrete-action after)
+         collect
+         (progn
+           (unless (= old (getf event :incumbent-concrete))
+             (error "The frozen source Controller decision no longer matches."))
+           (multiple-value-bind (delta present)
+               (if (= old new) (values 0.0d0 t)
+                   (gethash (brute-credit-key context new) cache))
+             (list :seed (getf context :seed) :step (getf event :step)
+                   :before-concrete old :after-concrete new
+                   :after-pair (official-pilot-pair after)
+                   :status (if (= old new) :unchanged (if present :measured :unknown))
+                   :delta (and present delta)))))))
 
 (defun brute-gate-matches-p (predicates observation)
   (every (lambda (predicate)
@@ -207,7 +288,7 @@ Only the existing 62 current-input features can occur in a gate."
          (work-log (merge-pathnames "completed-rollouts.sexp" directory))
          (baselines nil) (records nil) (background nil) (trials 0)
          (best-path checkpoint) (best-mean nil) (variants nil)
-         (baseline-safety nil))
+         (baseline-safety nil) (effect-contexts nil) (action-cache nil))
     (unless (and (= (getf metadata :num-observations) 62)
                  (eq (getf metadata :terminal-action-format) :target-response-36)
                  (not (getf metadata :recurrent-policy-enabled)))
@@ -324,6 +405,12 @@ Only the existing 62 current-input features can occur in a gate."
               (list :protocol +privileged-search-protocol+ :source checkpoint
                     :baseline-mean parent-mean :trials trials :opportunities records)
               (merge-pathnames "opportunities.sexp" directory))
+             (multiple-value-setq (effect-contexts action-cache)
+               (brute-index-action-evidence
+                records baselines
+                (list (incubation-file-sha256 checkpoint)
+                      (incubation-file-sha256 checkpoint)
+                      (or (uiop:getenv "BRUTE_ENV_SIGNATURE") environment))))
              (let ((candidate-count 0) (opportunity-count 0)
                    (seen (make-hash-table :test #'equal))
                    (nominated-states (make-hash-table :test #'equalp))
@@ -363,7 +450,9 @@ Only the existing 62 current-input features can occur in a gate."
                                (let* ((id (format nil "candidate-~D" candidate-count))
                                       (spec (list :id id :probe probe :target (first pair)
                                                   :response (second pair) :predicates gate
-                                                  :gate-evidence (brute-gate-evidence gate records pair)
+                                                  :nomination-evidence (brute-gate-evidence gate records pair)
+                                                  :nomination-seed (getf record :seed)
+                                                  :nomination-step (getf record :step)
                                                   :margin margin :insertion insertion
                                                   :terminal (getf event :terminal-team)))
                                       (path (merge-pathnames
@@ -372,6 +461,10 @@ Only the existing 62 current-input features can occur in a gate."
                                                     (format nil "~A-result.sexp" id)
                                                     directory))
                                       (child (incubation-child team spec))
+                                      (aligned-evidence
+                                        (and child
+                                             (brute-candidate-effect-evidence
+                                              team child controller effect-contexts action-cache)))
                                       (outcome
                                         (cond
                                           ((probe-file result-path)
@@ -423,6 +516,7 @@ Only the existing 62 current-input features can occur in a gate."
                                                           directory)))
                                              (list :id id :spec spec
                                                    :status (if violations :unsafe :evaluated)
+                                                   :controller-aligned-evidence aligned-evidence
                                                    :safety safety :safety-violations violations
                                                    :checkpoint (namestring path)
                                                    :returns returns :mean mean

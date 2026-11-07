@@ -123,3 +123,12 @@ The first v1 source-seed winner failed a 50-pair fresh screen. The evidence-guid
 v2 revision uses those failures to justify signed multi-seed gate scoring,
 opportunity diversity and explicit paired Op_Server0 protection. The protected
 host is an evaluator constraint and never appears as a hidden runtime feature.
+
+## Concrete credit alignment
+
+Nominal single-pair intervention evidence is retained as nomination evidence.
+Compiled children additionally report the actual concrete-action evidence from
+their complete ranked Controller decision. Unknown actions are marked unknown,
+not assigned zero or another terminal's credit. See
+[Controller-aligned repair credit](controller-aligned-repair.md) for the bounded
+C13 refinement protocol, source freezes and independent confirmation boundary.
