@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo=$(cd -- "$(dirname -- "$0")/.." && pwd)
+exec /home/hardison/venv-base/cage2_bridge/.venv/bin/python "$repo/scripts/closed-loop-nomination-pilot.py" "$@"
