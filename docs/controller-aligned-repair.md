@@ -88,9 +88,10 @@ scripts/run-controller-aligned-repair /home/hardison/bes-artifacts/runtime/contr
 
 Defaults: 24 cases, 12 variants, 24 supplemental intervention queries. Each
 query and complete policy rollout can consume up to 100 official transitions;
-this is not a 24-episode total budget. Every rollout is preserved in
-`completed-rollouts.sexp`, including seed, full steps and policy provenance
-through its owning measurement/evaluation record. Whole-policy variants are
+this is not a 24-episode total budget. `completed-rollouts.sexp` records
+seed, return and transition counts. Full discovery traces and intervention
+branches are stored separately; variant result files contain full-policy
+returns and protected-host evidence. Whole-policy variants are
 evaluated and reloaded on the same fixed discovery seed set.
 
 The Python launcher locks one output directory and rejects changed inputs or
@@ -124,3 +125,42 @@ otherwise unvisited candidate path. Its standalone graph was evaluated, saved,
 reloaded and reproduced its returns; its measured paired result was negative.
 This fixture is an accounting/serialization check, not a gate-search success.
 The larger run remains an experiment, not a demonstrated repair.
+
+## Stratified dual-trajectory protocol (v2)
+
+The v1 experiment completed with 17 measured points, no eligible gate and no
+new candidate. The implementation now samples all actual C13/v9 disagreements,
+not just empty-host Restores and winning episodes. Existing v1 artifacts remain
+unchanged.
+
+With `--fresh-episodes N`, collect N paired official C13/v9 episodes on a frozen
+new seed block. Generation excludes the old screening block, evaluation seeds
+and monitoring roots 153/42/2026. These new episodes are discovery data.
+
+Inspect both policies' own trajectories. At a C13 branch point execute the full
+v9 ranking once, then continue C13. At a v9 branch point execute the full C13
+ranking once, then continue v9. In both cases keep-advantage means C13's local
+action minus v9's local action, under the explicitly recorded continuation.
+These two continuation estimands are nomination evidence, not interchangeable
+estimates of full-policy value. Actual child effects are normalized relative
+to the measured local C13 action before being compared.
+
+Select points round-robin across diagnostic strata: current 62-input
+observation, active terminal team, concrete action pair, both relevant hosts'
+actual Red access levels, trajectory source and 25-step phase. Prioritize
+independent seeds and allow at most two points per seed across both sources.
+This is a balanced diagnostic sample, not a frequency-representative sample.
+Report all available and selected source/access/observation counts. Hidden
+state and episode phase remain training-only sampling fields; runtime gates
+still use only existing current-observation equality predicates.
+
+The gate family, score threshold, two-positive-seed requirement, protected-host
+checks and standalone-policy evaluation are unchanged. If no gate qualifies,
+skip the unnecessary whole-candidate baseline batch. A negative result is
+retained rather than lowering a threshold to manufacture a candidate.
+
+Example bounded expansion:
+
+```sh
+scripts/run-controller-aligned-repair /home/hardison/bes-artifacts/runtime/stratified-controller-repair-20261107/search --fresh-episodes 64 --discovery-seed-root 291107 --max-cases 96 --max-candidates 12 --extra-queries 24
+```

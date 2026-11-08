@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import random
 from pathlib import Path
 import subprocess
 import sys
@@ -29,9 +30,13 @@ def main():
     parser.add_argument("--max-cases", type=int, default=24)
     parser.add_argument("--max-candidates", type=int, default=12)
     parser.add_argument("--extra-queries", type=int, default=24)
+    parser.add_argument("--fresh-episodes", type=int, default=0,
+                        help="Collect new C13/v9 trajectories instead of reusing screen traces")
+    parser.add_argument("--discovery-seed-root", type=int, default=291107)
     parser.add_argument("--evaluation-seeds", default="153,42197,68329,91583,147179,2586165321,2517123629")
     args = parser.parse_args()
-    if min(args.max_cases, args.max_candidates) < 1 or args.extra_queries < 0:
+    if (min(args.max_cases, args.max_candidates) < 1 or args.extra_queries < 0
+            or args.fresh_episodes < 0 or args.fresh_episodes > 1000):
         parser.error("Invalid experiment budget")
     try:
         seeds = [int(x) for x in args.evaluation_seeds.split(",")]
@@ -39,6 +44,8 @@ def main():
         parser.error("Invalid seed list")
     if len(seeds) != len(set(seeds)) or any(x < 0 or x >= 2**32 for x in seeds):
         parser.error("Seeds must be unique uint32 values")
+    if not seeds:
+        parser.error("At least one evaluation seed is required")
     repo = Path(__file__).resolve().parent.parent
     output = args.output.resolve()
     search = args.search.resolve()
@@ -49,6 +56,17 @@ def main():
     screen_plan = json.loads((screen / "plan.json").read_text())
     if digest(parent) != screen_plan["checkpoint_sha256"]["incumbent"] or digest(repair) != screen_plan["checkpoint_sha256"]["c13"]:
         parser.error("Input graphs do not match the frozen screened policies")
+    # Disjoint from the old screening and discovery roots. Persist the exact
+    # new block; its outcomes are discovery, never confirmation evidence.
+    excluded = set(seeds) | {153, 42, 2026}
+    excluded.update(int(x) for x in (screen / "seeds.sexp").read_text().strip().strip("()").split())
+    discovery_seeds = []
+    generator = random.Random(args.discovery_seed_root)
+    while len(discovery_seeds) < args.fresh_episodes:
+        value = generator.randrange(2**32)
+        if value not in excluded:
+            excluded.add(value)
+            discovery_seeds.append(value)
     source_files = list(repo.glob("*.lisp")) + [repo / "cl-tpg.asd",
                     repo / "scripts/privileged-state.py", Path(__file__).resolve()]
     code_hashes = {str(p.relative_to(repo)): digest(p) for p in sorted(source_files)}
@@ -65,7 +83,7 @@ def main():
         trace_hash.update(path.name.encode())
         trace_hash.update(path.read_bytes())
     config = {
-        "protocol": "controller-aligned-repair-v1",
+        "protocol": "controller-aligned-repair-v2",
         "parent": str(parent), "repair": str(repair), "spec": str(spec),
         "input_sha256": {str(p): digest(p) for p in [parent, repair, spec, screen / "seeds.sexp", screen / "plan.json"]},
         "code_sha256": code_hashes, "trace_sha256": trace_hash.hexdigest(),
@@ -73,6 +91,10 @@ def main():
         "max_cases": args.max_cases, "max_candidates": args.max_candidates,
         "extra_queries": args.extra_queries, "evaluation_seeds": seeds,
         "screen": str(screen),
+        "fresh_episodes": args.fresh_episodes,
+        "discovery_seed_root": args.discovery_seed_root,
+        "discovery_seeds": discovery_seeds,
+        "sampling": "both behavior trajectories; all actual disagreements; observation/path/action/access/phase strata; max 2 points per seed",
         "data_roles": "Existing screen and nominated trajectories are discovery evidence; future confirmation must use fresh seeds.",
         "git_commit": subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip(),
     }
@@ -111,7 +133,8 @@ def main():
             f":screen-directory {quote(screen)} :output {quote(output)} "
             f":environment-signature {quote(environment_signature)} "
             f":max-cases {args.max_cases} :max-candidates {args.max_candidates} "
-            f":extra-queries {args.extra_queries} :evaluation-seeds ({' '.join(map(str,seeds))}))\n")
+            f":extra-queries {args.extra_queries} :evaluation-seeds ({' '.join(map(str,seeds))}) "
+            f":discovery-seeds ({' '.join(map(str,discovery_seeds))}))\n")
         env = os.environ.copy()
         env["PATH"] = "/home/hardison/venv-base/cage2_bridge/.venv/bin:" + env.get("PATH", "")
         env["CL_SOURCE_REGISTRY"] = f'(:source-registry (:directory "{repo}/") :ignore-inherited-configuration)'

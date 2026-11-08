@@ -144,3 +144,33 @@
   (assert (= 1 (length (aligned-observation-conflicts cases))))
   (assert (null (aligned-observation-conflicts (list (first cases))))))
 (format t "~&Identical-input conflicting-effect accounting checks passed.~%")
+
+(let* ((observation (make-array 62 :initial-element 0.0d0))
+       (rows (list
+              (list :seed 1 :step 3 :observation observation :repair-host-access 0 :stratum :empty)
+              (list :seed 1 :step 4 :observation observation :repair-host-access 0 :stratum :empty)
+              (list :seed 1 :step 5 :observation observation :repair-host-access 0 :stratum :empty)
+              (list :seed 2 :step 3 :observation observation :repair-host-access 2 :stratum :controlled)
+              (list :seed 2 :step 4 :observation observation :repair-host-access 2 :stratum :controlled)
+              (list :seed 3 :step 3 :observation observation :repair-host-access 1 :stratum :user)))
+       (chosen (aligned-select-nominations (append rows (list (first rows))) 6)))
+  (assert (= 5 (length chosen)))
+  (assert (= 3 (length (remove-duplicates (mapcar (lambda (r) (getf r :seed))
+                                                  (subseq chosen 0 3))))))
+  (assert (= 2 (count 1 chosen :key (lambda (r) (getf r :seed)))))
+  (assert (= 2 (count 2 chosen :key (lambda (r) (getf r :seed)))))
+  (assert (= 3 (getf (aligned-nomination-summary chosen) :independent-seeds)))
+  (assert (equal chosen (aligned-select-nominations rows 6)))
+  (assert (= 2 (length (aligned-select-nominations rows 2))))
+  (assert (null (aligned-select-nominations nil 2))))
+(format t "~&Stratified nomination, independent-seed quotas and deduplication checks passed.~%")
+
+(let* ((a (list :seed 1 :step 4 :trajectory :repair :stratum :repair))
+       (b (list :seed 1 :step 4 :trajectory :parent :stratum :parent))
+       (chosen (aligned-select-nominations (list a b a b) 4)))
+  (assert (= (length chosen) 2))
+  (assert (not (equal (aligned-outcome-key
+                      '(:identity ("repair" "repair" "env") :seed 1 :event (:step 4)))
+                     (aligned-outcome-key
+                      '(:identity ("parent" "parent" "env") :seed 1 :event (:step 4)))))))
+(format t "~&Dual-prefix cache and sample isolation checks passed.~%")
