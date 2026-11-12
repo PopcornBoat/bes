@@ -138,6 +138,7 @@
     :cage2-controller-protocol ,+cage2-controller-protocol+
     :cage2-controller-decoy-order-profile
       ,*cage2-controller-decoy-order-profile*
+    :cage2-decoy-resolution ,*cage2-decoy-resolution*
     :online-reference-episodes ,online-reference-episodes
     :mixed-training-lineage ,mixed-training-lineage
     :num-observations ,num-observations
@@ -378,12 +379,22 @@ evaluated under a missing or different constant bank."
              context actual expected))
     actual))
 
+(defun checkpoint-decoy-resolution-comparable-p (metadata)
+  (eq (getf metadata :cage2-decoy-resolution :profile)
+      *cage2-decoy-resolution*))
+
 (defun report-checkpoint-controller-protocol (metadata context)
   "Report how checkpoint Controller provenance relates to the active protocol."
   (let ((saved-protocol (getf metadata :cage2-controller-protocol))
         (saved-profile
           (getf metadata :cage2-controller-decoy-order-profile)))
     (cond
+      ((not (checkpoint-decoy-resolution-comparable-p metadata))
+       (emit-message
+        (format nil
+                "~A: Decoy resolution differs from checkpoint (~A -> ~A); scores require re-evaluation."
+                context (getf metadata :cage2-decoy-resolution :profile)
+                *cage2-decoy-resolution*)))
       ((null saved-protocol)
        (emit-message
         (format nil

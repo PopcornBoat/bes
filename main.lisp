@@ -3912,7 +3912,8 @@ normal evolution."
            checkpoint-metadata "Warm-start"))
         (ensure-team-observation-compatible
          loaded-best-team *num-observations*)
-        (when (official-guided-mode-p)
+        (when (and (official-guided-mode-p)
+                   (checkpoint-decoy-resolution-comparable-p checkpoint-metadata))
           (restore-official-guided-runtime-state
            checkpoint-metadata best-team-path))
         (inject-loaded-best-team-into-population loaded-best-team)
@@ -3933,7 +3934,8 @@ normal evolution."
                         :test #'eq))))
 
         (let ((comparable-fitness
-                (and (checkpoint-fitness-comparable-p
+                (and (checkpoint-decoy-resolution-comparable-p checkpoint-metadata)
+                     (checkpoint-fitness-comparable-p
                       saved-best-fitness
                       checkpoint-metadata
                       gym-environment-name)
@@ -3952,8 +3954,14 @@ normal evolution."
           ;; official incumbent. Other modes retain the historical behavior.
           (cond
             ((eq mode :official-online)
-             (initialize-official-online-best
-              loaded-best-team saved-best-fitness))
+             (let ((incumbent-fitness
+                     (if (and saved-best-fitness
+                              (checkpoint-decoy-resolution-comparable-p checkpoint-metadata))
+                         saved-best-fitness
+                         (progn
+                           (emit-message "Measuring the 100-episode incumbent under ranked Decoy resolution.")
+                           (cage2-reference-fitness loaded-best-team gym-environment-name)))))
+               (initialize-official-online-best loaded-best-team incumbent-fitness)))
             ((official-guided-mode-p)
              (initialize-official-guided-best-from-current-population
               loaded-best-team

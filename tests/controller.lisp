@@ -14,6 +14,7 @@
   (cl-tpg::make-semantic-action
    :target target :response response :option nil))
 
+(let ((cl-tpg::*cage2-decoy-resolution* :profile))
 ;; Scan history is episode-local and policy input remains exactly 62 values.
 (let* ((controller (cl-tpg:make-cage2-controller))
        (raw (make-array 52 :initial-element 0.0d0))
@@ -251,5 +252,53 @@
                        (= (cl-tpg:cage2-controller-decision-concrete-action ninth)
                           (cl-tpg::action-agreement-monitor-action agreement)))
                   "ninth Decoy request safely falls back to Monitor"))))))
+
+)
+
+;; Ranked resolution keeps each scheduled host's allowed Decoys and follows
+;; the original ranking across response types.
+(let* ((legacy (cl-tpg:make-cage2-controller :decoy-order-profile :heuristic))
+       (ranked (cl-tpg:make-cage2-controller :decoy-order-profile :heuristic))
+       (op-server (controller-semantic 5 :decoy))
+       (enterprise2 (controller-semantic 4 :decoy))
+       (analyse (controller-semantic 2 :analyse)))
+  (flet ((resolve (controller ranking)
+           (cl-tpg:cage2-controller-decision-concrete-action
+            (cl-tpg:cage2-controller-resolve-ranking
+             controller ranking :decoy-resolution (if (eq controller ranked) :ranked :profile)))))
+    (let ((ranking (list op-server enterprise2)))
+      (check-controller (= (resolve legacy ranking) 44)
+                        "legacy schedule can prioritize the lower-ranked Decoy host")
+      (check-controller (= (resolve ranked ranking) 61)
+                        "ranked resolution serves the first available Decoy host"))
+    (cl-tpg:cage2-controller-commit-decision
+     ranked (cl-tpg:cage2-controller-resolve-ranking ranked (list enterprise2) :decoy-resolution :ranked))
+    (let ((mask (cl-tpg::cage2-controller-decoy-mask ranked)))
+      (setf (cl-tpg::cage2-controller-decoy-mask legacy) mask)
+      (let ((ranking (list enterprise2 analyse op-server)))
+        (check-controller (= (resolve legacy ranking) 61)
+                          "legacy schedule can skip an intervening Analyse")
+        (check-controller (= (resolve ranked ranking) 3)
+                          "ranked resolution executes Analyse before a later Decoy"))
+      (check-controller (= (resolve ranked (list enterprise2 op-server)) 61)
+                        "ranked resolution reaches the next Decoy in order")
+      (check-controller
+       (= (cl-tpg:cage2-controller-decision-concrete-action
+           (cl-tpg::cage2-controller-resolve-pair-ranking
+            ranked '((4 3) (8 2) (2 0) (5 3))))
+          3)
+       "default ranked pair resolver skips a lower-ranked Restore and uses Analyse")
+      (check-controller (= mask (cl-tpg::cage2-controller-decoy-mask ranked))
+                        "ranked proposal resolution leaves the Decoy state unchanged"))
+    (let ((order
+            (loop repeat 4
+                  for decision =
+                    (cl-tpg:cage2-controller-resolve-ranking ranked (list op-server) :decoy-resolution :ranked)
+                  collect (cl-tpg:cage2-controller-decision-option decision)
+                  do (cl-tpg:cage2-controller-commit-decision ranked decision))))
+      (check-controller (equal order '(2 6 0 7))
+                        "ranked resolution keeps the scheduled host's option order"))
+    (check-controller (= (resolve ranked (list op-server)) 1)
+                      "scheduled host has no extra Decoys after its allowed set is exhausted")))
 
 (format t "Lisp Controller checks passed: ~D.~%" *controller-checks*)

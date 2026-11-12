@@ -4,6 +4,10 @@
   #(0 4 8 12 28 32 36 40 44 48)
   "Raw observation indices used by the Cardiff-compatible scan tracker.")
 
+(defparameter *cage2-decoy-resolution* :ranked
+  "Decoy arbitration used by the standard Controller resolver.
+:RANKED follows semantic ranking order and keeps the selected profile's host options.")
+
 (defstruct (cage2-controller
              (:constructor %make-cage2-controller))
   "Canonical episode-local state outside the evolved TPG policy.
@@ -107,12 +111,18 @@ function. Values are 0=unseen, 1=previous scan, and 2=latest scan."
        (logbitp (+ (* (1- target) 8) option)
                 (cage2-controller-decoy-mask controller))))
 
-(defun cage2-controller-first-available-decoy (controller target)
-  "Return TARGET's first unused Decoy option under the controller order."
-  (first-available-decoy-option
-   target
-   (cage2-controller-decoy-mask controller)
-   (cage2-controller-option-orders controller)))
+(defun cage2-controller-first-available-decoy (controller target &optional ranked-p)
+  "Return TARGET's first unused option, using its scheduled subset in ranked mode."
+  (let ((schedule (cage2-controller-decoy-schedule controller)))
+    (if (and schedule ranked-p)
+        (loop for (host option) in schedule
+              when (and (= host target)
+                        (not (cage2-controller-decoy-used-p controller host option)))
+                return option)
+        (first-available-decoy-option
+         target
+         (cage2-controller-decoy-mask controller)
+         (cage2-controller-option-orders controller)))))
 
 (defun cage2-controller-response-index (response)
   (position response *semantic-response-types* :test #'eq))
@@ -214,14 +224,18 @@ the policy omitted from its bounded semantic ranking."
                (when rank
                  (return (values target option rank))))))
 
-(defun cage2-controller-resolve-ranking (controller candidates)
+(defun cage2-controller-resolve-ranking (controller candidates
+                                         &key (decoy-resolution *cage2-decoy-resolution*))
   "Purely resolve ranked semantic CANDIDATES into an executable decision.
 
-An exhausted Decoy advances to the next bid without re-running TPG. To retain
-the established teacher/bridge rule, Restore is executable at rank zero but is
-skipped after fallback has begun. Empty, malformed, or exhausted rankings end
+With ranked resolution, an exhausted Decoy advances to the next candidate
+without re-running TPG. Scheduled profiles in :PROFILE mode use their global
+table when the scan reaches a Decoy. Restore is executable at rank zero but is
+skipped after fallback has begun.
+Empty, malformed, or exhausted rankings end
 in Monitor. This function never changes scan state, Decoy state, or step count;
   only CAGE2-CONTROLLER-COMMIT-DECISION may do so after a real step succeeds."
+  (check-type decoy-resolution (member :profile :ranked))
   (block selected
     (loop with scheduled-decoy-considered-p = nil
           for candidate in candidates
@@ -238,8 +252,9 @@ in Monitor. This function never changes scan state, Decoy state, or step count;
                       (return-from selected decision)))
                    ((and (> rank 0) (= response-index 2))
                     nil)
-                   ((and (cage2-controller-decoy-schedule controller)
-                         (= response-index 3))
+                   ((and (= response-index 3)
+                         (eq decoy-resolution :profile)
+                         (cage2-controller-decoy-schedule controller))
                     ;; Resolve the first Decoy proposal through the global
                     ;; profile once. Later Decoy candidates must be skipped
                     ;; when the schedule is exhausted so normal non-Decoy
@@ -269,7 +284,7 @@ in Monitor. This function never changes scan state, Decoy state, or step count;
                     (let ((option
                             (and (= response-index 3)
                                  (cage2-controller-first-available-decoy
-                                  controller target))))
+                                  controller target (eq decoy-resolution :ranked)))))
                       (when (or (/= response-index 3) option)
                         (let ((semantic
                                 (make-semantic-action
@@ -337,5 +352,7 @@ clears only its target's Decoys; Decoy marks exactly the selected option."
                     (cage2-controller-agreement controller))
         :decoy-order-profile
           (cage2-controller-decoy-order-profile controller)
+        :decoy-resolution
+          *cage2-decoy-resolution*
         :decoy-schedule
           (copy-tree (cage2-controller-decoy-schedule controller))))
