@@ -4,6 +4,9 @@
   #(0 4 8 12 28 32 36 40 44 48)
   "Raw observation indices used by the Cardiff-compatible scan tracker.")
 
+(defvar *cage2-decoy-schedule-override* nil
+  "Optional per-evaluation B-line global Decoy schedule for static search.")
+
 (defstruct (cage2-controller
              (:constructor %make-cage2-controller))
   "Canonical episode-local state outside the evolved TPG policy.
@@ -42,7 +45,8 @@ profile includes both its per-target option orders and its exact cross-target
 global schedule."
   (let* ((schedule
            (case decoy-order-profile
-             (:heuristic +cage2-heuristic-decoy-schedule+)
+             (:heuristic (or *cage2-decoy-schedule-override*
+                             +cage2-heuristic-decoy-schedule+))
              (:meander-heuristic
               +cage2-meander-heuristic-decoy-schedule+)
              (otherwise nil)))
