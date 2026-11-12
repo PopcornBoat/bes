@@ -174,7 +174,7 @@ concrete Decoy whose target is represented in that ranking.")
 The pairs are the Semantic-36 translations of concrete actions
 51,55,116,44,43,29,107,37,130,115,76,131,120,38,91,102,90,28.")
 
-(defparameter *cage2-controller-decoy-order-profile* :heuristic
+(defparameter *cage2-controller-decoy-order-profile* :ppo-greedy
   "Fixed, versioned Decoy order used by the Lisp controller.
 
 This is intentionally independent of *TEACHER-BACKEND*: changing who supplies

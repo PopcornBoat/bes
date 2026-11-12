@@ -372,7 +372,6 @@
          (*instruction-set-profile* :reduced-eq)
          (*read-only-register-profile* :cage2-categorical-v1)
          (*decoy-order-mode* :fixed)
-         (*cage2-controller-decoy-order-profile* :heuristic)
          (*cage2-opening-mode* :fixed)
          (*teacher-backend* :heuristic)
          (*recurrent-policy-enabled* nil)

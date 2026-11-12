@@ -379,9 +379,11 @@ evaluated under a missing or different constant bank."
              context actual expected))
     actual))
 
-(defun checkpoint-decoy-resolution-comparable-p (metadata)
-  (eq (getf metadata :cage2-decoy-resolution :profile)
-      *cage2-decoy-resolution*))
+(defun checkpoint-decoy-contract-comparable-p (metadata)
+  (and (eq (getf metadata :cage2-decoy-resolution :profile)
+           *cage2-decoy-resolution*)
+       (eq (getf metadata :cage2-controller-decoy-order-profile)
+           *cage2-controller-decoy-order-profile*)))
 
 (defun report-checkpoint-controller-protocol (metadata context)
   "Report how checkpoint Controller provenance relates to the active protocol."
@@ -389,12 +391,12 @@ evaluated under a missing or different constant bank."
         (saved-profile
           (getf metadata :cage2-controller-decoy-order-profile)))
     (cond
-      ((not (checkpoint-decoy-resolution-comparable-p metadata))
+      ((not (checkpoint-decoy-contract-comparable-p metadata))
        (emit-message
         (format nil
-                "~A: Decoy resolution differs from checkpoint (~A -> ~A); scores require re-evaluation."
-                context (getf metadata :cage2-decoy-resolution :profile)
-                *cage2-decoy-resolution*)))
+                "~A: Decoy contract differs from checkpoint (~A/~A -> ~A/~A); scores require re-evaluation."
+                context saved-profile (getf metadata :cage2-decoy-resolution :profile)
+                *cage2-controller-decoy-order-profile* *cage2-decoy-resolution*)))
       ((null saved-protocol)
        (emit-message
         (format nil

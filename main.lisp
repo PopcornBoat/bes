@@ -3913,7 +3913,7 @@ normal evolution."
         (ensure-team-observation-compatible
          loaded-best-team *num-observations*)
         (when (and (official-guided-mode-p)
-                   (checkpoint-decoy-resolution-comparable-p checkpoint-metadata))
+                   (checkpoint-decoy-contract-comparable-p checkpoint-metadata))
           (restore-official-guided-runtime-state
            checkpoint-metadata best-team-path))
         (inject-loaded-best-team-into-population loaded-best-team)
@@ -3934,13 +3934,15 @@ normal evolution."
                         :test #'eq))))
 
         (let ((comparable-fitness
-                (and (checkpoint-decoy-resolution-comparable-p checkpoint-metadata)
+                (and (checkpoint-decoy-contract-comparable-p checkpoint-metadata)
                      (checkpoint-fitness-comparable-p
                       saved-best-fitness
                       checkpoint-metadata
                       gym-environment-name)
                      saved-best-fitness)))
-          (when (and saved-best-fitness (null comparable-fitness))
+          (when (and saved-best-fitness (null comparable-fitness)
+                     (or (not (eq mode :official-online))
+                         (checkpoint-decoy-contract-comparable-p checkpoint-metadata)))
             (emit-message
              (format nil
                      (if (official-guided-mode-p)
@@ -3956,10 +3958,10 @@ normal evolution."
             ((eq mode :official-online)
              (let ((incumbent-fitness
                      (if (and saved-best-fitness
-                              (checkpoint-decoy-resolution-comparable-p checkpoint-metadata))
+                              (checkpoint-decoy-contract-comparable-p checkpoint-metadata))
                          saved-best-fitness
                          (progn
-                           (emit-message "Measuring the 100-episode incumbent under ranked Decoy resolution.")
+                           (emit-message "Measuring the 100-episode incumbent under the active Decoy contract.")
                            (cage2-reference-fitness loaded-best-team gym-environment-name)))))
                (initialize-official-online-best loaded-best-team incumbent-fitness)))
             ((official-guided-mode-p)

@@ -15,7 +15,7 @@ REPO = Path(__file__).resolve().parent.parent
 VENV = Path("/home/hardison/venv-base/cage2_bridge/.venv/bin")
 SOURCE = REPO/"validated-checkpoints/bline-v14/bline-62-36-v14.lisp"
 V14 = "0d023ad8ad0f8191751e2a205b09c8bc5d3a15c2f17e1ca604ca0a3830fd0aa4"
-PORTS = (8091,8092,8093,8094)
+PORTS = (8095,8096,8097,8098)
 SEEDS = (153,4011,6017,7019)
 LOG_TELEMETRY = """(let ((send (symbol-function 'cl-tpg::notify-telemetry)))
   (setf (symbol-function 'cl-tpg::notify-telemetry)
@@ -102,10 +102,10 @@ def run(out):
                     break
                 except OSError:
                     time.sleep(1)
-        (out/"RUNNING").write_text("Ranked Decoy warm starts requested on 8091–8094.\n")
+        (out/"RUNNING").write_text("Cardiff Decoy warm starts requested on 8095–8098.\n")
         while True:
             lines=[status(folder,port,child) for folder,port,child,_ in processes]
-            print("new  "+" | ".join(lines),flush=True)
+            print("decoy-table-fix  "+" | ".join(lines),flush=True)
             if not any(child.poll() is None for _,_,child,_ in processes):
                 break
             time.sleep(15)

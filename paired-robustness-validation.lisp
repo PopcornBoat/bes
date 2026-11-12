@@ -148,7 +148,7 @@ profile used by official CAGE2 rollout."
          (*read-only-register-profile* :cage2-categorical-v1)
          (*decoy-order-mode* :fixed)
          (*cage2-controller-decoy-order-profile*
-           (cage2-heuristic-controller-profile
+           (cage2-rollout-controller-decoy-order-profile
             (cage2-validation-environment-name red-agent (first horizons))))
          (*cage2-opening-mode* :fixed)
          (*teacher-backend* :heuristic)

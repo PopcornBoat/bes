@@ -91,10 +91,10 @@ def _bes_official_state_digest(env):
     (setf env (cl-gym::make environment-name)
           controller (make-cage2-controller
                       :decoy-order-profile
-                      (cage2-heuristic-controller-profile environment-name))
+                      (cage2-rollout-controller-decoy-order-profile environment-name))
           resolver (make-cage2-controller
                     :decoy-order-profile
-                    (cage2-heuristic-controller-profile environment-name)))
+                    (cage2-rollout-controller-decoy-order-profile environment-name)))
     (cl-gym::configure-cage2-controller-option-orders env controller)
     (cl-gym::configure-cage2-controller-option-orders env resolver)
     (unwind-protect

@@ -8,6 +8,43 @@
   "Decoy arbitration used by the standard Controller resolver.
 :RANKED follows semantic ranking order and keeps the selected profile's host options.")
 
+;; Source: https://github.com/john-cardiff/-cyborg-cage-2/blob/main/Agents/PPOAgent.py
+(defparameter +cardiff-ppo-decoy-actions+
+  '((1 54 106 28 119)       ; Defender
+    (2 55 107 120 29)       ; Enterprise0
+    (3 43)                 ; Enterprise1
+    (4 44)                 ; Enterprise2
+    (5 61 35 113 126)      ; Op_Server0
+    (7 37 115 76 102)      ; User1
+    (8 51 116 38 90)       ; User2
+    (9 130 91)             ; User3
+    (10 131))              ; User4
+  "Exact per-host greedy Decoy IDs in the public Cardiff PPOAgent deployment.")
+
+(defun cage2-cardiff-decoy-schedule (agreement)
+  "Convert the Cardiff host-local lists into shared target/option pairs."
+  (loop for (target . concrete-actions) in +cardiff-ppo-decoy-actions+
+        for offset = (aref (action-agreement-host-offsets agreement) target)
+        append (loop for action in concrete-actions
+                     for option = (position (- action offset)
+                                            (action-agreement-decoy-bases agreement))
+                     unless option do (error "Invalid Cardiff Decoy ~D for target ~D."
+                                             action target)
+                     collect (list target option))))
+
+(defun cage2-cardiff-bridge-orders (agreement schedule)
+  "Supply the bridge's required complete permutations, with Cardiff options first."
+  (let ((orders (copy-action-option-orders
+                 (action-agreement-decoy-orders-for-profile :model agreement))))
+    (loop for target from 1 below (length orders)
+          for allowed = (loop for (host option) in schedule
+                              when (= host target) collect option)
+          do (setf (aref orders target)
+                   (concatenate 'simple-vector allowed
+                                (remove-if (lambda (option) (member option allowed))
+                                           (aref orders target)))))
+    orders))
+
 (defstruct (cage2-controller
              (:constructor %make-cage2-controller))
   "Canonical episode-local state outside the evolved TPG policy.
@@ -46,13 +83,15 @@ profile includes both its per-target option orders and its exact cross-target
 global schedule."
   (let* ((schedule
            (case decoy-order-profile
+             (:ppo-greedy (cage2-cardiff-decoy-schedule agreement))
              (:heuristic +cage2-heuristic-decoy-schedule+)
              (:meander-heuristic
               +cage2-meander-heuristic-decoy-schedule+)
              (otherwise nil)))
          (orders
-          (action-agreement-decoy-orders-for-profile
-           decoy-order-profile agreement)))
+           (if (eq decoy-order-profile :ppo-greedy)
+               (cage2-cardiff-bridge-orders agreement schedule)
+               (action-agreement-decoy-orders-for-profile decoy-order-profile agreement))))
     (unless orders
       (error "Unknown CAGE2 controller Decoy-order profile: ~S"
              decoy-order-profile))
@@ -114,7 +153,8 @@ function. Values are 0=unseen, 1=previous scan, and 2=latest scan."
 (defun cage2-controller-first-available-decoy (controller target &optional ranked-p)
   "Return TARGET's first unused option, using its scheduled subset in ranked mode."
   (let ((schedule (cage2-controller-decoy-schedule controller)))
-    (if (and schedule ranked-p)
+    (if (and schedule
+             (or ranked-p (eq (cage2-controller-decoy-order-profile controller) :ppo-greedy)))
         (loop for (host option) in schedule
               when (and (= host target)
                         (not (cage2-controller-decoy-used-p controller host option)))
@@ -254,6 +294,7 @@ in Monitor. This function never changes scan state, Decoy state, or step count;
                     nil)
                    ((and (= response-index 3)
                          (eq decoy-resolution :profile)
+                         (not (eq (cage2-controller-decoy-order-profile controller) :ppo-greedy))
                          (cage2-controller-decoy-schedule controller))
                     ;; Resolve the first Decoy proposal through the global
                     ;; profile once. Later Decoy candidates must be skipped

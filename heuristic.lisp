@@ -196,13 +196,15 @@ Neither this query nor ranking resolution mutates controller state."
               environment-name)))))
 
 (defun cage2-rollout-controller-decoy-order-profile (environment-name)
-  "Return the Controller profile used by a CAGE2 rollout in this configuration."
-  (if (and (eq *teacher-backend* :heuristic)
-           (stringp environment-name)
-           (or (search "b_line" (string-downcase environment-name))
-               (search "meander" (string-downcase environment-name))))
-      (cage2-heuristic-controller-profile environment-name)
-      *cage2-controller-decoy-order-profile*))
+  "Use the shared Cardiff Decoy profile, with legacy profiles available explicitly."
+  (cond
+    ((eq *cage2-controller-decoy-order-profile* :ppo-greedy) :ppo-greedy)
+    ((and (eq *teacher-backend* :heuristic)
+          (stringp environment-name)
+          (or (search "b_line" (string-downcase environment-name))
+              (search "meander" (string-downcase environment-name))))
+     (cage2-heuristic-controller-profile environment-name))
+    (t *cage2-controller-decoy-order-profile*)))
 
 (defun cage2-heuristic-ranking (controller observation environment-name)
   "Dispatch a pure opponent-specific Lisp heuristic query."
