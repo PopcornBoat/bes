@@ -488,6 +488,8 @@ the decoded semantic pair and then maps the result back to its stable index."
   (cond
     ((not *factored-actions-enabled*)
      (random *num-actions*))
+    ((cardiff-action-format-p)
+     (random-different-category old-payload (length +cardiff-action-catalogue+)))
     ((eq *terminal-action-format* :factored)
      (if (factored-action-p old-payload)
          (mutate-factored-atomic-value old-payload)

@@ -1,5 +1,14 @@
 (in-package :cl-tpg)
 
+;; Cardiff MainAgent's actor output order, followed by PPOAgent's nine slots.
+(defparameter +cardiff-action-catalogue+
+  #(133 134 135 139 3 4 5 9 16 17 18 22 11 12 13 14 141 142 143 144
+    132 2 15 24 25 26 27 1000 1001 1002 1003 1004 1005 1006 1007 1008))
+
+(defun cardiff-action-id (index)
+  (check-type index (integer 0 35))
+  (aref +cardiff-action-catalogue+ index))
+
 (defstruct factored-action
   "Categorical terminal payload evolved by BES.
 
@@ -65,6 +74,8 @@ nine learned hosts and four response types, ordered to match the existing
   (cond
     ((not *factored-actions-enabled*)
      (random *num-actions*))
+    ((cardiff-action-format-p)
+     (random (length +cardiff-action-catalogue+)))
     ((eq *terminal-action-format* :factored)
      (make-factored-action))
     ((eq *terminal-action-format* :target-response-36)

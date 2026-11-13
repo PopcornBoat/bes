@@ -1,0 +1,62 @@
+;;; Exercise the flat actor index, exact scheduler and native rollout boundary.
+(in-package :cl-user)
+
+(let ((cl-tpg::*factored-actions-enabled* t)
+      (cl-tpg::*terminal-action-format* :cardiff-index-v1)
+      (cl-tpg::*num-actions* 36)
+      (cl-tpg::*num-observations* 62)
+      (cl-tpg::*cage2-opening-mode* :fixed)
+      (cl-tpg::*decoy-order-mode* :fixed)
+      (cl-tpg::*recurrent-policy-enabled* nil)
+      (cl-tpg::*cached-island-id* 1))
+  (assert (equalp cl-tpg::+cardiff-action-catalogue+
+                  #(133 134 135 139 3 4 5 9 16 17 18 22 11 12 13 14
+                    141 142 143 144 132 2 15 24 25 26 27
+                    1000 1001 1002 1003 1004 1005 1006 1007 1008)))
+  (assert (= 36 (length (remove-duplicates cl-tpg::+cardiff-action-catalogue+))))
+  (dotimes (i 36)
+    (let ((next (cl-tpg::mutated-atomic-action-value i)))
+      (assert (and (typep next '(integer 0 35)) (/= next i)))))
+  (loop repeat 100 do
+    (assert (typep (cl-tpg::make-random-atomic-action-value) '(integer 0 35))))
+  (let* ((used (reduce #'cl-tpg::cardiff-commit-action
+                       cl-tpg::+cardiff-opening-actions+ :initial-value 0))
+         (never (lambda () (error "No fallback should be necessary"))))
+    (assert (= (cl-tpg::cardiff-resolve-action 27 used never) 107))
+    (assert (= (cl-tpg::cardiff-resolve-action 31 used never) 38))
+    (assert (= (cl-tpg::cardiff-resolve-action 20 used never) 132))
+    (loop for slot from 1000 to 1008 do
+      (let* ((index (- slot 973))
+             (ids (cl-tpg::cardiff-decoy-ids slot))
+             (exhausted (reduce #'cl-tpg::cardiff-commit-action ids :initial-value 0)))
+        (assert (= (cl-tpg::cardiff-resolve-action index exhausted
+                                                  (lambda () (list index 0 21)))
+                   2))
+        (assert (= (cl-tpg::cardiff-resolve-action index exhausted
+                                                  (lambda () (list index 0)))
+                   1))))
+    (let ((exhausted (cl-tpg::cardiff-commit-action used 43)))
+      (assert (= (cl-tpg::cardiff-resolve-action 28 exhausted (lambda () '(28 0 35 21)))
+                 61))
+      (let ((restored (cl-tpg::cardiff-commit-action exhausted 134)))
+        (assert (not (logbitp 43 restored)))
+        (assert (logbitp 55 restored)))))
+  (flet ((terminal (index)
+           (cl-tpg::make-learner
+            :action (cl-tpg::make-action :type :atomic :action index)
+            :program (cl-tpg::make-program :instructions #()))))
+    (let* ((team (cl-tpg::%make-team :learners (mapcar #'terminal '(28 0 21 28))))
+           (obs (make-array 62 :element-type 'double-float :initial-element 0.0d0))
+           (encoded (cl-tpg::make-best-team-checkpoint-data team 0.0d0))
+           (restored (cl-tpg::deserialize-team (getf encoded :team) (make-hash-table :test 'equal))))
+      (assert (eq (cl-tpg::checkpoint-execution-profile encoded) :cardiff-index-v1))
+      (assert (equal (cl-tpg::execute-team-cardiff-ranked restored obs) '(28 0 21)))
+      (assert (= (cl-tpg:execute-team restored obs) 28))
+      (dolist (red '("meander" "b_line"))
+        (let* ((standard-id (format nil "Cage2-~A-30-v0" red))
+               (direct-id (format nil "Cage2-cardiff-~A-30-v0" red))
+               (direct (cl-gym:rollout restored direct-id 5553820))
+               (replay (cl-gym:rollout restored standard-id 5553820)))
+          (assert (and (numberp direct) (= direct replay)))
+          (format t "~&Cardiff ~A official smoke return ~,4F~%" red direct))))))
+(format t "~&Cardiff action-space checks passed.~%")

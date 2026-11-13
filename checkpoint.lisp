@@ -44,7 +44,9 @@
          "teacher-forcing-dagger"
          "teacher-forcing"))
     ((eq *current-search-mode* :official-online)
-     "official-online-specialist")
+     (if (cardiff-action-format-p)
+         "official-online-cardiff"
+         "official-online-specialist"))
     ((eq *current-search-mode* :official-guided)
      (cond
        (*grouped-selection-enabled*

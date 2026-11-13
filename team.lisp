@@ -186,9 +186,8 @@ team-reference winners never contribute registers."
      (action-action (learner-action terminal-learner))
      registers)))
 
-(defun execute-team-semantic-ranked
-       (team observation &optional (limit +semantic-ranking-limit+))
-  "Return up to LIMIT unique semantic candidates in hierarchical bid order.
+(defun execute-team-ranked (team observation limit decode key-function &key (keep-registers-p t))
+  "Return up to LIMIT unique decoded terminals in hierarchical bid order.
 
 The first result follows exactly the existing winner-at-each-team traversal.
 Alternatives are explored depth-first in descending local bid order. Every
@@ -217,7 +216,7 @@ cached for this call so shared subgraphs do not execute their programs twice."
                      (let ((entry
                              (list learner
                                    learner-bid
-                                   (copy-seq registers))))
+                                   (and keep-registers-p (copy-seq registers)))))
                        (push entry evaluations)
                        ;; This is intentionally the same strict comparison as
                        ;; EXECUTE-TEAM-TO-TERMINAL, including stable bid ties.
@@ -239,14 +238,12 @@ cached for this call so shared subgraphs do not execute their programs twice."
          (record-terminal (entry)
            (let* ((learner (first entry))
                   (registers (third entry))
-                  (semantic
-                    (make-semantic-action-from-terminal
-                     (action-action (learner-action learner))
-                     registers))
-                  (key (semantic-action-category-pair semantic)))
+                  (terminal (funcall decode (action-action (learner-action learner))
+                                     registers))
+                  (key (funcall key-function terminal)))
              (unless (gethash key seen-actions)
                (setf (gethash key seen-actions) t)
-               (push semantic results))))
+               (push terminal results))))
          (traverse (current visited depth preferred-path-p)
            (cond
              ((>= (length results) limit) nil)
@@ -281,6 +278,21 @@ cached for this call so shared subgraphs do not execute their programs twice."
       (values (nreverse results)
               (nreverse preferred-path)
               preferred-terminal-team))))
+
+(defun execute-team-semantic-ranked
+       (team observation &optional (limit +semantic-ranking-limit+))
+  "Return distinct semantic candidates in hierarchical bid order."
+  (execute-team-ranked team observation limit #'make-semantic-action-from-terminal
+                       #'semantic-action-category-pair))
+
+(defun execute-team-cardiff-ranked (team observation)
+  "Return every distinct reachable Cardiff index in hierarchical bid order."
+  (execute-team-ranked team observation (length +cardiff-action-catalogue+)
+                       (lambda (index registers)
+                         (declare (ignore registers))
+                         (cardiff-action-id index)
+                         index)
+                       #'identity :keep-registers-p nil))
 
 (defun execute-team-on-dataset (team dataset)
   "Batch executes a team across all the observations in DATASET."

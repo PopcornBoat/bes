@@ -397,3 +397,45 @@ clears only its target's Decoys; Decoy marks exactly the selected option."
           *cage2-decoy-resolution*
         :decoy-schedule
           (copy-tree (cage2-controller-decoy-schedule controller))))
+
+(defparameter +cardiff-opening-actions+ #(51 116 55))
+
+(defparameter +cardiff-decoy-slot-targets+ #(2 3 4 7 8 9 10 1 5))
+
+(defun cardiff-decoy-ids (slot)
+  (cdr (assoc (aref +cardiff-decoy-slot-targets+ (- slot 1000))
+              +cardiff-ppo-decoy-actions+)))
+
+(defun cardiff-restore-id-p (id)
+  (<= 132 id 144))
+
+(defun cardiff-first-unused-decoy (slot used)
+  (find-if-not (lambda (id) (logbitp id used)) (cardiff-decoy-ids slot)))
+
+(defun cardiff-resolve-action (winner used ranked-indices)
+  "Resolve the Cardiff winner; call RANKED-INDICES only if its Decoys are exhausted."
+  (let ((id (cardiff-action-id winner)))
+    (if (< id 1000)
+        id
+        (or (cardiff-first-unused-decoy id used)
+            (loop for index in (funcall ranked-indices)
+                  for alternative = (cardiff-action-id index)
+                  for concrete = (cond
+                                   ((>= alternative 1000)
+                                    (cardiff-first-unused-decoy alternative used))
+                                   ((not (cardiff-restore-id-p alternative))
+                                    alternative))
+                  when concrete return concrete)
+            ;; Unlike a dense actor, a TPG graph may have no executable terminal.
+            (action-agreement-monitor-action (ensure-cage2-action-agreement))))))
+
+(defun cardiff-commit-action (used id)
+  "Update the episode's used-Decoy bitset from the actual concrete action."
+  (cond
+    ((cardiff-restore-id-p id)
+     (loop with host-offset = (- id 132)
+           for base in '(28 41 54 67 80 93 106 119)
+           do (setf used (logandc2 used (ash 1 (+ base host-offset))))
+           finally (return used)))
+    ((<= 28 id 131) (logior used (ash 1 id)))
+    (t used)))

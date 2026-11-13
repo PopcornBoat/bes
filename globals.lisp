@@ -127,9 +127,15 @@ explicit route for inactive code to reconnect to the bid computation.")
 nine-host target and four-way response as two direct fields; :FLAT-36 is the
 future comparison representation with one catalogue index.")
 
+(defun cardiff-action-format-p ()
+  (eq *terminal-action-format* :cardiff-index-v1))
+
+(defun cardiff-environment-name-p (name)
+  (and (stringp name) (eql (search "Cage2-cardiff-" name) 0)))
+
 (defun valid-terminal-action-format-p (format)
   "Return true for a supported categorical terminal-action representation."
-  (member format '(:factored :target-response-36 :flat-36) :test #'eq))
+  (member format '(:factored :target-response-36 :flat-36 :cardiff-index-v1) :test #'eq))
 
 (defvar *num-actions*)
 

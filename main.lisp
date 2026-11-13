@@ -2520,7 +2520,9 @@ reference batch."
            *teacher-dagger-random-state* nil
            *current-dataset-fingerprint* nil)
      (when (cl-gym:cage2-environment-p gym-environment-name)
-       (configure-cage2-terminal-action-format)
+       (if (cardiff-environment-name-p gym-environment-name)
+           (setf *terminal-action-format* :cardiff-index-v1)
+           (configure-cage2-terminal-action-format))
        ;; Persist the same opponent-specific profile that Gym will execute.
        (setf *cage2-controller-decoy-order-profile*
              (cage2-rollout-controller-decoy-order-profile
@@ -3492,7 +3494,8 @@ through serialization/deserialization and save it to disk."
     
     (reproduce)
     (maybe-run-behavioral-locality-sampling)
-    (when (eq *current-search-mode* :official-online)
+    (when (and (eq *current-search-mode* :official-online)
+               (not (cardiff-action-format-p)))
       (maybe-launch-active-specialist-cycle))
     (when (official-guided-mode-p)
       (persist-official-guided-runtime-state))))
@@ -3910,6 +3913,12 @@ normal evolution."
         (when (cl-gym:cage2-environment-p gym-environment-name)
           (report-checkpoint-controller-protocol
            checkpoint-metadata "Warm-start"))
+        (let ((saved-format (checkpoint-execution-profile checkpoint-metadata)))
+          (when (and (not (eq saved-format *terminal-action-format*))
+                     (or (cardiff-action-format-p)
+                         (eq saved-format :cardiff-index-v1)))
+            (error "Incompatible checkpoint terminal format: ~S versus ~S."
+                   saved-format *terminal-action-format*)))
         (ensure-team-observation-compatible
          loaded-best-team *num-observations*)
         (when (and (official-guided-mode-p)

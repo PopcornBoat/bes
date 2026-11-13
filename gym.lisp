@@ -292,9 +292,58 @@ Supports:
                (rename-file "rl-video-episode-0.mp4" video-path))))
          episode-reward)))))
 
+(defun rollout-cardiff (root-team environment-name seed &key video-path)
+  "Evaluate a flat Cardiff-index TPG on the original concrete CAGE2 actions."
+  (py4cl2:pyexec "import gymnasium as gym, sys")
+  (py4cl2:pyexec
+   "if 'cardiff_env' not in sys.modules:"
+   (format nil "~%    sys.path.insert(0, ~S)~%    import cardiff_env"
+           (namestring (asdf:system-source-directory :cl-tpg))))
+  (let* ((name (if (cl-tpg::cardiff-environment-name-p environment-name)
+                   environment-name
+                   (concatenate 'string "Cage2-cardiff-"
+                                (subseq environment-name (length "Cage2-")))))
+         (env (make name :video-path video-path))
+         (controller (cl-tpg:make-cage2-controller :decoy-order-profile :ppo-greedy))
+         (used 0)
+         (episode-reward 0.0d0))
+    (unwind-protect
+         (cl-tpg::call-with-fresh-policy-episode
+          (lambda ()
+            (loop with observation = (reset env seed)
+                  for timestep from 0
+                  for input = (cl-tpg:cage2-controller-observe controller observation)
+                  for concrete =
+                    (if (< timestep (length cl-tpg::+cardiff-opening-actions+))
+                        (aref cl-tpg::+cardiff-opening-actions+ timestep)
+                        (cl-tpg::cardiff-resolve-action
+                         (cl-tpg:execute-team root-team input) used
+                         (lambda ()
+                           (cl-tpg::execute-team-cardiff-ranked root-team input))))
+                  do (multiple-value-bind (obs reward terminated truncated info)
+                         (step env concrete)
+                       (let ((executed (cage2-info-value info "concrete_action")))
+                         (unless (eql executed concrete)
+                           (error "Cardiff requested action ~S, bridge executed ~S."
+                                  concrete executed))
+                         (setf used (cl-tpg::cardiff-commit-action used executed)))
+                       (incf episode-reward reward)
+                       (setf observation obs)
+                       (when (or terminated truncated) (return))))))
+      (py4cl2:pymethod env "close")
+      (when (and video-path (probe-file "rl-video-episode-0.mp4"))
+        (rename-file "rl-video-episode-0.mp4" video-path)))
+    episode-reward))
+
 (defun rollout (root-team environment-name seed &key (video-path nil))
   "Run a rollout through the Python Gymnasium bridge."
-  (rollout-python root-team environment-name seed :video-path video-path))
+  (cond
+    ((and (cage2-environment-p environment-name)
+          (cl-tpg::cardiff-action-format-p))
+     (rollout-cardiff root-team environment-name seed :video-path video-path))
+    ((cl-tpg::cardiff-environment-name-p environment-name)
+     (error "Cardiff environment requires a Cardiff-index checkpoint."))
+    (t (rollout-python root-team environment-name seed :video-path video-path))))
 
 (defun cl-gym-validate-team (team gym-environment-name &optional seed)
   "Run TEAM in a validation Gym environment.

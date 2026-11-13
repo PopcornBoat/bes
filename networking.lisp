@@ -272,10 +272,12 @@ to the telemetry client."
 			  
 (defun get-local-ip ()
   "By getting our local IP, we know who we are and who our adjacent neighbours are."
-  (let ((socket (usocket:socket-connect "8.8.8.8" 53 :protocol :datagram)))
-    (unwind-protect
-	 (format nil "~{~A~^.~}" (coerce (usocket:get-local-address socket) 'list))
-      (usocket:socket-close socket))))
+  (or (uiop:getenv "BES_ISLAND_IP")
+      (let ((socket (usocket:socket-connect "8.8.8.8" 53 :protocol :datagram)))
+        (unwind-protect
+             (format nil "~{~A~^.~}"
+                     (coerce (usocket:get-local-address socket) 'list))
+          (usocket:socket-close socket)))))
 
 (defun resolve-island-ip (entry)
   "Return the current IP address represented by an island ENTRY.
@@ -582,6 +584,8 @@ return their fixed configured addresses."
              ((:online :teacher-forcing)
               (cl-gym:cage2-environment-p gym-environment-name))
              (otherwise nil)))
+       (or (not (cardiff-environment-name-p gym-environment-name))
+           (eq mode :official-online))
        (valid-decoy-order-mode-p decoy-order-mode)
        (valid-cage2-opening-mode-p cage2-opening-mode)
        (valid-teacher-forcing-rollout-mode-p
