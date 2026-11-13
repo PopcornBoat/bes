@@ -4,9 +4,10 @@
   #(0 4 8 12 28 32 36 40 44 48)
   "Raw observation indices used by the Cardiff-compatible scan tracker.")
 
-(defparameter *cage2-decoy-resolution* :ranked
+(defparameter *cage2-decoy-resolution* :profile
   "Decoy arbitration used by the standard Controller resolver.
-:RANKED follows semantic ranking order and keeps the selected profile's host options.")
+:PROFILE uses the global schedule for scheduled profiles.
+:RANKED follows semantic ranking order using the selected profile's host options.")
 
 ;; Source: https://github.com/john-cardiff/-cyborg-cage-2/blob/main/Agents/PPOAgent.py
 (defparameter +cardiff-ppo-decoy-actions+
@@ -31,6 +32,18 @@
                      unless option do (error "Invalid Cardiff Decoy ~D for target ~D."
                                              action target)
                      collect (list target option))))
+
+(defun cage2-cardiff-global-schedule (legacy-schedule cardiff-schedule)
+  "Fill legacy priority slots with the next Cardiff option for the same host.
+Append remaining Cardiff options in Cardiff declaration order."
+  (let ((remaining (copy-list cardiff-schedule))
+        (schedule nil))
+    (dolist (slot legacy-schedule)
+      (let ((next (find (first slot) remaining :key #'first)))
+        (when next
+          (push next schedule)
+          (setf remaining (remove next remaining :test #'equal :count 1)))))
+    (nconc (nreverse schedule) remaining)))
 
 (defun cage2-cardiff-bridge-orders (agreement schedule)
   "Supply the bridge's required complete permutations, with Cardiff options first."
@@ -84,12 +97,21 @@ global schedule."
   (let* ((schedule
            (case decoy-order-profile
              (:ppo-greedy (cage2-cardiff-decoy-schedule agreement))
+             (:bline-cardiff-global
+              (cage2-cardiff-global-schedule
+               +cage2-heuristic-decoy-schedule+
+               (cage2-cardiff-decoy-schedule agreement)))
+             (:meander-cardiff-global
+              (cage2-cardiff-global-schedule
+               +cage2-meander-heuristic-decoy-schedule+
+               (cage2-cardiff-decoy-schedule agreement)))
              (:heuristic +cage2-heuristic-decoy-schedule+)
              (:meander-heuristic
               +cage2-meander-heuristic-decoy-schedule+)
              (otherwise nil)))
          (orders
-           (if (eq decoy-order-profile :ppo-greedy)
+           (if (member decoy-order-profile
+                       '(:ppo-greedy :bline-cardiff-global :meander-cardiff-global))
                (cage2-cardiff-bridge-orders agreement schedule)
                (action-agreement-decoy-orders-for-profile decoy-order-profile agreement))))
     (unless orders

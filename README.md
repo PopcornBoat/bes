@@ -16,6 +16,14 @@ The two experimental branches share the same policy/checkpoint format and most o
 
 The terminal action is one of 36 target-response combinations. Register 0 determines bidding; the final terminal learner determines the selected semantic action. The Controller owns Decoy availability, the global fixed Decoy order, fallback resolution and state updates after actual execution. The bridge converts the resolved semantic action to a concrete CAGE2 action. Policy input stays at 62 even when the bridge transports additional Controller availability fields.
 
+On `decoy-table-fix`, B-line and Meander use their original global Decoy
+fallback with the Cardiff per-host option lists. Each original priority slot
+takes the next Cardiff option for that host. Remaining options follow the
+original slots in Cardiff table order. The Controller considers only hosts
+proposed as Decoy in Top-8. The active checkpoint profiles are
+`:bline-cardiff-global` and `:meander-cardiff-global`. A warm start from an
+older Decoy contract measures a new incumbent score before racing.
+
 A saved best is an independent serialized graph copy. Warm start intentionally reconstructs a population around that best team rather than resuming the full population. Historical-best replacement requires staged official comparison on fresh paired seeds. Checkpoints in `validated-checkpoints/` are immutable reference material.
 
 ## Workflow

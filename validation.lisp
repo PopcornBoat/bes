@@ -163,6 +163,11 @@ CAGE3 MODE:
     Requires EPISODES.
     Runs 500 steps, EPISODES eps."
   (let* ((cage2-p (eq environment :cage2))
+         (*cage2-controller-decoy-order-profile*
+           (if (and cage2-p red-agent-name)
+               (cage2-rollout-controller-decoy-order-profile
+                (cage2-validation-environment-name red-agent-name 100))
+               *cage2-controller-decoy-order-profile*))
          (*random-state*
            (if cage2-p
                (sb-ext:seed-random-state +cage2-evaluation-seed+)

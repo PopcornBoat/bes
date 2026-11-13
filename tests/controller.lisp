@@ -282,12 +282,13 @@
                           "ranked resolution executes Analyse before a later Decoy"))
       (check-controller (= (resolve ranked (list enterprise2 op-server)) 61)
                         "ranked resolution reaches the next Decoy in order")
-      (check-controller
-       (= (cl-tpg:cage2-controller-decision-concrete-action
-           (cl-tpg::cage2-controller-resolve-pair-ranking
-            ranked '((4 3) (8 2) (2 0) (5 3))))
-          3)
-       "default ranked pair resolver skips a lower-ranked Restore and uses Analyse")
+      (let ((cl-tpg::*cage2-decoy-resolution* :ranked))
+        (check-controller
+         (= (cl-tpg:cage2-controller-decision-concrete-action
+             (cl-tpg::cage2-controller-resolve-pair-ranking
+              ranked '((4 3) (8 2) (2 0) (5 3))))
+            3)
+         "ranked pair resolver skips a lower-ranked Restore and uses Analyse"))
       (check-controller (= mask (cl-tpg::cage2-controller-decoy-mask ranked))
                         "ranked proposal resolution leaves the Decoy state unchanged"))
     (let ((order
@@ -331,10 +332,51 @@
     (cl-tpg:cage2-controller-commit-decision controller (resolve '((3 2))))
     (check-controller (= 43 (concrete (resolve '((3 3)))))
                       "Restore replenishes the Cardiff host's allowed list"))
-  (check-controller (and (eq :ppo-greedy (cl-tpg::cage2-rollout-controller-decoy-order-profile
-                                        "Cage2-b_line-100-v0"))
-                         (eq :ppo-greedy (cl-tpg::cage2-rollout-controller-decoy-order-profile
-                                        "Cage2-meander-100-v0")))
-                    "both opponent rollouts select the same Cardiff profile"))
+  (let ((cl-tpg::*cage2-decoy-resolution* :ranked))
+    (check-controller
+     (every (lambda (environment)
+              (eq :ppo-greedy
+                  (cl-tpg::cage2-rollout-controller-decoy-order-profile environment)))
+            '("Cage2-b_line-100-v0" "Cage2-meander-100-v0"))
+     "ranked rollouts retain the Cardiff host-local profile")))
+
+(loop for (environment profile first-action)
+        in '(("Cage2-b_line-100-v0" :bline-cardiff-global 55)
+             ("Cage2-meander-100-v0" :meander-cardiff-global 55))
+      for active = (cl-tpg::cage2-rollout-controller-decoy-order-profile environment)
+      for controller = (cl-tpg:make-cage2-controller :decoy-order-profile active)
+      do (check-controller (eq active profile)
+                           "legacy fallback picks the opponent-specific Cardiff profile")
+         (check-controller
+          (= first-action
+             (cl-tpg:cage2-controller-decision-concrete-action
+              (cl-tpg::cage2-controller-resolve-pair-ranking
+               controller '((9 3) (2 3)))))
+          "legacy Cardiff fallback uses the old cross-host priority slots")
+         (let ((ranking '((3 3) (2 0) (8 3))))
+           (cl-tpg:cage2-controller-commit-decision
+            controller (cl-tpg::cage2-controller-resolve-pair-ranking controller '((3 3))))
+           (check-controller
+            (= 51 (cl-tpg:cage2-controller-decision-concrete-action
+                   (cl-tpg::cage2-controller-resolve-pair-ranking controller ranking)))
+            "legacy Cardiff fallback finds another Decoy after host exhaustion")
+           (let ((cl-tpg::*cage2-decoy-resolution* :ranked))
+             (check-controller
+              (= 3 (cl-tpg:cage2-controller-decision-concrete-action
+                    (cl-tpg::cage2-controller-resolve-pair-ranking controller ranking)))
+              "ranked resolution can use Analyse before the next Decoy")))
+         (check-controller
+          (= 54 (cl-tpg:cage2-controller-decision-concrete-action
+                 (cl-tpg::cage2-controller-resolve-pair-ranking controller '((1 3)))))
+          "expanded Cardiff table can deliver Defender Decoy when proposed")
+         (let ((cl-tpg::*cage2-controller-decoy-order-profile* active))
+           (check-controller
+            (and (cl-tpg::checkpoint-decoy-contract-comparable-p
+                  (list :cage2-decoy-resolution :profile
+                        :cage2-controller-decoy-order-profile profile))
+                 (not (cl-tpg::checkpoint-decoy-contract-comparable-p
+                       '(:cage2-decoy-resolution :ranked
+                         :cage2-controller-decoy-order-profile :ppo-greedy))))
+            "saved Cardiff ranked fitness is distinct from legacy Cardiff fitness")))
 
 (format t "Lisp Controller checks passed: ~D.~%" *controller-checks*)
