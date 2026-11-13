@@ -3,8 +3,9 @@
 Fresh teacher-free BES/TPG search in official CAGE2. Each atomic terminal
 stores one Cardiff actor index. The 62 inputs and the three fixed opening
 actions match the public Cardiff deployment. On an exhausted Decoy slot the
-Controller examines the entire ranking of reachable TPG terminals, skipping
-Restore. Monitor handles a graph with no legal alternative. Native BES
+Controller walks the existing BES Top-8 ranking, skipping exhausted Decoy
+slots and lower-ranked Restore. Monitor is the existing BES fallback when the
+Top-8 contains no executable action. Native BES
 admission, paired racing, migration and promotion remain active. The
 Semantic-36 specialist worker is outside this flat-action experiment.
 

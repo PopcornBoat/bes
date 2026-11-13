@@ -412,22 +412,18 @@ clears only its target's Decoys; Decoy marks exactly the selected option."
 (defun cardiff-first-unused-decoy (slot used)
   (find-if-not (lambda (id) (logbitp id used)) (cardiff-decoy-ids slot)))
 
-(defun cardiff-resolve-action (winner used ranked-indices)
-  "Resolve the Cardiff winner; call RANKED-INDICES only if its Decoys are exhausted."
-  (let ((id (cardiff-action-id winner)))
-    (if (< id 1000)
-        id
-        (or (cardiff-first-unused-decoy id used)
-            (loop for index in (funcall ranked-indices)
-                  for alternative = (cardiff-action-id index)
-                  for concrete = (cond
-                                   ((>= alternative 1000)
-                                    (cardiff-first-unused-decoy alternative used))
-                                   ((not (cardiff-restore-id-p alternative))
-                                    alternative))
-                  when concrete return concrete)
-            ;; Unlike a dense actor, a TPG graph may have no executable terminal.
-            (action-agreement-monitor-action (ensure-cage2-action-agreement))))))
+(defun cardiff-resolve-action (ranked-indices used)
+  "Apply the BES Top-8 fallback rules to Cardiff actor indices."
+  (or (loop for index in ranked-indices
+            for rank from 0 below +semantic-ranking-limit+
+            for id = (cardiff-action-id index)
+            for concrete = (cond
+                             ((>= id 1000)
+                              (cardiff-first-unused-decoy id used))
+                             ((or (zerop rank) (not (cardiff-restore-id-p id)))
+                              id))
+            when concrete return concrete)
+      (action-agreement-monitor-action (ensure-cage2-action-agreement))))
 
 (defun cardiff-commit-action (used id)
   "Update the episode's used-Decoy bitset from the actual concrete action."

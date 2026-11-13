@@ -317,9 +317,8 @@ Supports:
                     (if (< timestep (length cl-tpg::+cardiff-opening-actions+))
                         (aref cl-tpg::+cardiff-opening-actions+ timestep)
                         (cl-tpg::cardiff-resolve-action
-                         (cl-tpg:execute-team root-team input) used
-                         (lambda ()
-                           (cl-tpg::execute-team-cardiff-ranked root-team input))))
+                         (cl-tpg::execute-team-cardiff-ranked root-team input)
+                         used))
                   do (multiple-value-bind (obs reward terminated truncated info)
                          (step env concrete)
                        (let ((executed (cage2-info-value info "concrete_action")))

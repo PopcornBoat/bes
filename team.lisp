@@ -286,8 +286,8 @@ cached for this call so shared subgraphs do not execute their programs twice."
                        #'semantic-action-category-pair))
 
 (defun execute-team-cardiff-ranked (team observation)
-  "Return every distinct reachable Cardiff index in hierarchical bid order."
-  (execute-team-ranked team observation (length +cardiff-action-catalogue+)
+  "Return the Top-8 distinct Cardiff indices in hierarchical bid order."
+  (execute-team-ranked team observation +semantic-ranking-limit+
                        (lambda (index registers)
                          (declare (ignore registers))
                          (cardiff-action-id index)
