@@ -18,7 +18,9 @@
     (let ((next (cl-tpg::mutated-atomic-action-value i)))
       (assert (and (typep next '(integer 0 35)) (/= next i)))))
   (loop repeat 100 do
-    (assert (typep (cl-tpg::make-random-atomic-action-value) '(integer 0 35))))
+    (assert (typep (cl-tpg::make-random-atomic-action-value) '(integer 0 35)))
+    ;; Reference-to-atomic mutation supplies NIL instead of an old index.
+    (assert (typep (cl-tpg::mutated-atomic-action-value nil) '(integer 0 35))))
   (let ((used (reduce #'cl-tpg::cardiff-commit-action
                       cl-tpg::+cardiff-opening-actions+ :initial-value 0)))
     (assert (= (cl-tpg::cardiff-resolve-action '(27) used) 107))
