@@ -35,3 +35,11 @@ A saved best is an independent serialized graph copy. Warm start intentionally r
 5. Use `scripts/bes-test` for the maintained core suite and `scripts/bes-test --core` for the expanded suite.
 
 See [validated-checkpoints/README.md](validated-checkpoints/README.md) for frozen policies and measured results. See [experiments/teacher-free-online-specialists.md](experiments/teacher-free-online-specialists.md) and [experiments/experience-guided-analysis.md](experiments/experience-guided-analysis.md) for the online method.
+
+## Continuous official-return incubation search
+
+The persistent teacher-free entry point, frozen recognizer/expert integration,
+seed/budget persistence, bounded exploratory lineages, and monitoring commands
+are documented in [CONTINUOUS-SEARCH.md](CONTINUOUS-SEARCH.md).
+This experimental runner owns its candidate population; the legacy main.lisp
+population and validated historical checkpoint files remain unchanged.
