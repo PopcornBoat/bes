@@ -56,7 +56,7 @@
     (loop
       (assert (not (member current visited :test #'eq)))
       (push current visited)
-      (assert (< (length visited) +max-team-traversal-depth+))
+      (assert (<= (length visited) +max-team-traversal-depth+))
       (let* ((ranked (stable-sort
                       (loop for learner in (team-learners current)
                             collect (cons learner (bid learner observation)))
