@@ -110,18 +110,34 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
       (t
        (list target response-index 0)))))
 
-(defun execute-policy-action (root-team observation environment-name)
-  "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
-  (if (cage2-environment-p environment-name)
-      (progn
-        (unless (= (length observation) cl-tpg::+cage2-observation-size+)
-          (error
-           "Expected ~D bridge-augmented CAGE2 observations, got ~D. Update/install the scan-state custom-gym-for-bes bridge."
-           cl-tpg::+cage2-observation-size+
-           (length observation)))
-        (semantic-action->cage2-input
-         (cl-tpg:execute-team-semantic root-team observation)))
-      (cl-tpg:execute-team root-team observation)))
+(defun cage2-policy-decision (root-team observation controller)
+  "Resolve the CAGE2 policy's Top-8 proposals into a bridge action."
+  (unless (= (length observation) cl-tpg::+cage2-observation-size+)
+    (error "Expected ~D bridge-augmented CAGE2 observations, got ~D."
+           cl-tpg::+cage2-observation-size+ (length observation)))
+  (cl-tpg::cage2-controller-resolve-ranking
+   controller (cl-tpg::execute-team-semantic-ranked root-team observation)))
+
+(defun cage2-info-value (info name)
+  "Read NAME from a py4cl2-converted Gym info mapping."
+  (let ((keyword (intern (string-upcase name) :keyword)))
+    (cond
+      ((hash-table-p info)
+       (multiple-value-bind (value found-p) (gethash name info)
+         (if found-p value (gethash keyword info))))
+      ((listp info)
+       (or (ignore-errors (cdr (assoc name info :test #'string=)))
+           (ignore-errors (cdr (assoc keyword info :test #'eq)))
+           (ignore-errors (getf info keyword))))
+      (t nil))))
+
+(defun commit-controller-step (controller decision info)
+  "Commit DECISION using the concrete action reported by the bridge."
+  (let ((actual (cage2-info-value info "concrete_action")))
+    (unless (integerp actual)
+      (error "CAGE2 bridge did not report an integer concrete_action: ~S"
+             info))
+    (cl-tpg::cage2-controller-commit-decision controller decision actual)))
 
 (defun make (environment-name &key (video-path nil))
   "Makes a new Gymnasium environment."
@@ -160,20 +176,27 @@ Supports:
     (py4cl2:pyexec "import cage3_bridge"))
 
   (let* ((env (make environment-name :video-path video-path))
+         (controller (when (cage2-environment-p environment-name)
+                       (cl-tpg::make-cage2-controller)))
          (episode-reward 0.0)
          (observation (reset env seed)))
     (unwind-protect
          (loop for timestep from 0
-               do (let ((action
-                          (if (shared-policy-observation-p observation)
-                              (shared-policy-actions root-team observation)
-                              (execute-policy-action
-                               root-team
-                               observation
-                               environment-name))))
+               do (let* ((decision (when controller
+                                      (cage2-policy-decision
+                                       root-team observation controller)))
+                         (action (cond
+                                   (decision
+                                    (semantic-action->cage2-input
+                                     (cl-tpg::cage2-controller-decision-semantic-action
+                                      decision)))
+                                   ((shared-policy-observation-p observation)
+                                    (shared-policy-actions root-team observation))
+                                   (t (cl-tpg:execute-team root-team observation)))))
                     (multiple-value-bind (obs rew term trunc info)
                         (step env action)
-                      (declare (ignore info))
+                      (when decision
+                        (commit-controller-step controller decision info))
                       (incf episode-reward rew)
                       (setf observation obs)
                       (when (or term trunc)

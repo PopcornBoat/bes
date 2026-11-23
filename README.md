@@ -318,3 +318,11 @@ This project would not exist without the excellent work of the original **cl-tpg
 All credit for the BES/TPG framework belongs to the original project.
 
 This repository only extends the framework with additional engineering functionality required for my research while attempting to preserve the original implementation and remain compatible with future upstream development whenever possible.
+
+### CAGE2 Decoy scheduling
+
+The Controller follows the proposed Top-8 host order once it reaches a Decoy.
+Each proposed Decoy host uses its configured option order. When all proposed
+Decoy hosts are exhausted, the Controller resumes the normal non-Decoy
+fallback. Restore remains eligible only at Top-1. Scores obtained under an
+earlier schedule require a new evaluation before comparison.

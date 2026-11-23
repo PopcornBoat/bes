@@ -202,7 +202,7 @@ reference batch."
                      (/ (- (get-internal-real-time) started)
                         (coerce internal-time-units-per-second
                                 'double-float))))
-            result)))))
+            result))))
 
 (defun complexity-key-less-p (left right)
   "Return true when lexicographic complexity key LEFT is smaller than RIGHT."
