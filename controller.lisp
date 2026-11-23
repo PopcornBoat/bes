@@ -4,9 +4,11 @@
   #(0 4 8 12 28 32 36 40 44 48)
   "Raw observation indices used by the Cardiff-compatible scan tracker.")
 
-(defparameter *cage2-decoy-resolution* :ranked
-  "Decoy arbitration used by the standard Controller resolver.
-:RANKED follows semantic ranking order and keeps the selected profile's host options.")
+(defparameter *cage2-decoy-resolution* :ranked-decoy-hosts
+  "Decoy arbitration after the first Decoy proposal.
+:RANKED-DECOY-HOSTS uses Top-8 host order and each host's configured options.
+:PROFILE uses global schedule priority for legacy scheduled profiles.
+:RANKED follows the complete candidate order, including non-Decoys.")
 
 ;; Source: https://github.com/john-cardiff/-cyborg-cage-2/blob/main/Agents/PPOAgent.py
 (defparameter +cardiff-ppo-decoy-actions+
@@ -264,18 +266,28 @@ the policy omitted from its bounded semantic ranking."
                (when rank
                  (return (values target option rank))))))
 
+(defun cage2-controller-next-ranked-decoy (controller candidates)
+  "Return the first proposed Decoy host with an unused option and its rank."
+  (loop for candidate in candidates
+        for rank fixnum from 0 below +semantic-ranking-limit+
+        do (multiple-value-bind (target response valid-p)
+               (cage2-controller-valid-semantic-components candidate)
+             (when (and valid-p (= response 3))
+               (let ((option
+                       (cage2-controller-first-available-decoy
+                        controller target t)))
+                 (when option
+                   (return (values target option rank))))))))
+
 (defun cage2-controller-resolve-ranking (controller candidates
                                          &key (decoy-resolution *cage2-decoy-resolution*))
   "Purely resolve ranked semantic CANDIDATES into an executable decision.
 
-With ranked resolution, an exhausted Decoy advances to the next candidate
-without re-running TPG. Scheduled profiles in :PROFILE mode use their global
-table when the scan reaches a Decoy. Restore is executable at rank zero but is
-skipped after fallback has begun.
-Empty, malformed, or exhausted rankings end
-in Monitor. This function never changes scan state, Decoy state, or step count;
-  only CAGE2-CONTROLLER-COMMIT-DECISION may do so after a real step succeeds."
-  (check-type decoy-resolution (member :profile :ranked))
+When resolving a Decoy in the default mode, exhaust its host's configured
+options before trying the next Top-8 Decoy host. If no proposed host has an
+option left, continue to the remaining non-Decoy proposals. Restore is
+executable only at rank zero. Resolution never commits Controller state."
+  (check-type decoy-resolution (member :profile :ranked :ranked-decoy-hosts))
   (block selected
     (loop with scheduled-decoy-considered-p = nil
           for candidate in candidates
@@ -293,19 +305,20 @@ in Monitor. This function never changes scan state, Decoy state, or step count;
                    ((and (> rank 0) (= response-index 2))
                     nil)
                    ((and (= response-index 3)
-                         (eq decoy-resolution :profile)
-                         (not (eq (cage2-controller-decoy-order-profile controller) :ppo-greedy))
-                         (cage2-controller-decoy-schedule controller))
-                    ;; Resolve the first Decoy proposal through the global
-                    ;; profile once. Later Decoy candidates must be skipped
-                    ;; when the schedule is exhausted so normal non-Decoy
-                    ;; fallbacks can win.
+                         (or (eq decoy-resolution :ranked-decoy-hosts)
+                             (and (eq decoy-resolution :profile)
+                                  (cage2-controller-decoy-schedule controller)
+                                  (not (eq (cage2-controller-decoy-order-profile controller)
+                                           :ppo-greedy)))))
                     (unless scheduled-decoy-considered-p
                       (setf scheduled-decoy-considered-p t)
                       (multiple-value-bind
                             (scheduled-target option scheduled-rank)
-                          (cage2-controller-next-scheduled-decoy
-                           controller candidates)
+                          (if (eq decoy-resolution :ranked-decoy-hosts)
+                              (cage2-controller-next-ranked-decoy
+                               controller candidates)
+                              (cage2-controller-next-scheduled-decoy
+                               controller candidates))
                         (when scheduled-target
                           (let ((semantic
                                   (make-semantic-action
@@ -413,17 +426,25 @@ clears only its target's Decoys; Decoy marks exactly the selected option."
   (find-if-not (lambda (id) (logbitp id used)) (cardiff-decoy-ids slot)))
 
 (defun cardiff-resolve-action (ranked-indices used)
-  "Apply the BES Top-8 fallback rules to Cardiff actor indices."
-  (or (loop for index in ranked-indices
-            for rank from 0 below +semantic-ranking-limit+
-            for id = (cardiff-action-id index)
-            for concrete = (cond
-                             ((>= id 1000)
-                              (cardiff-first-unused-decoy id used))
-                             ((or (zerop rank) (not (cardiff-restore-id-p id)))
-                              id))
-            when concrete return concrete)
-      (action-agreement-monitor-action (ensure-cage2-action-agreement))))
+  "Apply ranked Decoy host priority to Cardiff actor indices."
+  (let ((ids (loop for index in ranked-indices
+                   for rank from 0 below +semantic-ranking-limit+
+                   collect (cardiff-action-id index)))
+        (decoys-considered-p nil))
+    (or (loop for id in ids
+              for rank from 0
+              for concrete = (cond
+                               ((>= id 1000)
+                                (unless decoys-considered-p
+                                  (setf decoys-considered-p t)
+                                  (some (lambda (candidate)
+                                          (when (>= candidate 1000)
+                                            (cardiff-first-unused-decoy candidate used)))
+                                        ids)))
+                               ((or (zerop rank) (not (cardiff-restore-id-p id)))
+                                id))
+              when concrete return concrete)
+        (action-agreement-monitor-action (ensure-cage2-action-agreement)))))
 
 (defun cardiff-commit-action (used id)
   "Update the episode's used-Decoy bitset from the actual concrete action."
