@@ -27,3 +27,11 @@ A saved best is an independent serialized graph copy. Warm start intentionally r
 5. Use `scripts/bes-test` for the maintained core suite and `scripts/bes-test --core` for the expanded suite.
 
 See [validated-checkpoints/README.md](validated-checkpoints/README.md) for frozen policies and measured results. See [experiments/teacher-free-online-specialists.md](experiments/teacher-free-online-specialists.md) and [experiments/experience-guided-analysis.md](experiments/experience-guided-analysis.md) for the online method.
+
+### CAGE2 Decoy scheduling
+
+The Controller follows the proposed Top-8 host order once it reaches a Decoy.
+Each proposed Decoy host uses its configured option order. When all proposed
+Decoy hosts are exhausted, the Controller resumes the normal non-Decoy
+fallback. Restore remains eligible only at Top-1. Scores obtained under an
+earlier schedule require a new evaluation before comparison.
