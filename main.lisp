@@ -3573,6 +3573,9 @@ is accepted for legacy non-CAGE2 checkpoints. CAGE2 requires its reproducible
 seed protocol. Semantic offline checkpoints require the current protocol and
 the same train/reference file fingerprint."
   (and (numberp fitness)
+       (or (not (cl-gym:cage2-environment-p gym-environment-name))
+           (eq (getf metadata :cage2-decoy-resolution :profile)
+               *cage2-decoy-resolution*))
        (let ((saved-environment
                (getf metadata :gym-environment-name))
              (saved-episodes
@@ -3953,7 +3956,12 @@ normal evolution."
           (cond
             ((eq mode :official-online)
              (initialize-official-online-best
-              loaded-best-team saved-best-fitness))
+              loaded-best-team
+              (if (and saved-best-fitness
+                       (eq (getf checkpoint-metadata :cage2-decoy-resolution :profile)
+                           *cage2-decoy-resolution*))
+                  saved-best-fitness
+                  (cage2-reference-fitness loaded-best-team gym-environment-name))))
             ((official-guided-mode-p)
              (initialize-official-guided-best-from-current-population
               loaded-best-team
