@@ -136,6 +136,7 @@
     :action-agreement-signature ,action-agreement-signature
     :search-mechanism-profile ,+live-search-profile+
     :cage2-controller-protocol ,+cage2-controller-protocol+
+    :cage2-decoy-resolution ,*cage2-decoy-resolution*
     :cage2-controller-decoy-order-profile
       ,*cage2-controller-decoy-order-profile*
     :online-reference-episodes ,online-reference-episodes
