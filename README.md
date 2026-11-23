@@ -43,3 +43,11 @@ seed/budget persistence, bounded exploratory lineages, and monitoring commands
 are documented in [CONTINUOUS-SEARCH.md](CONTINUOUS-SEARCH.md).
 This experimental runner owns its candidate population; the legacy main.lisp
 population and validated historical checkpoint files remain unchanged.
+
+### CAGE2 Decoy scheduling
+
+The Controller follows the proposed Top-8 host order once it reaches a Decoy.
+Each proposed Decoy host uses its configured option order. When all proposed
+Decoy hosts are exhausted, the Controller resumes the normal non-Decoy
+fallback. Restore remains eligible only at Top-1. Scores obtained under an
+earlier schedule require a new evaluation before comparison.
