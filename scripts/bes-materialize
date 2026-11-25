@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 2 || "$1" = --help ]]; then
+  echo "Usage: $0 {root153|meander-v15-reference} NEW_DIRECTORY"
+  [[ "$#" -eq 1 && "$1" = --help ]]
+  exit
+fi
+repo="$(cd "$(dirname "$0")/.." && pwd)"
+case "$1" in
+  root153) ref=release/cage2-root153-v1 ;;
+  meander-v15-reference) ref=archive/meander-v15-compilation ;;
+  *) echo "Unknown bundle: $1" >&2; exit 2 ;;
+esac
+if ! git -C "$repo" rev-parse --verify --quiet "refs/tags/$ref^{commit}" >/dev/null; then
+  echo "Fetch the bundle tag with: git fetch origin tag $ref" >&2
+  exit 2
+fi
+dest="$(realpath -m -- "$2")"
+if [[ -e "$dest" || -L "$dest" ]]; then
+  echo "Bundle destination already exists: $dest" >&2
+  exit 2
+fi
+mkdir -p -- "$(dirname -- "$dest")"
+temporary="$(mktemp -d "$(dirname -- "$dest")/.bes-bundle.XXXXXXXX")"
+trap 'if [[ -d "$temporary" ]]; then rm -rf -- "$temporary"; fi' EXIT
+git -C "$repo" archive "refs/tags/$ref" | tar -xf - -C "$temporary"
+(cd "$temporary" && sha256sum -c --quiet SHA256SUMS)
+mv -T --no-clobber -- "$temporary" "$dest"
+if [[ -d "$temporary" ]]; then
+  echo "Bundle destination was created by another process: $dest" >&2
+  exit 2
+fi
+printf '%s\n' "$dest"

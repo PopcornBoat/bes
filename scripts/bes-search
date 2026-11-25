@@ -2,32 +2,77 @@
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-python=/home/hardison/venv-base/cage2_bridge/.venv/bin/python
+bridge="${BES_PYTHON_VENV:-$HOME/venv-base/cage2_bridge/.venv}"
+python="$bridge/bin/python"
 sender="$repo/scripts/bes-send-command.py"
 
 usage() {
-  echo "Usage: $0 submit REQUEST.sexp | stop | raw LISP-FORM" >&2
-  exit 2
+  cat <<'USAGE'
+Usage: scripts/bes-search OPTION [ARGS]
+  submit REQUEST.sexp         Send an offline or online training request
+  stop                        Stop the current training operation
+  raw LISP-FORM               Send an existing server command
+  materialize KIND DIRECTORY  Export root153 or meander-v15-reference assets
+  validate BUNDLE [ARGS]      Run the bundle's official evaluator
+  analyze [ARGS]              Audit, prune and visualize a TPG checkpoint
+  compile-routes [ARGS]       Compile an exact ranking catalogue to a TPG
+  extreme-optimize [ARGS]     Search a frozen bundle with official feedback
+USAGE
 }
+
+run_tool() {
+  local script="$1" branch="$2" interpreter="$3"
+  shift 3
+  if [[ ! -f "$script" ]]; then
+    echo "This option is available on main and $branch." >&2
+    exit 2
+  fi
+  exec "$interpreter" -B "$script" "$@"
+}
+
+case "${1:-}" in
+  --help|-h) usage; exit 0 ;;
+  materialize) shift; exec "$repo/scripts/bes-materialize" "$@" ;;
+  validate)
+    shift
+    if [[ "${1:-}" = --help || $# -eq 0 ]]; then
+      echo "Usage: scripts/bes-search validate FROZEN_BUNDLE [OUTPUT | --verify-scheduler] [--seed ROOT] [--episodes COUNT]"
+      exit 0
+    fi
+    bundle="$(realpath -- "$1")"
+    shift
+    export BES_ASDF_DEPENDENCIES="${BES_ASDF_DEPENDENCIES:-$HOME/quicklisp}"
+    exec "$python" -B "$bundle/validate.py" --policy "$bundle" "$@"
+    ;;
+  analyze) shift; run_tool "$repo/scripts/tpg_research/visualize_tpg.py" tpg-analysis python3 "$@" ;;
+  compile-routes) shift; run_tool "$repo/scripts/tpg_compilation/compile.py" tpg-compilation python3 "$@" ;;
+  extreme-optimize)
+    shift
+    if [[ "${1:-}" = --help || "${1:-}" = -h ]]; then
+      run_tool "$repo/scripts/bes_extreme/search.py" extreme-optimize python3 "$@"
+    fi
+    run_tool "$repo/scripts/bes_extreme/search.py" extreme-optimize "$python" "$@"
+    ;;
+esac
 
 [[ -x "$python" ]] || { echo "Missing bridge Python: $python" >&2; exit 1; }
 [[ -f "$sender" ]] || { echo "Missing command sender: $sender" >&2; exit 1; }
 
 case "${1:-}" in
   submit)
-    [[ $# -eq 2 ]] || usage
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     request=$2
     [[ "$request" = /* ]] || request="$repo/$request"
     [[ -f "$request" ]] || { echo "Missing request file: $request" >&2; exit 1; }
     exec "$python" "$sender" --file "$request"
     ;;
   stop)
-    [[ $# -eq 1 ]] || usage
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
     exec "$python" "$sender" --message '(:type :stop-search)'
     ;;
   raw)
-    [[ $# -eq 2 ]] || usage
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     exec "$python" "$sender" --message "$2"
     ;;
-  *) usage ;;
+  *) usage >&2; exit 2 ;;
 esac

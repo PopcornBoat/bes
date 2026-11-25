@@ -2,7 +2,8 @@
 set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+bridge_bin="${BES_PYTHON_VENV:-$HOME/venv-base/cage2_bridge/.venv}/bin"
+deps="${BES_ASDF_DEPENDENCIES:-$HOME/quicklisp}"
 
 cd "$repo"
 
@@ -44,5 +45,5 @@ done
 
 env \
   "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-  "CL_SOURCE_REGISTRY=(:source-registry (:tree \"$repo/\") :ignore-inherited-configuration)" \
+  "CL_SOURCE_REGISTRY=(:source-registry (:directory \"$repo/\") (:tree \"$deps/\") :ignore-inherited-configuration)" \
   sbcl "${args[@]}"
