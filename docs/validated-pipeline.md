@@ -98,7 +98,7 @@ For the final expert graphs, the ranked-host scheduler takes Decoy hosts in Top-
 | All-host single permutation sweep | With the three graphs frozen, optimize option ordering without changing the TPG's decision on which hosts to propose. | 117 complete evaluations including the baseline. Root 153 improved from **−57.2553 to −56.7823** with Enterprise0 order `[6,7,2,0]`. The same winner gained **+0.6323** at root 42 and **+0.0794** at root 2026 versus that root's original table. |
 | Joint testing of high-scoring orders | Measure interaction across hosts by scoring the combination in the simulator. | Enterprise0 `[6,2,0,7]` with Defender `[7,2,0,6]` reached **−56.6674** on root 153. The improvement was **+0.5879** over the pure-graph baseline and **+0.1149** over the best single-host table. The root 42/2026 checks above belong to the single-host winner. |
 | Native Restore graph for selected rare losses | Make a narrowly scoped corrective response available while executing only the graph and Controller. | A separate Meander Restore graph matched all 9,000 returns of the **−56.6674** release on root 153. It improved two rare 100-step loss trajectories on six additional roots. The mean full-score change was **+0.0191 ± 0.0440 SE**. This supports a tail effect on those trajectories, with an uncertain average effect. |
-| Automated `extreme-optimize` mode | Repeat schedule search, shortlisted joint tests, optional native ranking edits, official evaluation and holdout screening from a frozen bundle. | The local implementation passed small official trajectory-parity, checkpoint reload and resume tests. It kept the original bundle when a root-153 candidate deteriorated on its holdout. The full-scale score gain above came from the separately archived sweep and joint study. |
+| Automated `extreme-optimize` mode | Repeat schedule search, shortlisted joint tests, optional native ranking edits, official evaluation and holdout screening from a frozen bundle. | The maintained implementation passed small official trajectory-parity, checkpoint reload and resume tests. It kept the original bundle when a root-153 candidate deteriorated on its holdout. The full-scale score gain above came from the separately archived sweep and joint study. |
 
 The final record is a **whole-agent** total using continuous resets, 1,000 episodes per horizon and opponent, and CybORG revision `26ce1c1253fa9e2e73f25e6a7f2da32860c11257`. It comprised 9,000 episodes and 540,000 interactions. Root 153 was used to select the winning schedule.
 
@@ -111,7 +111,7 @@ The final record is a **whole-agent** total using continuous resets, 1,000 episo
 
 There were zero returns below −100 in that run. On the same official protocol and root, Cardiff's local `90000.pth` complete agent scored **−57.5474**. The measured difference was **+0.8800** for BES, with +0.9896 from B-line and −0.1096 from Meander.
 
-Sources: [ranked-host Controller implementation](https://github.com/PopcornBoat/bes/commit/cfee01acb1770a7a77130093145454e4a48cd704), [complete-agent experiment log][experiments]. The primary local record is `frozen-checkpoints/root153-e0-defender-combined-20261123/evidence/winning-record.json`. The final figure and archive report are in `reports/bes-final-policy-analysis-20261124/`. The usage notes for the local optimizer are `scripts/bes_extreme/README.md`.
+Sources: [ranked-host Controller implementation](https://github.com/PopcornBoat/bes/commit/cfee01acb1770a7a77130093145454e4a48cd704), [complete-agent experiment log][experiments]. The primary local record is `frozen-checkpoints/root153-e0-defender-combined-20261123/evidence/winning-record.json`. The final figure and archive report are in `reports/bes-final-policy-analysis-20261124/`. See [optimizer usage](../scripts/bes_extreme/README.md) and the [pinned release](https://github.com/PopcornBoat/bes/tree/release/cage2-root153-v1).
 
 ## Reproduction and score comparisons
 
@@ -127,4 +127,4 @@ Only compare totals at the same scope. A standalone opponent total sums three ho
 [m9]: https://github.com/PopcornBoat/bes/blob/online-official-specialists/validated-checkpoints/meander-v9/README.md
 [online]: https://github.com/PopcornBoat/bes/blob/online-official-specialists/experiments/teacher-free-online-specialists.md
 [ledger]: https://github.com/PopcornBoat/bes/blob/530325d/docs/patch-evidence.md
-[experiments]: https://github.com/PopcornBoat/bes/blob/online-privileged-search/EXPERIMENTS.md
+[experiments]: https://github.com/PopcornBoat/bes/blob/main/EXPERIMENTS.md

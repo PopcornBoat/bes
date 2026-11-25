@@ -4,11 +4,29 @@ BES trains standalone Semantic-36 TPG policies for official CAGE2. The maintaine
 
 ## Maintained branches
 
-- `main`: repository baseline.
-- `offline-dagger`: teacher-guided DAgger, ranked imitation, grouped selection and official promotion. This is the path that produced the pre-online starting checkpoints.
-- `online-official-specialists`: teacher-free online evolution from a protected checkpoint. Official return drives admission and promotion; structural opportunity analysis can generate conditional specialist offspring.
+[Validated pipeline and flowchart](docs/validated-pipeline.md) covers the evidence from offline training to the final complete agent.
 
-The two experimental branches share the same policy/checkpoint format and most of the source code. The branch name identifies the maintained workflow, while the runtime mode selects teacher-guided or teacher-free training.
+| Branch | What to reproduce | Entry point |
+| --- | --- | --- |
+| main | Full pipeline and frozen complete-agent release | scripts/bes-search --help |
+| [offline-dagger](https://github.com/PopcornBoat/bes/tree/offline-dagger) | Teacher-guided DAgger | [Training requests](docs/offline-dagger.md) |
+| [online-official-specialists](https://github.com/PopcornBoat/bes/tree/online-official-specialists) | Teacher-free official search | [Online training](docs/online-official.md) |
+| [tpg-analysis](https://github.com/PopcornBoat/bes/tree/tpg-analysis) | Graph and bid analysis, pruning, traces and figures | [Analysis](scripts/tpg_research/README.md) |
+| [tpg-compilation](https://github.com/PopcornBoat/bes/tree/tpg-compilation) | Native compilation of exact ranked catalogues | [Compiler](scripts/tpg_compilation/README.md) |
+| [extreme-optimize](https://github.com/PopcornBoat/bes/tree/extreme-optimize) | Decoy-order search, native ranking edits and held-out validation | [Optimizer](scripts/bes_extreme/README.md) |
+
+All workflows share the BES core and checkpoint format. The historical DAgger and online requests explicitly select the original Controller resolution profile.
+
+## Reproduce the frozen complete agent
+
+The release tag contains the Controller, opponent router, two expert graphs and verified evidence. The archived official root-153 score is **-56.6674**. Use the pinned CybORG 2.1 bridge, SBCL and the ASDF dependencies.
+
+~~~bash
+scripts/bes-search materialize root153 /tmp/bes-root153
+scripts/bes-search validate /tmp/bes-root153 /tmp/bes-root153-validation
+~~~
+
+The official evaluator uses 1,000 episodes per opponent and horizon by default. Use --episodes 2 for a small installation smoke. The separate Meander compilation reference is available through materialize meander-v15-reference. See [EXPERIMENTS.md](EXPERIMENTS.md) for score protocols and checkpoint provenance.
 
 ## Policy and checkpoint invariants
 
