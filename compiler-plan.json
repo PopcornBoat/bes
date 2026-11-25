@@ -1,0 +1,19 @@
+{
+  "seed_root": 153,
+  "op_server0_order": [
+    2,
+    7,
+    0,
+    6
+  ],
+  "decoy_host_resolution": "ranked-decoy-hosts",
+  "compiled_checkpoint_sha256": "71f28f0c044808bbbdee834dc4d84da22a5d0c732db5d0e7d635ac6c3774c047",
+  "bline_external_guard": false,
+  "comparison": {
+    "compiled": "native checkpoint",
+    "table-reference": "same original Meander graph with original external Top-8 route reference"
+  },
+  "official_interaction_budget": 1082160,
+  "episodes_per_full_arm": 9000,
+  "full_transitions_per_arm": 540000
+}
