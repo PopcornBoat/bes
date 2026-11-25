@@ -5,7 +5,8 @@
 (load (asdf:system-relative-pathname
        "cl-tpg" "oracles/compiled-bline-heuristic.lisp"))
 
-(let* ((cl-tpg::*num-observations* cl-tpg::+cage2-scan-observation-size+)
+(let* ((cl-tpg::*cage2-decoy-resolution* :profile)
+       (cl-tpg::*num-observations* cl-tpg::+cage2-scan-observation-size+)
        (cl-tpg::*num-actions* cl-tpg::+num-semantic-36-actions+)
        (cl-tpg::*factored-actions-enabled* t)
        (cl-tpg::*terminal-action-format* :target-response-36)
