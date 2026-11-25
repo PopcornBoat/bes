@@ -167,16 +167,55 @@ CAGE3 MODE:
            (if cage2-p
                (sb-ext:seed-random-state +cage2-evaluation-seed+)
                *random-state*)))
+    (setf *factored-actions-enabled* cage2-p)
+    (when cage2-p
+      (unless (valid-cage2-policy-observation-size-p *num-observations*)
+        (error "CAGE2 validation requires ~D or ~D policy observations, got ~S."
+               +cage2-scan-observation-size+
+               +cage2-observation-size+
+               *num-observations*))
+      (unless (valid-decoy-order-mode-p *decoy-order-mode*)
+        (error "Invalid CAGE2 Decoy-order mode: ~S." *decoy-order-mode*)))
+    (configure-hamming-observation-space)
     (when cage2-p
       (seed-cage2-evaluation)
       (emit-message
        (format nil
-               "CAGE2 scan-state observations enabled: ~D raw + ~D scan-state = ~D inputs."
+               "CAGE2 policy inputs: first ~D of ~D bridge values (~D raw + ~D scan-state~A); decoy-order=~A; teacher-profile=~A; opening=~A; memory=~A."
+               *num-observations*
+               +cage2-observation-size+
                +cage2-raw-observation-size+
                +cage2-scan-state-size+
-               +cage2-observation-size+)))
+               (if (= *num-observations* +cage2-observation-size+)
+                   (format nil " + ~D availability"
+                           +cage2-decoy-availability-size+)
+                   "; availability ignored")
+               *decoy-order-mode*
+               *teacher-backend*
+               *cage2-opening-mode*
+               (if *recurrent-policy-enabled* :recurrent :stateless))))
 
     (let ((team (load-best-team best-team-path)))
+      (when cage2-p
+        (report-checkpoint-controller-protocol
+         *loaded-checkpoint-metadata* "Validation")
+        (multiple-value-bind (saved-format saved-profile saved-ror-profile)
+            (checkpoint-execution-profile
+             *loaded-checkpoint-metadata* "Validation checkpoint")
+          (setf *terminal-action-format* saved-format
+                *instruction-set-profile* saved-profile
+                *read-only-register-profile* saved-ror-profile)
+          (emit-message
+           (format nil
+                   "Validation checkpoint instruction-set profile=~A; serialized historical opcodes remain executable."
+                   saved-profile))
+          (emit-message
+           (format nil
+                   "Validation checkpoint read-only-register profile=~A values=~S."
+                   saved-ror-profile
+                   (active-read-only-register-values saved-ror-profile)))))
+      (when cage2-p
+        (ensure-team-observation-compatible team *num-observations*))
       (emit-message
        (format nil
                "Validation started. best-team=~A environment=~A mode=~A red=~A episodes=~A"

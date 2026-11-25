@@ -183,6 +183,21 @@
               (and order (copy-seq order)))
             orders)))
 
+(defun make-default-action-option-orders ()
+  "Return an independent copy of the active agreement's option orders."
+  (and *factored-actions-enabled*
+       (copy-action-option-orders
+        (action-agreement-decoy-orders
+         (ensure-cage2-action-agreement)))))
+
+(defun action-agreement-decoy-orders-for-backend
+       (&optional (backend *teacher-backend*)
+                  (agreement (ensure-cage2-action-agreement)))
+  "Return the fixed Decoy-order profile associated with BACKEND."
+  (or (action-agreement-decoy-orders-for-profile backend agreement)
+      (error "No Decoy-order profile is defined for teacher backend ~S."
+             backend)))
+
 (defun action-agreement-decoy-orders-for-profile
        (profile &optional (agreement (ensure-cage2-action-agreement)))
   "Return fixed Decoy orders for explicit PROFILE, or NIL when unknown.

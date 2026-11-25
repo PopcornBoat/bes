@@ -89,8 +89,10 @@ reset instead."
 (defun semantic-action->cage2-input (action)
   "Convert a BES SEMANTIC-ACTION into py4cl2-friendly integer input.
 
-The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
-:MONITOR fallbacks canonicalize to (0 0 0). Non-Decoy responses use option 0."
+New factored policies emit (TARGET RESPONSE), allowing the Python bridge to
+resolve DECOY with its agreement-ordered option table. Legacy checkpoints can
+still emit (TARGET RESPONSE OPTION), preserving their explicit decoy option.
+GLOBAL and defensive :MONITOR fallbacks canonicalize to (0 0)."
   (let* ((target (cl-tpg:semantic-action-target action))
          (response (cl-tpg:semantic-action-response action))
          (option (cl-tpg:semantic-action-option action))
@@ -102,21 +104,22 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
            (= target cl-tpg:+global-target+)
            (eq response :monitor)
            (null response-index))
-       (list cl-tpg:+global-target+ 0 0))
+       (list cl-tpg:+global-target+ 0))
       ((eq response :decoy)
        (if (and (integerp option) (<= 0 option 7))
            (list target response-index option)
-           (list cl-tpg:+global-target+ 0 0)))
+           (list target response-index)))
       (t
-       (list target response-index 0)))))
+       (list target response-index)))))
 
-(defun cage2-policy-decision (root-team observation controller)
-  "Resolve the CAGE2 policy's Top-8 proposals into a bridge action."
-  (unless (= (length observation) cl-tpg::+cage2-observation-size+)
-    (error "Expected ~D bridge-augmented CAGE2 observations, got ~D."
-           cl-tpg::+cage2-observation-size+ (length observation)))
-  (cl-tpg::cage2-controller-resolve-ranking
-   controller (cl-tpg::execute-team-semantic-ranked root-team observation)))
+(defun semantic-ranking->cage2-input (actions)
+  "Convert ranked BES semantic actions to primitive bridge candidates."
+  (mapcar #'semantic-action->cage2-input actions))
+
+(defun controller-decision->cage2-input (decision)
+  "Return the single exact semantic action selected by the Lisp Controller."
+  (semantic-action->cage2-input
+   (cl-tpg:cage2-controller-decision-semantic-action decision)))
 
 (defun cage2-info-value (info name)
   "Read NAME from a py4cl2-converted Gym info mapping."
@@ -137,7 +140,35 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
     (unless (integerp actual)
       (error "CAGE2 bridge did not report an integer concrete_action: ~S"
              info))
-    (cl-tpg::cage2-controller-commit-decision controller decision actual)))
+    (cl-tpg:cage2-controller-commit-decision controller decision actual)))
+
+(defun configure-cage2-controller-option-orders (env controller)
+  "Install CONTROLLER's fixed option permutations in the Python bridge."
+  (let ((orders (cl-tpg::cage2-controller-option-orders controller)))
+    (py4cl2:pycall
+     "cage2_bridge.cage2.configure_env_decoy_orders"
+     env
+     (loop for target from 1 below (length orders)
+           collect (coerce (aref orders target) 'list)))))
+
+(defun cage2-controller-rollout-p ()
+  "Return true for the direct Semantic-36 Lisp-controller contract."
+  (eq cl-tpg::*terminal-action-format* :target-response-36))
+
+(defun execute-policy-action (root-team observation environment-name)
+  "Execute ROOT-TEAM using the action contract required by ENVIRONMENT-NAME."
+  (if (cage2-environment-p environment-name)
+      (progn
+        (unless (= (length observation) cl-tpg::+cage2-observation-size+)
+          (error
+           "Expected ~D bridge-augmented CAGE2 observations, got ~D. Update/install the scan-state custom-gym-for-bes bridge."
+           cl-tpg::+cage2-observation-size+
+           (length observation)))
+        (semantic-ranking->cage2-input
+         (cl-tpg:execute-team-semantic-ranked
+          root-team
+          (cl-tpg::policy-observation observation))))
+      (cl-tpg:execute-team root-team observation)))
 
 (defun make (environment-name &key (video-path nil))
   "Makes a new Gymnasium environment."
@@ -160,6 +191,29 @@ The Python bridge accepts (TARGET RESPONSE OPTION). GLOBAL and defensive
       (py4cl2:pymethod env "step" action)
     (values (normalize-obs obs) rew term trunc info)))
 
+(defun configure-cage2-option-orders (env root-team)
+  "Install the active fixed or evolved Decoy orders in one CAGE2 environment."
+  (let ((orders (cl-tpg::effective-team-option-orders root-team)))
+    (when orders
+      (py4cl2:pycall
+       "cage2_bridge.cage2.configure_env_decoy_orders"
+       env
+       (loop for target from 1 below (length orders)
+             collect (coerce (aref orders target) 'list))))))
+
+(defun cage2-fixed-opening-action (environment-name timestep)
+  "Return the fixed CAGE2 probe action for TIMESTEP, or NIL.
+
+The main agent uses these first three actions to expose the red policy. They
+belong to the episode controller rather than the evolved TPG policy."
+  (when (and (cage2-environment-p environment-name)
+             (eq cl-tpg::*cage2-opening-mode* :fixed)
+             (<= 0 timestep)
+             (< timestep
+                (length cl-tpg::+cage2-fixed-opening-rankings+)))
+    (copy-tree
+     (aref cl-tpg::+cage2-fixed-opening-rankings+ timestep))))
+
 (defun rollout-python (root-team environment-name seed &key (video-path nil))
   "Run one complete episode.
 
@@ -176,37 +230,67 @@ Supports:
     (py4cl2:pyexec "import cage3_bridge"))
 
   (let* ((env (make environment-name :video-path video-path))
-         (controller (when (cage2-environment-p environment-name)
-                       (cl-tpg::make-cage2-controller)))
          (episode-reward 0.0)
-         (observation (reset env seed)))
-    (unwind-protect
-         (loop for timestep from 0
-               do (let* ((decision (when controller
-                                      (cage2-policy-decision
-                                       root-team observation controller)))
-                         (action (cond
-                                   (decision
-                                    (semantic-action->cage2-input
-                                     (cl-tpg::cage2-controller-decision-semantic-action
-                                      decision)))
-                                   ((shared-policy-observation-p observation)
-                                    (shared-policy-actions root-team observation))
-                                   (t (cl-tpg:execute-team root-team observation)))))
-                    (multiple-value-bind (obs rew term trunc info)
-                        (step env action)
-                      (when decision
-                        (commit-controller-step controller decision info))
-                      (incf episode-reward rew)
-                      (setf observation obs)
-                      (when (or term trunc)
-                        (return)))))
-      (ignore-errors
-        (py4cl2:pymethod env "close")
-        (when (and video-path
-                   (probe-file "rl-video-episode-0.mp4"))
-          (rename-file "rl-video-episode-0.mp4" video-path))))
-    episode-reward))
+         (controller
+           (and (cage2-environment-p environment-name)
+                (cage2-controller-rollout-p)
+                (cl-tpg:make-cage2-controller
+                 :decoy-order-profile
+                 (cl-tpg::cage2-rollout-controller-decoy-order-profile
+                  environment-name)))))
+    (when (cage2-environment-p environment-name)
+      (if controller
+          (configure-cage2-controller-option-orders env controller)
+          (configure-cage2-option-orders env root-team)))
+    (cl-tpg::call-with-fresh-policy-episode
+     (lambda ()
+       (let ((observation (reset env seed)))
+         (when controller
+           (cl-tpg:cage2-controller-reset controller))
+         (unwind-protect
+              (loop for timestep from 0
+                    do (let* ((opening-action
+                                (cage2-fixed-opening-action
+                                 environment-name timestep))
+                              (policy-observation
+                                (and controller
+                                     (cl-tpg:cage2-controller-observe
+                                      controller observation)))
+                              (decision
+                                (and controller
+                                     (if opening-action
+                                         (cl-tpg::cage2-controller-resolve-pair-ranking
+                                          controller opening-action)
+                                         (cl-tpg:cage2-controller-resolve-ranking
+                                          controller
+                                          (cl-tpg:execute-team-semantic-ranked
+                                           root-team policy-observation)))))
+                              (action
+                                (if controller
+                                    (controller-decision->cage2-input decision)
+                                    (or opening-action
+                                        (if (shared-policy-observation-p observation)
+                                            (shared-policy-actions
+                                             root-team observation)
+                                            (execute-policy-action
+                                             root-team
+                                             observation
+                                             environment-name))))))
+                         (multiple-value-bind (obs rew term trunc info)
+                             (step env action)
+                           (when controller
+                             (commit-controller-step
+                              controller decision info))
+                           (incf episode-reward rew)
+                           (setf observation obs)
+                           (when (or term trunc)
+                             (return)))))
+           (ignore-errors
+             (py4cl2:pymethod env "close")
+             (when (and video-path
+                        (probe-file "rl-video-episode-0.mp4"))
+               (rename-file "rl-video-episode-0.mp4" video-path))))
+         episode-reward)))))
 
 (defun rollout (root-team environment-name seed &key (video-path nil))
   "Run a rollout through the Python Gymnasium bridge."

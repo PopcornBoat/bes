@@ -1,0 +1,33 @@
+(:TYPE :MESSAGE :FROM 0 :TS 4000978875 :MSG
+ "CAGE2 validation random seed initialized to 153.")
+(:TYPE :MESSAGE :FROM 0 :TS 4000978875 :MSG
+ "CAGE2 policy inputs: first 62 of 142 bridge values (52 raw + 10 scan-state; availability ignored); decoy-order=FIXED; teacher-profile=HEURISTIC; opening=FIXED; memory=STATELESS.")
+(:TYPE :MESSAGE :FROM 0 :TS 4000978876 :MSG
+ "Validation: checkpoint Controller protocol=CAGE2-LISP-CONTROLLER-V2 profile=MEANDER-HEURISTIC.")
+(:TYPE :MESSAGE :FROM 0 :TS 4000978876 :MSG
+ "Validation checkpoint instruction-set profile=REDUCED-EQ; serialized historical opcodes remain executable.")
+(:TYPE :MESSAGE :FROM 0 :TS 4000978876 :MSG
+ "Validation checkpoint read-only-register profile=CAGE2-CATEGORICAL-V1 values=#(0.0d0
+                                                                               1.0d0
+                                                                               2.0d0
+                                                                               3.0d0).")
+(:TYPE :MESSAGE :FROM 0 :TS 4000978876 :MSG
+ "Validation started. best-team=/home/hardison/bes-artifacts/runtime/meander-full-validation-gen1777-20261014/meander-gen1777-snapshot.lisp environment=CAGE2 mode=SINGLE-RED-FULL red=meander episodes=NIL")
+(:TYPE :HEARTBEAT :FROM 0 :TS 4000978986 :CPU 19.762352 :MEMORY 15.795192)
+(:TYPE :MESSAGE :FROM 0 :TS 4000979087 :MSG
+ "meander-30: mean=-5.551600000000004d0 std=1.4565916034012762d0 episodes=1000")
+(:TYPE :HEARTBEAT :FROM 0 :TS 4000979098 :CPU 19.875 :MEMORY 15.735587)
+(:TYPE :HEARTBEAT :FROM 0 :TS 4000979210 :CPU 20.099874 :MEMORY 17.295567)
+(:TYPE :HEARTBEAT :FROM 0 :TS 4000979322 :CPU 20.223326 :MEMORY 16.526403)
+(:TYPE :MESSAGE :FROM 0 :TS 4000979374 :MSG
+ "meander-50: mean=-10.225400000000018d0 std=6.527965162986781d0 episodes=1000")
+(:TYPE :HEARTBEAT :FROM 0 :TS 4000979437 :CPU 22.222223 :MEMORY 16.794353)
+(:TYPE :HEARTBEAT :FROM 0 :TS 4000979549 :CPU 20.210787 :MEMORY 15.133699)
+(:TYPE :HEARTBEAT :FROM 0 :TS 4000979661 :CPU 19.427147 :MEMORY 16.116144)
+(:TYPE :HEARTBEAT :FROM 0 :TS 4000979773 :CPU 19.011883 :MEMORY 15.09835)
+(:TYPE :MESSAGE :FROM 0 :TS 4000979849 :MSG
+ "meander-100: mean=-23.61180000000002d0 std=12.460359598395266d0 episodes=1000")
+(:TYPE :MESSAGE :FROM 0 :TS 4000979849 :MSG
+ "meander-total: reward=-39.388800000000046d0")
+(:TYPE :MESSAGE :FROM 0 :TS 4000979849 :MSG
+ "Standalone Meander full validation completed.")

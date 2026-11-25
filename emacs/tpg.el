@@ -21,6 +21,18 @@
     ("10.100.202.59" . 15)) ;; ds-cmlm-19
   "The mapping between IP address and their island ID.")
 
+(defvar tpg-service-port 8080
+  "TCP command and UDP telemetry port of the local BES server.")
+
+(defvar tpg-hamming-space-enabled nil
+  "Whether the next CAGE2 operation uses nearest-demonstration projection.")
+
+(defvar tpg-hamming-dataset-name nil
+  "Semantic training dataset used by the next Hamming-enabled operation.")
+(defvar tpg-recurrent-registers-enabled nil
+  "Whether the next CAGE2 operation preserves learner registers per episode.")
+
+
 (defun plist-to-cl-sexp (plist)
   "Format a plist as a Common Lisp readable s-expression with keywords."
   (concat "("
@@ -50,28 +62,140 @@
       :inf
     (string-to-number string)))
 
+(defun tpg-nearest-existing-directory (path)
+  "Return the nearest existing local directory at or above PATH.
+
+PATH is often a suggestion for a different island. On macOS that target path
+may start with `/home', while the Emacs controller uses `/Users'. Completion
+must nevertheless begin in a real local directory."
+  (let ((candidate
+         (and path
+              (expand-file-name path))))
+    (when (and candidate
+               (not (file-directory-p candidate)))
+      (setq candidate
+            (file-name-directory
+             (directory-file-name candidate))))
+    (while (and candidate
+                (not (file-directory-p candidate)))
+      (let ((parent
+             (file-name-directory
+              (directory-file-name candidate))))
+        (setq candidate
+              (unless (or (null parent)
+                          (equal parent candidate))
+                parent))))
+    (or candidate
+        (and (file-directory-p default-directory)
+             default-directory)
+        (expand-file-name "~/"))))
+
+(defun tpg-portable-target-path (path &optional directory-p)
+  "Keep PATH portable when it is sent from Emacs to a Lisp island.
+
+In particular, convert the controller's home prefix back to `~/' instead of
+sending a macOS `/Users/NAME' path to a Linux island."
+  (let ((portable (abbreviate-file-name path)))
+    (if directory-p
+        (file-name-as-directory portable)
+      portable)))
+
 (defun tpg-read-file-path (prompt &optional default)
-  "Read a file path with minibuffer completion."
-  (expand-file-name
+  "Read a local or server-side file path with minibuffer completion.
+
+TAB completes paths visible to the Emacs controller. A path that exists only
+on the selected island can still be entered because local matching is not
+required; the island performs the authoritative file check."
+  (tpg-portable-target-path
    (read-file-name prompt
-                   (or default default-directory)
+                   (tpg-nearest-existing-directory
+                    (or default default-directory))
                    nil
-                   t)))
+                   nil)))
 
 (defun tpg-read-directory-path (prompt &optional default)
-  "Read a directory path with minibuffer completion."
-  (file-name-as-directory
-   (expand-file-name
-    (read-directory-name prompt
-                         (or default default-directory)
-                         nil
-                         t))))
+  "Read a local or server-side directory path with minibuffer completion."
+  (tpg-portable-target-path
+   (read-directory-name prompt
+                        (tpg-nearest-existing-directory
+                         (or default default-directory))
+                        nil
+                        nil)
+   t))
+
+(defun tpg-set-hamming-dataset ()
+  "Select the semantic dataset used as the fixed Hamming reference space."
+  (interactive)
+  (setq tpg-hamming-dataset-name
+        (tpg-read-file-path
+         "Hamming reference dataset: "
+         (or (and tpg-hamming-dataset-name
+                  (file-name-directory tpg-hamming-dataset-name))
+             "~/.datasets/")))
+  (message "[LOCAL] Hamming reference dataset: %s"
+           tpg-hamming-dataset-name))
+
+(defun tpg-toggle-hamming-space ()
+  "Toggle Hamming projection for operations requested after this command."
+  (interactive)
+  (if tpg-hamming-space-enabled
+      (setq tpg-hamming-space-enabled nil)
+    (unless tpg-hamming-dataset-name
+      (tpg-set-hamming-dataset))
+    (setq tpg-hamming-space-enabled t))
+  (message "[LOCAL] Hamming projection is %s%s"
+           (if tpg-hamming-space-enabled "ON" "OFF")
+           (if (and tpg-hamming-space-enabled tpg-hamming-dataset-name)
+               (format " (%s)" tpg-hamming-dataset-name)
+             "")))
+
+(defun tpg-hamming-menu-description ()
+  "Describe the Hamming setting that will be copied into the next request."
+  (format "Hamming Projection: %s"
+          (if tpg-hamming-space-enabled "ON" "OFF")))
+
+(defun tpg-toggle-recurrent-registers ()
+  "Toggle recurrent registers for operations requested after this command."
+  (interactive)
+  (setq tpg-recurrent-registers-enabled
+        (not tpg-recurrent-registers-enabled))
+  (message "[LOCAL] Recurrent registers are %s for the next operation"
+           (if tpg-recurrent-registers-enabled "ON" "OFF")))
+
+(defun tpg-recurrent-menu-description ()
+  "Describe the recurrent-register setting copied into the next request."
+  (format "Recurrent Registers: %s"
+          (if tpg-recurrent-registers-enabled "ON" "OFF")))
+
+(defun tpg-add-hamming-settings (payload &optional fallback-dataset)
+  "Return PAYLOAD with the menu's fixed Hamming settings.
+
+FALLBACK-DATASET is used for an offline run only when no reference has been
+selected yet."
+  (when (and tpg-hamming-space-enabled
+             (null tpg-hamming-dataset-name)
+             fallback-dataset)
+    (setq tpg-hamming-dataset-name fallback-dataset))
+  (when (and tpg-hamming-space-enabled
+             (null tpg-hamming-dataset-name))
+    (user-error "Enable Hamming projection only after selecting its reference dataset"))
+  (setq payload
+        (plist-put payload
+                   :hamming-space-enabled
+                   (if tpg-hamming-space-enabled :enabled :disabled)))
+  (plist-put payload
+             :hamming-dataset-name
+             (if tpg-hamming-space-enabled
+                 tpg-hamming-dataset-name
+               :none)))
 
 (defun make-payload-from-transient-args (args)
   "Given a list of transient args, construct the TCP payload for starting searches."
   (let ((mode (pcase (transient-arg-value "--mode=" args)
                 ("online" :online)
                 ("offline" :offline)
+                ("teacher-forcing" :teacher-forcing)
+                ("official-guided" :official-guided)
                 (other (error "Invalid mode: %S" other))))
         (gym-environment-name
          (pcase (transient-arg-value "*env=" args)
@@ -83,6 +207,57 @@
         (num-actions
          (string-to-number
           (transient-arg-value "*num-actions=" args)))
+        (instruction-set-profile
+         (pcase (transient-arg-value "--instruction-set=" args)
+           ("full" :full)
+           ("reduced" :reduced)
+           ("reduced-eq" :reduced-eq)
+           (other (error "Invalid instruction-set profile: %S" other))))
+        (read-only-register-profile
+         (pcase (transient-arg-value "--read-only-registers=" args)
+           ("off" :disabled)
+           ("cage2-categorical-v1" :cage2-categorical-v1)
+           (other (error "Invalid read-only-register profile: %S" other))))
+        (instruction-mutation-mode
+         (pcase (transient-arg-value "--instruction-mutation=" args)
+           ("legacy" :legacy)
+           ("field-local" :field-local)
+           (other (error "Invalid instruction mutation mode: %S" other))))
+        (categorical-predicate-mutation-enabled
+         (pcase (transient-arg-value "--categorical-predicate=" args)
+           ("on" :enabled)
+           ("off" :disabled)
+           (other (error "Invalid categorical-predicate setting: %S" other))))
+        (effective-aware-mutation-enabled
+         (pcase (transient-arg-value "--effective-aware=" args)
+           ("on" :enabled)
+           ("off" :disabled)
+           (other (error "Invalid effective-aware setting: %S" other))))
+        (compression-reseed-enabled
+         (pcase (transient-arg-value "--compression-reseed=" args)
+           ("on" :enabled)
+           ("off" :disabled)
+           (other (error "Invalid compression/reseed setting: %S" other))))
+        (decoy-order-mode
+         (pcase (transient-arg-value "--decoy-order=" args)
+           ("fixed" :fixed)
+           ("evolved" :evolved)
+           (other (error "Invalid Decoy-order mode: %S" other))))
+        (cage2-opening-mode
+         (pcase (transient-arg-value "--opening=" args)
+           ("fixed" :fixed)
+           ("policy" :policy)
+           (other (error "Invalid CAGE2 opening mode: %S" other))))
+        (teacher-forcing-rollout-mode
+         (pcase (transient-arg-value "--teacher-rollout=" args)
+           ("dagger" :dagger)
+           ("teacher" :teacher)
+           (other (error "Invalid teacher-forcing rollout mode: %S" other))))
+        (teacher-backend
+         (pcase (transient-arg-value "--teacher-backend=" args)
+           ("model" :model)
+           ("heuristic" :heuristic)
+           (other (error "Invalid teacher backend: %S" other))))
         (population-size
          (string-to-number
           (transient-arg-value "*population-size=" args)))
@@ -153,6 +328,17 @@
       :dataset-name :none
       :num-observations ,num-observations
       :num-actions ,num-actions
+      :instruction-set-profile ,instruction-set-profile
+      :read-only-register-profile ,read-only-register-profile
+      :instruction-mutation-mode ,instruction-mutation-mode
+      :categorical-predicate-mutation-enabled
+      ,categorical-predicate-mutation-enabled
+      :effective-aware-mutation-enabled ,effective-aware-mutation-enabled
+      :compression-reseed-enabled ,compression-reseed-enabled
+      :decoy-order-mode ,decoy-order-mode
+      :cage2-opening-mode ,cage2-opening-mode
+      :teacher-forcing-rollout-mode ,teacher-forcing-rollout-mode
+      :teacher-backend ,teacher-backend
       :population-size ,population-size
       :init-num-learners ,init-num-learners
       :max-num-learners ,max-num-learners
@@ -173,6 +359,8 @@
       :batch-size ,batch-size
       :online-fitness-episodes ,online-fitness-episodes
       :checkpoint-directory :none
+      :recurrent-policy-enabled
+      ,(if tpg-recurrent-registers-enabled :enabled :disabled)
       :seed ,seed)))
 
 (transient-define-suffix start-search ()
@@ -200,6 +388,10 @@
           (plist-put payload :dataset-name dataset-name))
     (setq payload
           (plist-put payload :checkpoint-directory checkpoint-directory))
+    (setq payload
+          (tpg-add-hamming-settings
+           payload
+           (and (eq mode :offline) dataset-name)))
 
     (message "[LOCAL] Sending start-search request to islands %s at IPs %s."
              island-ids ip-addresses)
@@ -213,7 +405,7 @@
              (let ((proc (make-network-process
                           :name "start-search-tcp-client"
                           :host ip-address
-                          :service 8080
+                          :service tpg-service-port
                           :family 'ipv4
                           :nowait nil
                           :sentinel (lambda (_proc event)
@@ -237,7 +429,7 @@
                (condition-case nil
                    (let ((proc (make-network-process
                                 :name "stop-search-tcp-client"
-                                :host ip :service 8080 :family 'ipv4
+                                :host ip :service tpg-service-port :family 'ipv4
                                 :nowait t))) ;; t prevents the 'hang' and immediate error
                      (process-send-string proc (format "%S\n" payload))
                      (process-send-eof proc))
@@ -254,7 +446,6 @@
 
 (transient-define-prefix start-search-menu ()
   "Menu for configuring TPG hyperparameters before starting a run."
-  :refresh-suffixes t
   ;; These are the default values for the entire prefix
     :value '("*p-add=0.2" 
             "*p-del=0.1"
@@ -273,21 +464,31 @@
            
             "*population-size=160"
             "*num-observations=62"
-            "*num-actions=11"
+            "*num-actions=36"
             "*init-num-learners=3"
             "*max-num-learners=32"
             "*migration-interval=50"
             "*batch-size=1000"
             "*online-fitness-episodes=5"
             "*seed=random"
+            "--decoy-order=fixed"
+            "--opening=fixed"
+            "--teacher-rollout=dagger"
+            "--teacher-backend=heuristic"
+            "--instruction-set=full"
+            "--read-only-registers=off"
+            "--instruction-mutation=legacy"
+            "--categorical-predicate=off"
+            "--effective-aware=off"
+            "--compression-reseed=off"
             "--mode=online")
   ["Island"
     ("-I" "Island" "--island="
     :choices ("all" "0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15"))]
   ["Evaluation"
    ("-M" "Evaluation Mode" "--mode="
-    :choices ("online" "offline"))
-   ("-G" "Online Environment" "*env="
+    :choices ("online" "offline" "teacher-forcing" "official-guided"))
+   ("-G" "Gym Environment" "*env="
     :choices ("none" 
               "Cage2-b_line-100-v0"
               "Cage2-meander-100-v0"
@@ -299,12 +500,32 @@
   ["Key Settings"
    ("-Z" "Number of Observations" "*num-observations=")
    ("-X" "Number of Actions" "*num-actions=")
+   ("-U" "Instruction Set" "--instruction-set="
+    :choices ("full" "reduced" "reduced-eq"))
+   ("-R" "Read-only Registers" "--read-only-registers="
+    :choices ("off" "cage2-categorical-v1"))
+   ("-J" "Instruction Mutation" "--instruction-mutation="
+    :choices ("legacy" "field-local"))
+   ("-Y" "Categorical Predicate" "--categorical-predicate="
+    :choices ("off" "on"))
+   ("-E" "Effective-aware Mutation" "--effective-aware="
+    :choices ("off" "on"))
+   ("-K" "Compression/Reseed" "--compression-reseed="
+    :choices ("off" "on"))
+   ("-O" "Decoy Order" "--decoy-order="
+    :choices ("fixed" "evolved"))
+   ("-Q" "Episode Opening" "--opening="
+    :choices ("fixed" "policy"))
+   ("-T" "Teacher Rollout" "--teacher-rollout="
+     :choices ("dagger" "teacher"))
+   ("-B" "Teacher Backend" "--teacher-backend="
+     :choices ("heuristic" "model"))
    ("-P" "Population Size" "*population-size=")
    ("-g" "Gap" "*gap=")
    ("-n" "Migration Interval" "*migration-interval=") 
    ("-b" "Batch Size" "*batch-size=")
    ("-e"
-    "Online Fitness Episodes"
+    "Fitness Episodes"
     "*online-fitness-episodes=")
    ("-s" "Seed" "*seed=")]
   [:description "Team Constraints"
@@ -359,20 +580,22 @@
          (mode-str
           (completing-read
            "Evaluation mode: "
-           '("online" "offline")
+           '("online" "offline" "teacher-forcing" "official-guided")
            nil
            t
            "offline"))
 
          (mode
-          (if (string= mode-str "online")
-              :online
-            :offline))
+          (pcase mode-str
+            ("online" :online)
+            ("offline" :offline)
+            ("teacher-forcing" :teacher-forcing)
+            ("official-guided" :official-guided)))
 
          (env
-          (if (eq mode :online)
+          (if (memq mode '(:online :teacher-forcing :official-guided))
               (completing-read
-               "Online environment: "
+               "Gym environment: "
                '("Cage2-b_line-100-v0"
                  "Cage2-meander-100-v0"
                  "Cage2-sleep-100-v0"
@@ -401,6 +624,109 @@
            (read-string
             "Number of actions: "
             "11")))
+
+         (instruction-set-profile
+          (intern
+           (concat
+            ":"
+            (completing-read
+             "Instruction set: "
+             '("full" "reduced" "reduced-eq")
+             nil
+             t
+             "full"))))
+
+         (read-only-register-profile
+          (intern
+           (concat
+            ":"
+            (pcase
+                (completing-read
+                 "Read-only registers: "
+                 '("off" "cage2-categorical-v1") nil t "off")
+              ("off" "disabled")
+              (profile profile)))))
+
+         (instruction-mutation-mode
+          (intern
+           (concat
+            ":"
+            (completing-read
+             "Instruction mutation: "
+             '("legacy" "field-local")
+             nil
+             t
+             "legacy"))))
+
+         (categorical-predicate-mutation-enabled
+          (string=
+           (completing-read
+            "Atomic categorical-predicate mutation: "
+            '("off" "on") nil t "off")
+           "on"))
+
+         (effective-aware-mutation-enabled
+          (string=
+           (completing-read
+            "Effective-aware instruction selection: "
+            '("off" "on") nil t "off")
+           "on"))
+
+         (compression-reseed-enabled
+          (string=
+           (completing-read
+            "Compression/reseed events: "
+            '("off" "on") nil t "off")
+           "on"))
+
+         (decoy-order-mode
+          (intern
+           (concat
+            ":"
+            (completing-read
+             "Decoy order: "
+             '("fixed" "evolved")
+             nil
+             t
+             "fixed"))))
+
+         (cage2-opening-mode
+          (if (and (stringp env)
+                   (string-prefix-p "Cage2" env))
+              (intern
+               (concat
+                ":"
+                (completing-read
+                 "CAGE2 episode opening: "
+                 '("fixed" "policy")
+                 nil
+                 t
+                 "fixed")))
+            :policy))
+
+         (teacher-forcing-rollout-mode
+           (if (memq mode '(:teacher-forcing :official-guided))
+               (intern
+                (concat
+                 ":"
+                 (completing-read
+                  "Teacher-forcing rollout: "
+                  '("dagger" "teacher")
+                  nil
+                  t
+                  "dagger")))
+             :dagger))
+
+         (teacher-backend
+           (intern
+            (concat
+             ":"
+             (completing-read
+              "Fixed Decoy profile / teacher backend: "
+              '("heuristic" "model")
+              nil
+              t
+              "heuristic"))))
 
          (population-size
           (string-to-number
@@ -510,12 +836,12 @@
             "Batch size: "
             "1000")))
 
-         ;; Online 模式下决定每个 team 用多少个完整 episode
-         ;; 计算一次 fitness。Offline 模式下该值仍会传递，但不会使用。
+         ;; Online mode uses this per team. Teacher forcing uses it once to
+         ;; generate the shared trace for the complete generation.
          (online-fitness-episodes
           (string-to-number
            (read-string
-            "Online fitness episodes per team: "
+            "Fitness episodes: "
             "5")))
 
          (seed-str
@@ -529,7 +855,7 @@
             (string-to-number seed-str)))
 
          (payload
-          `(:type :resume-search
+           `(:type :resume-search
             :mode ,mode
             :gym-environment-name ,env
             :dataset-name ,dataset
@@ -537,6 +863,19 @@
 
             :num-observations ,num-observations
             :num-actions ,num-actions
+            :instruction-set-profile ,instruction-set-profile
+            :read-only-register-profile ,read-only-register-profile
+            :instruction-mutation-mode ,instruction-mutation-mode
+            :categorical-predicate-mutation-enabled
+            ,(if categorical-predicate-mutation-enabled :enabled :disabled)
+            :effective-aware-mutation-enabled
+            ,(if effective-aware-mutation-enabled :enabled :disabled)
+            :compression-reseed-enabled
+            ,(if compression-reseed-enabled :enabled :disabled)
+            :decoy-order-mode ,decoy-order-mode
+            :cage2-opening-mode ,cage2-opening-mode
+            :teacher-forcing-rollout-mode ,teacher-forcing-rollout-mode
+            :teacher-backend ,teacher-backend
             :population-size ,population-size
 
             :init-num-learners ,init-num-learners
@@ -544,6 +883,8 @@
 
             :p-add ,p-add
             :p-del ,p-del
+            :recurrent-policy-enabled
+            ,(if tpg-recurrent-registers-enabled :enabled :disabled)
             :p-mut ,p-mut
             :p-act ,p-act
             :p-swap ,p-swap
@@ -563,9 +904,19 @@
             :batch-size ,batch-size
             :online-fitness-episodes ,online-fitness-episodes
 
-            :checkpoint-directory ,checkpoint-dir
+             :checkpoint-directory ,checkpoint-dir
 
-            :seed ,seed)))
+             :hamming-space-enabled
+             ,(if tpg-hamming-space-enabled :enabled :disabled)
+             :hamming-dataset-name
+             ,(if tpg-hamming-space-enabled
+                  (or tpg-hamming-dataset-name
+                      (and (eq mode :offline) dataset)
+                      (user-error
+                       "Select a Hamming reference dataset before resuming"))
+                :none)
+
+             :seed ,seed)))
 
     (tpg-send-payload-to-island
      island-id
@@ -573,7 +924,7 @@
      "resume-search-client")
 
     (message
-     "[LOCAL] Requested warm-start resume on island %s from %s; mode=%s; online fitness episodes=%s"
+     "[LOCAL] Requested warm-start resume on island %s from %s; mode=%s; fitness episodes=%s"
      island-id
      best-team-path
      mode
@@ -592,6 +943,10 @@
    ("V" "Validate Best Team" tpg-validate-best-team)
    ("D" "Stop a search" stop-search-menu)]
 
+  ["Hamming Projection (next operation)"
+   ("H" tpg-hamming-menu-description tpg-toggle-hamming-space)
+   ("F" "Set Reference Dataset" tpg-set-hamming-dataset)]
+
   ["Navigation"
    ("q" "Quit Menu" transient-quit-one)]
    
@@ -599,8 +954,11 @@
    ("b" "Save Best Team" tpg-save-best-team)]
   
   ["Python"
-    ("p" "Set Python Interpreter" tpg-configure-python-interpreter)])
-   
+   ("p" "Set Python Interpreter" tpg-configure-python-interpreter)]
+
+  ["Policy Memory (offline/teacher/online)"
+   ("M" tpg-recurrent-menu-description tpg-toggle-recurrent-registers)])
+
 
 (defvar tpg-mode-map
   (let ((map (make-sparse-keymap)))
@@ -655,6 +1013,7 @@
          ("Instrs" 10 t)
          ("Max Team" 10 t)
          ("Max Prog" 10 t)
+         ("Elapsed" 10 t)
          ("CPU" 8 t)
          ("Mem" 8 t)])
 
@@ -734,6 +1093,14 @@
 
           (format "%s" (or (plist-get data :max-program-size) "-"))
 
+          (let ((seconds (plist-get data :elapsed-seconds)))
+            (if (numberp seconds)
+                (format "%02d:%02d:%02d"
+                        (/ seconds 3600)
+                        (% (/ seconds 60) 60)
+                        (% seconds 60))
+              "-"))
+
           (format "%.1f"
                   (or
                    (plist-get data :cpu)
@@ -786,7 +1153,8 @@
        (learner-count (plist-get msg :LEARNER-COUNT))
        (instruction-count (plist-get msg :INSTRUCTION-COUNT))
        (max-team-size (plist-get msg :MAX-TEAM-SIZE))
-       (max-program-size (plist-get msg :MAX-PROGRAM-SIZE)))
+       (max-program-size (plist-get msg :MAX-PROGRAM-SIZE))
+       (elapsed-seconds (plist-get msg :ELAPSED-SECONDS)))
 
    (puthash
 
@@ -827,7 +1195,8 @@
                        (:learner-count ,learner-count)
                        (:instruction-count ,instruction-count)
                        (:max-team-size ,max-team-size)
-                       (:max-program-size ,max-program-size)))
+                       (:max-program-size ,max-program-size)
+                       (:elapsed-seconds ,elapsed-seconds)))
         (setq data (plist-put data (car entry) (cadr entry))))
       data)
     tpg-data)))
@@ -877,7 +1246,7 @@
   ;; Ensure server is running
   (unless (process-live-p (get-process "tpg"))
     (make-network-process
-     :name "tpg" :family 'ipv4 :service 8080 :type 'datagram
+     :name "tpg" :family 'ipv4 :service tpg-service-port :type 'datagram
      :host "0.0.0.0" :server t :filter #'tpg-telemetry-handler))
   
   ;; Setup Dashboard
@@ -895,14 +1264,10 @@
 
 
 (defun tpg-save-best-team ()
-  "Save the current best team."
+  "Save the current best team using its configuration-derived filename."
   (interactive)
-  (let ((path
-         (tpg-read-file-path
-          "Save best team as: "
-          "~/Documents/Research/checkpoints/best-team.lisp")))
-    (sly-eval `(cl-tpg::save-best-team ,path))
-    (message "Best team saved to %s" path)))
+  (sly-eval '(cl-tpg::save-best-team))
+  (message "Best team saved using the active checkpoint configuration; see *tpg-log* for its path."))
 
 
 (defun tpg-send-payload-to-island (island-id payload process-name)
@@ -913,7 +1278,7 @@
     (let ((proc (make-network-process
                  :name process-name
                  :host ip
-                 :service 8080
+                 :service tpg-service-port
                  :family 'ipv4
                  :nowait nil
                  :sentinel (lambda (_proc event)
@@ -982,6 +1347,44 @@
              '("b_line" "meander" "sleep")
              nil t
              "b_line")))
+         (num-observations
+          (if (eq environment :cage2)
+              (string-to-number
+               (completing-read
+                "CAGE2 policy observations: "
+                '("62" "142")
+                nil t "62"))
+            62))
+         (decoy-order-mode
+          (if (eq environment :cage2)
+              (intern
+               (concat
+                ":"
+                (completing-read
+                 "Decoy order: "
+                 '("fixed" "evolved")
+                 nil t "fixed")))
+            :evolved))
+         (cage2-opening-mode
+          (if (eq environment :cage2)
+              (intern
+               (concat
+                ":"
+                (completing-read
+                 "CAGE2 episode opening: "
+                 '("fixed" "policy")
+                 nil t "fixed")))
+            :policy))
+         (teacher-backend
+          (if (eq environment :cage2)
+              (intern
+               (concat
+                ":"
+                (completing-read
+                 "Fixed Decoy profile / teacher backend: "
+                 '("heuristic" "model")
+                 nil t "heuristic")))
+            :model))
          (episodes
           (cond
            ((and (eq environment :cage2)
@@ -993,13 +1396,31 @@
             (string-to-number
              (read-string "Episodes: " "1")))
            (t :none)))
-         (payload
-          `(:type :validate-best-team
+          (payload
+           `(:type :validate-best-team
             :best-team-path ,best-team-path
             :environment ,environment
-            :validation-mode ,validation-mode
-            :red-agent-name ,(or red-agent-name :none)
-            :episodes ,episodes)))
+             :validation-mode ,validation-mode
+             :red-agent-name ,(or red-agent-name :none)
+             :episodes ,episodes
+             :num-observations ,num-observations
+             :decoy-order-mode ,decoy-order-mode
+             :cage2-opening-mode ,cage2-opening-mode
+             :teacher-backend ,teacher-backend
+             :recurrent-policy-enabled
+             ,(if tpg-recurrent-registers-enabled :enabled :disabled)
+             :hamming-space-enabled
+             ,(if tpg-hamming-space-enabled :enabled :disabled)
+             :hamming-dataset-name
+             ,(if tpg-hamming-space-enabled
+                  (or tpg-hamming-dataset-name
+                      (user-error
+                       "Select a Hamming reference dataset before validation"))
+                :none))))
+
+    (when (and tpg-recurrent-registers-enabled
+               (not (eq environment :cage2)))
+      (user-error "Recurrent-register validation is currently CAGE2-only"))
 
     (tpg-send-payload-to-island
      island-id

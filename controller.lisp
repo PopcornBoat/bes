@@ -1,45 +1,30 @@
 (in-package :cl-tpg)
 
+(defparameter +cage2-scan-observation-indices+
+  #(0 4 8 12 28 32 36 40 44 48)
+  "Raw observation indices used by the Cardiff-compatible scan tracker.")
+
 (defparameter *cage2-decoy-resolution* :ranked-decoy-hosts
   "Decoy arbitration after the first Decoy proposal.
 :RANKED-DECOY-HOSTS uses Top-8 host order and each host's configured options.
 :PROFILE uses global schedule priority for legacy scheduled profiles.
 :RANKED follows the complete candidate order, including non-Decoys.")
 
-;; Source: https://github.com/john-cardiff/-cyborg-cage-2/blob/main/Agents/PPOAgent.py
-(defparameter +cardiff-ppo-decoy-actions+
-  '((1 54 106 28 119)       ; Defender
-    (2 55 107 120 29)       ; Enterprise0
-    (3 43)                 ; Enterprise1
-    (4 44)                 ; Enterprise2
-    (5 61 35 113 126)      ; Op_Server0
-    (7 37 115 76 102)      ; User1
-    (8 51 116 38 90)       ; User2
-    (9 130 91)             ; User3
-    (10 131))              ; User4
-  "Exact per-host greedy Decoy IDs in the public Cardiff PPOAgent deployment.")
-
-(defun cage2-cardiff-decoy-schedule (agreement)
-  "Convert the Cardiff host-local lists into shared target/option pairs."
-  (loop for (target . concrete-actions) in +cardiff-ppo-decoy-actions+
-        for offset = (aref (action-agreement-host-offsets agreement) target)
-        append (loop for action in concrete-actions
-                     for option = (position (- action offset)
-                                            (action-agreement-decoy-bases agreement))
-                     unless option do (error "Invalid Cardiff Decoy ~D for target ~D."
-                                             action target)
-                     collect (list target option))))
-
 (defstruct (cage2-controller
              (:constructor %make-cage2-controller))
   "Canonical episode-local state outside the evolved TPG policy.
 
-TPG receives the 62-value scan-state observation from the bridge. Decoy availability is deliberately not policy input: the controller
+TPG receives only the 52 raw values plus this controller's ten scan-history
+values. Decoy availability is deliberately not policy input: the controller
 uses it only to execute ranked target/response proposals safely."
   agreement
   decoy-order-profile
   option-orders
   decoy-schedule
+  (scan-state
+    (make-array +cage2-scan-state-size+
+                :element-type 'double-float
+                :initial-element 0.0d0))
   (decoy-mask 0 :type integer)
   (step 0 :type integer))
 
@@ -53,23 +38,71 @@ uses it only to execute ranked target/response proposals safely."
 
 (defun make-cage2-controller
        (&key (agreement (ensure-cage2-action-agreement))
-             (decoy-order-profile :ppo-greedy))
-  "Create an empty Controller for the bridge and its fixed Decoy options."
-  (check-type decoy-order-profile (member :model :ppo-greedy))
-  (%make-cage2-controller
-   :agreement agreement
-   :decoy-order-profile decoy-order-profile
-   :option-orders
-     (action-agreement-decoy-orders-for-profile :model agreement)
-   :decoy-schedule
-     (when (eq decoy-order-profile :ppo-greedy)
-       (cage2-cardiff-decoy-schedule agreement))))
+             (decoy-order-profile
+               *cage2-controller-decoy-order-profile*))
+  "Create an empty controller using an explicit fixed Decoy PROFILE.
+
+PROFILE selection is independent from the teacher backend. This prevents a
+teacher switch from silently changing deployment behavior. The :HEURISTIC
+profile includes both its per-target option orders and its exact cross-target
+global schedule."
+  (let* ((schedule
+           (case decoy-order-profile
+             (:heuristic +cage2-heuristic-decoy-schedule+)
+             (:meander-heuristic
+              +cage2-meander-heuristic-decoy-schedule+)
+             (otherwise nil)))
+         (orders
+          (action-agreement-decoy-orders-for-profile
+           decoy-order-profile agreement)))
+    (unless orders
+      (error "Unknown CAGE2 controller Decoy-order profile: ~S"
+             decoy-order-profile))
+    (%make-cage2-controller
+     :agreement agreement
+     :decoy-order-profile decoy-order-profile
+     :option-orders (copy-action-option-orders orders)
+     :decoy-schedule (and schedule (copy-tree schedule)))))
 
 (defun cage2-controller-reset (controller)
   "Clear all episode-local controller state and return CONTROLLER."
+  (fill (cage2-controller-scan-state controller) 0.0d0)
   (setf (cage2-controller-decoy-mask controller) 0
         (cage2-controller-step controller) 0)
   controller)
+
+(defun cage2-controller-observe (controller observation)
+  "Consume one real CAGE2 observation and return the 62-value policy input.
+
+Only the first 52 raw values are consumed, so callers may supply a raw or
+already augmented bridge observation. Scan state is updated from observations
+that actually occurred; policy and teacher proposal queries never call this
+function. Values are 0=unseen, 1=previous scan, and 2=latest scan."
+  (unless (and (typep observation 'sequence)
+               (>= (length observation) +cage2-raw-observation-size+))
+    (error "CAGE2 controller expected at least ~D observation values, got ~S."
+           +cage2-raw-observation-size+
+           (and (typep observation 'sequence) (length observation))))
+  (let ((policy-observation
+          (make-array +cage2-scan-observation-size+
+                      :element-type 'double-float))
+        (scan-state (cage2-controller-scan-state controller)))
+    (dotimes (index +cage2-raw-observation-size+)
+      (setf (aref policy-observation index)
+            (coerce (elt observation index) 'double-float)))
+    (loop for state-index below +cage2-scan-state-size+
+          for observation-index across +cage2-scan-observation-indices+
+          when (and (= (aref policy-observation observation-index) 1.0d0)
+                    (= (aref policy-observation (1+ observation-index))
+                       0.0d0))
+            do (dotimes (index +cage2-scan-state-size+)
+                 (when (= (aref scan-state index) 2.0d0)
+                   (setf (aref scan-state index) 1.0d0)))
+               (setf (aref scan-state state-index) 2.0d0)
+               (loop-finish))
+    (replace policy-observation scan-state
+             :start1 +cage2-raw-observation-size+)
+    policy-observation))
 
 (defun cage2-controller-decoy-used-p (controller target option)
   "Return true when OPTION has already been executed on TARGET this episode."
@@ -81,10 +114,9 @@ uses it only to execute ranked target/response proposals safely."
                 (cage2-controller-decoy-mask controller))))
 
 (defun cage2-controller-first-available-decoy (controller target &optional ranked-p)
-  "Return TARGET's first unused option, using its scheduled subset in ranked mode."
+  "Return TARGET's first unused option in the selected order."
   (let ((schedule (cage2-controller-decoy-schedule controller)))
-    (if (and schedule
-             (or ranked-p (eq (cage2-controller-decoy-order-profile controller) :ppo-greedy)))
+    (if (and ranked-p schedule)
         (loop for (host option) in schedule
               when (and (= host target)
                         (not (cage2-controller-decoy-used-p controller host option)))
@@ -235,9 +267,7 @@ executable only at rank zero. Resolution never commits Controller state."
                    ((and (= response-index 3)
                          (or (eq decoy-resolution :ranked-decoy-hosts)
                              (and (eq decoy-resolution :profile)
-                                  (cage2-controller-decoy-schedule controller)
-                                  (not (eq (cage2-controller-decoy-order-profile controller)
-                                           :ppo-greedy)))))
+                                  (cage2-controller-decoy-schedule controller))))
                     (unless scheduled-decoy-considered-p
                       (setf scheduled-decoy-considered-p t)
                       (multiple-value-bind
@@ -326,3 +356,14 @@ clears only its target's Decoys; Decoy marks exactly the selected option."
                        (ash 1 (+ (* (1- target) 8) option)))))))
     (incf (cage2-controller-step controller))
     controller))
+
+(defun cage2-controller-signature (controller)
+  "Return the controller semantics needed for future checkpoint provenance."
+  (list :protocol +cage2-controller-protocol+
+        :agreement (action-agreement-signature
+                    (cage2-controller-agreement controller))
+        :decoy-order-profile
+          (cage2-controller-decoy-order-profile controller)
+        :decoy-resolution *cage2-decoy-resolution*
+        :decoy-schedule
+          (copy-tree (cage2-controller-decoy-schedule controller))))

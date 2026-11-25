@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+bridge_bin=/home/hardison/venv-base/cage2_bridge/.venv/bin
+
+cd "$repo"
+
+if [[ "${1:-}" == --core ]]; then
+  shift
+  tests=(
+    tests/agreement.lisp
+    tests/controller.lisp
+    tests/semantic-36-action.lisp
+    tests/factored-action.lisp
+    tests/heuristic.lisp
+    tests/compiled-bline-heuristic.lisp
+    tests/mutation.lisp
+    tests/effective-code.lisp
+    tests/instruction-set.lisp
+    tests/read-only-registers.lisp
+    tests/official-guided.lisp
+    tests/official-admission.lisp
+    tests/robustness-validation.lisp
+    tests/grouped-selection.lisp
+    tests/disagreement-audit.lisp
+  )
+elif [[ $# -gt 0 ]]; then
+  tests=("$@")
+else
+  tests=(tests/semantic-36-action.lisp tests/controller.lisp tests/official-guided.lisp tests/official-admission.lisp)
+fi
+
+args=(
+  --non-interactive
+  --eval '(require :asdf)'
+  --eval '(asdf:load-system :cl-tpg :force t)'
+)
+
+for test_file in "${tests[@]}"; do
+  [[ -f "$test_file" ]] || { echo "Missing test file: $test_file" >&2; exit 1; }
+  args+=(--load "$test_file")
+done
+
+env \
+  "PATH=$bridge_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  "CL_SOURCE_REGISTRY=(:source-registry (:tree \"$repo/\") :ignore-inherited-configuration)" \
+  sbcl "${args[@]}"

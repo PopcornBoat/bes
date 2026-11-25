@@ -6,6 +6,7 @@
   (id (format nil "TEAM-~A-~A" (who-am-i) (funcall *team-id-generator*)))
   (references 0) ;; Track how many learners point here.
   (type :root)
+  (option-orders (make-default-action-option-orders))
   (learners (loop repeat *init-num-learners*
 		  collect (make-learner))))
 
@@ -17,6 +18,11 @@
 	  (setf (gethash id seen) t)
 	  `(:id ,id
 	    :type ,(team-type team)
+	    :option-orders
+              ,(let ((orders (team-option-orders team)))
+                 (and orders
+                      (loop for order across orders
+                            collect (and order (coerce order 'list)))))
 	    :learners ,(mapcar (lambda (l) (serialize-learner l seen))
 			       (team-learners team)))))))
 
@@ -33,6 +39,15 @@
 			    :id (format nil "TEAM-~A-~A" (who-am-i) (funcall *team-id-generator*))
 			    :type (getf data :type)
 			    :references (if is-root 0 1)
+			    :option-orders
+                              (let ((serialized (getf data :option-orders)))
+                                (if serialized
+                                    (map 'simple-vector
+                                         (lambda (order)
+                                           (and order
+                                                (coerce order 'simple-vector)))
+                                         serialized)
+                                    (make-default-action-option-orders)))
 			    ;; Avoid creating throwaway random learners. Fresh-process
 			    ;; deserialization must not depend on training parameters.
 			    :learners nil)))
@@ -48,6 +63,50 @@
   (let ((team (apply #'%make-team args)))
     (push team *teams*)
     team))
+
+(defun effective-team-option-orders (team)
+  "Return the Decoy orders selected by the active 2x2 experiment mode.
+
+Fixed mode ignores serialized team variation and uses the teacher-derived agreement
+order. Evolved mode uses the team's policy-owned table, initializing a missing
+legacy table from the same agreement defaults."
+  (ecase *decoy-order-mode*
+    (:fixed
+     (action-agreement-decoy-orders-for-backend))
+    (:evolved
+     (or (team-option-orders team)
+         (setf (team-option-orders team)
+               (make-default-action-option-orders))))))
+
+(defun team-max-observation-index (team)
+  "Return TEAM's largest referenced zero-based observation index, or -1."
+  (loop with maximum = -1
+        for reachable in (closure team)
+        do (dolist (learner (team-learners reachable))
+             (loop for instruction across
+                     (program-instructions (learner-program learner))
+                   do (when (eq (instruction-src1-type instruction) :obs)
+                        (setf maximum
+                              (max maximum
+                                   (truncate
+                                    (instruction-src1-val instruction)))))
+                      (when (and (= (instruction-arity instruction) 2)
+                                 (eq (instruction-src2-type instruction) :obs))
+                        (setf maximum
+                              (max maximum
+                                   (truncate
+                                    (instruction-src2-val instruction)))))))
+        finally (return maximum)))
+
+(defun ensure-team-observation-compatible (team observation-count)
+  "Reject TEAM before execution when it addresses beyond OBSERVATION-COUNT."
+  (let ((maximum (team-max-observation-index team)))
+    (when (>= maximum observation-count)
+      (error
+       "Checkpoint references OBS~D but this operation exposes only ~D observations. Select the checkpoint's original observation size or start a fresh run."
+       (1+ maximum)
+       observation-count)))
+  team)
 
 (defun add-reference (target-team)
   "Call this when a learner points to a team."
@@ -107,18 +166,20 @@ to the semantic policy output; intermediate winners' registers are discarded."
   "Execute TEAM and return the final terminal learner's atomic target.
 
 This compatibility API retains the former integer return shape. Atomic values
-now represent targets when *NUM-ACTIONS* is configured to 11."
+now represent targets when the factored action contract is enabled."
   (multiple-value-bind (terminal-learner registers)
       (execute-team-to-terminal team observation)
     (declare (ignore registers))
-    (action-action (learner-action terminal-learner))))
+    (atomic-action-primary
+     (action-action (learner-action terminal-learner)))))
 
 (defun execute-team-semantic (team observation)
-  "Execute TEAM and return a SEMANTIC-ACTION.
+  "Execute TEAM and return a SEMANTIC-ACTION from the final terminal learner.
 
-The terminal learner's atomic action supplies the target, while registers from
-that same learner supply the response type and optional decoy option. The
-Python bridge must later translate this output into a concrete CAGE2 action."
+New policies carry categorical target and response genes; the Python bridge
+resolves DECOY using its agreement-ordered table. Legacy numeric checkpoints
+retain their final-terminal-register response and option behavior. Intermediate
+team-reference winners never contribute registers."
   (multiple-value-bind (terminal-learner registers)
       (execute-team-to-terminal team observation)
     (make-semantic-action-from-terminal
@@ -182,8 +243,7 @@ cached for this call so shared subgraphs do not execute their programs twice."
                     (make-semantic-action-from-terminal
                      (action-action (learner-action learner))
                      registers))
-                  (key (list (semantic-action-target semantic)
-                             (semantic-action-response semantic))))
+                  (key (semantic-action-category-pair semantic)))
              (unless (gethash key seen-actions)
                (setf (gethash key seen-actions) t)
                (push semantic results))))
@@ -315,6 +375,7 @@ cached for this call so shared subgraphs do not execute their programs twice."
   "Deep copy a team."
   (make-team
    :type (team-type team)
+   :option-orders (copy-action-option-orders (team-option-orders team))
    :learners (mapcar #'clone-learner (team-learners team))))
 
 (defun delete-team (team)
