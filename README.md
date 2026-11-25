@@ -1,5 +1,7 @@
 # BES policy evolution
 
+See the [validated BES pipeline](docs/validated-pipeline.md) for the flowchart, measured improvements and checkpoint handoffs from offline learning to extreme optimization.
+
 This research branch retains [fixed-seed privileged official search](docs/privileged-official-search.md) and [Controller-aligned repair credit](docs/controller-aligned-repair.md) as completed experiments. The current bounded experiment is the [closed-loop nomination pilot](experiments/closed-loop-nomination-pilot.md).
 
 BES trains standalone Semantic-36 TPG policies for official CAGE2. The maintained policy reads 62 inputs (52 raw observations and 10 scan-state values), proposes ranked `(target, response)` actions, and uses the deterministic Controller for action availability and fixed Decoy order. B-line and Meander have separate policies and opponent-specific Controller settings.

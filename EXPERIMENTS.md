@@ -1,5 +1,7 @@
 # Reproducible experiments
 
+The [validated BES pipeline](docs/validated-pipeline.md) maps the full sequence from offline learning and DAgger to teacher-free online evolution and the final pure-graph score. It links each retained method to its measured effect and evidence.
+
 ## Reference checkpoints
 
 Frozen B-line and Meander checkpoints, checksums and official full-validation scores are listed in [validated-checkpoints/README.md](validated-checkpoints/README.md). Do not overwrite these files. Record the checkpoint hash, controller protocol, opponent, seed root and horizon for each comparison.
