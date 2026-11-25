@@ -1,0 +1,7 @@
+{
+  "remote_run": "/home/hagrid/bes-deploy/root153-enterprise0-defender-20261123/out/full/e0-6-2-0-7_defender-7-2-0-6",
+  "trace_sha256": {
+    "actions.tsv": "ab15c36748f363442ad6537cb550b871b6f369f07839d58c966d65fffb80a8c5",
+    "episodes.tsv": "97b9f89fd5ab3f55cb0696880f7fc02b4c4d5775148689d5fda76d3ad73ce51a"
+  }
+}

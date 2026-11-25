@@ -1,0 +1,25 @@
+{
+  "seed_root": 153,
+  "score": -56.6674,
+  "episodes": 9000,
+  "official_transitions": 540000,
+  "below_minus100": 0,
+  "worst_by_cell": {
+    "B_lineAgent/30": -13.8,
+    "B_lineAgent/50": -22.8,
+    "B_lineAgent/100": -34.8,
+    "RedMeanderAgent/30": -10.2,
+    "RedMeanderAgent/50": -19.4,
+    "RedMeanderAgent/100": -39.0,
+    "SleepAgent/30": 0.0,
+    "SleepAgent/50": 0.0,
+    "SleepAgent/100": 0.0
+  },
+  "archived_reference": {
+    "remote_run": "/home/hagrid/bes-deploy/root153-enterprise0-defender-20261123/out/full/e0-6-2-0-7_defender-7-2-0-6",
+    "trace_sha256": {
+      "actions.tsv": "ab15c36748f363442ad6537cb550b871b6f369f07839d58c966d65fffb80a8c5",
+      "episodes.tsv": "97b9f89fd5ab3f55cb0696880f7fc02b4c4d5775148689d5fda76d3ad73ce51a"
+    }
+  }
+}

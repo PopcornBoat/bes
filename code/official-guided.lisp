@@ -1,0 +1,656 @@
+(in-package :cl-tpg)
+
+(defun official-guided-mode-p ()
+  "Return true for modes that use independent official racing and seed streams."
+  (member *current-search-mode* '(:official-guided :official-online) :test #'eq))
+
+(defun current-official-racing-protocol ()
+  (if (eq *current-search-mode* :official-online)
+      +official-online-fitness-protocol+
+      +official-guided-fitness-protocol+))
+
+(defun official-guided-u64 (value)
+  "Return the low unsigned 64 bits of VALUE."
+  (ldb (byte 64 0) value))
+
+(defun official-guided-mix64 (value)
+  "Deterministically mix VALUE without consuming Common Lisp random state."
+  (let ((mixed
+          (official-guided-u64
+           (+ value #x9E3779B97F4A7C15))))
+    (setf mixed
+          (official-guided-u64
+           (* (logxor mixed (ash mixed -30))
+              #xBF58476D1CE4E5B9)))
+    (setf mixed
+          (official-guided-u64
+           (* (logxor mixed (ash mixed -27))
+              #x94D049BB133111EB)))
+    (official-guided-u64 (logxor mixed (ash mixed -31)))))
+
+(defun official-guided-stream-tag (name)
+  "Return the disjoint high-bit namespace assigned to seed stream NAME."
+  (ecase name
+    (:training 0)
+    (:racing 1)
+    (:promotion 2)
+    (:reference 3)
+    ;; behavioral-locality diagnostics derive this stream from their own persisted cursor;
+    ;; it is not part of the four official-guided stream plists.
+    (:locality 4)
+    (:credit 5)
+    (:lineage 6)
+    (:admission 7)
+    (:nomination 8)))
+
+(defun official-guided-derived-root (search-seed salt)
+  "Derive one reproducible stream root from SEARCH-SEED and SALT."
+  (official-guided-mix64 (+ search-seed salt)))
+
+(defun initialize-official-guided-seed-streams (search-seed)
+  "Initialize independent deterministic training and evaluation streams."
+  (unless (integerp search-seed)
+    (error "Official-guided seed initialization requires an integer, got ~S."
+           search-seed))
+  (setf *official-guided-seed-streams*
+        (list
+         :version 4
+         :training
+           (list :roots
+                 (list (official-guided-derived-root search-seed 104729))
+                 :cursor 0)
+         :racing
+           (list :roots
+                 (list (official-guided-derived-root search-seed 130363))
+                 :cursor 0)
+         :promotion
+           (list :roots
+                 (list (official-guided-derived-root search-seed 155921))
+                 :cursor 0)
+         :reference
+           (list :roots (copy-list +official-guided-reference-roots+)
+                 :cursor 0)
+         :credit
+           (list :roots
+                 (list (official-guided-derived-root search-seed 211081))
+                 :cursor 0)
+         :lineage
+           (list :roots
+                 (list (official-guided-derived-root search-seed 2609299))
+                 :cursor 0)
+         :admission
+           (list :roots
+                 (list (official-guided-derived-root search-seed 325663))
+                 :cursor 0)
+         :nomination
+           (list :roots
+                 (list (official-guided-derived-root search-seed 375899))
+                 :cursor 0)))
+  *official-guided-seed-streams*)
+
+(defun official-guided-seed-stream-valid-p (name stream)
+  "Return true when STREAM is a valid serialized stream for NAME."
+  (and (member name '(:training :racing :promotion :reference :credit :lineage
+                      :admission :nomination)
+               :test #'eq)
+       (listp stream)
+       (let ((roots (getf stream :roots))
+             (cursor (getf stream :cursor)))
+         (and (consp roots)
+              (every #'integerp roots)
+              (integerp cursor)
+              (not (minusp cursor))))))
+
+(defun official-guided-seed-streams-valid-p (state)
+  "Return true when STATE contains every stream required by its version."
+  (and (listp state)
+       (member (getf state :version 0) '(1 2 3 4))
+       (every
+        (lambda (name)
+          (official-guided-seed-stream-valid-p name (getf state name)))
+        (case (getf state :version)
+          (1 '(:training :racing :promotion :reference))
+          (2 '(:training :racing :promotion :reference :credit))
+          (3 '(:training :racing :promotion :reference :credit :lineage))
+          (4 '(:training :racing :promotion :reference :credit :lineage
+               :admission :nomination))))))
+
+(defun upgrade-official-guided-seed-streams (state)
+  "Upgrade old stream state without changing any existing stream cursor."
+  (let ((copy (copy-tree state)))
+    (when (= (getf copy :version) 1)
+      (unless (integerp *current-search-seed*)
+        (error "Cannot derive the official return credit credit stream without a search seed."))
+      (setf (getf copy :version) 2
+            (getf copy :credit)
+              (list :roots
+                    (list (official-guided-derived-root
+                           *current-search-seed* 211081))
+                    :cursor 0)))
+    (when (= (getf copy :version) 2)
+      (unless (integerp *current-search-seed*)
+        (error "Cannot derive the near-miss lineage lineage stream without a search seed."))
+      (setf (getf copy :version) 3
+            (getf copy :lineage)
+              (list :roots
+                    (list (official-guided-derived-root
+                           *current-search-seed* 2609299))
+                    :cursor 0)))
+    (when (= (getf copy :version) 3)
+      (unless (integerp *current-search-seed*)
+        (error "Cannot derive official admission streams without a search seed."))
+      (setf (getf copy :version) 4
+            (getf copy :admission)
+              (list :roots
+                    (list (official-guided-derived-root
+                           *current-search-seed* 325663))
+                    :cursor 0)
+            (getf copy :nomination)
+              (list :roots
+                    (list (official-guided-derived-root
+                           *current-search-seed* 375899))
+                    :cursor 0)))
+    copy))
+
+(defun restore-official-guided-seed-streams (state)
+  "Restore a validated, independently owned seed-stream STATE."
+  (unless (official-guided-seed-streams-valid-p state)
+    (error "Invalid official-guided seed-stream state: ~S" state))
+  (setf *official-guided-seed-streams*
+        (upgrade-official-guided-seed-streams state)))
+
+(defun official-guided-seed-at (name root cursor)
+  "Return one deterministic environment seed in NAME's disjoint namespace."
+  (let* ((tag (official-guided-stream-tag name))
+         (payload
+           (1+
+            (mod (official-guided-mix64 (+ root cursor))
+                 +official-guided-seed-payload-mask+))))
+    (logior (ash tag +official-guided-seed-payload-bits+) payload)))
+
+(defun official-guided-take-seeds (name count)
+  "Take COUNT seeds from one single-root stream and advance its cursor."
+  (unless (member name '(:training :racing :promotion :credit :lineage
+                         :admission :nomination)
+                  :test #'eq)
+    (error "~S is not a single-root official-guided seed stream." name))
+  (unless (and (integerp count) (plusp count))
+    (error "Official-guided seed count must be positive, got ~S." count))
+  (unless *official-guided-seed-streams*
+    (error "Official-guided seed streams are not initialized."))
+  (let* ((stream (getf *official-guided-seed-streams* name))
+         (root (first (getf stream :roots)))
+         (cursor (getf stream :cursor))
+         (seeds
+           (loop for offset below count
+                 collect (official-guided-seed-at
+                          name root (+ cursor offset)))))
+    (incf (getf stream :cursor) count)
+    seeds))
+
+(defun official-guided-take-reference-seeds
+       (&optional
+          (episodes-per-root +official-guided-reference-episodes-per-root+))
+  "Take a balanced monitoring block from roots 153, 42, and 2026."
+  (unless (and (integerp episodes-per-root) (plusp episodes-per-root))
+    (error "Reference episodes per root must be positive, got ~S."
+           episodes-per-root))
+  (unless *official-guided-seed-streams*
+    (error "Official-guided seed streams are not initialized."))
+  (let* ((stream (getf *official-guided-seed-streams* :reference))
+         (roots (getf stream :roots))
+         (cursor (getf stream :cursor))
+         (seeds
+           (loop for root in roots
+                 append
+                 (loop for offset below episodes-per-root
+                       collect
+                       (official-guided-seed-at
+                        :reference root (+ cursor offset))))))
+    (incf (getf stream :cursor) episodes-per-root)
+    seeds))
+
+(defun official-guided-seed-state-copy ()
+  "Return a serialization-safe copy of all official-guided stream roots and cursors."
+  (and *official-guided-seed-streams*
+       (copy-tree *official-guided-seed-streams*)))
+
+(defun official-guided-runtime-state ()
+  "Return the small recoverable state journaled beside the best checkpoint."
+  (list :version 12
+        :fitness-protocol (current-official-racing-protocol)
+        :checkpoint-filename (best-team-checkpoint-filename)
+        :generation *generation*
+        :search-seed *current-search-seed*
+        :seed-streams (official-guided-seed-state-copy)
+        :grouped-selection-state
+          (and *grouped-selection-enabled*
+               (fboundp 'grouped-selection-state-copy)
+               (grouped-selection-state-copy))
+        :official-admission-state
+          (and *official-admission-enabled*
+               (fboundp 'official-admission-state-copy)
+               (official-admission-state-copy))
+        :active-specialist-state
+          (and (eq *current-search-mode* :official-online)
+               (active-specialist-state-copy))
+        :incumbent-version *official-guided-incumbent-version*
+        :best-evaluation (copy-tree *official-guided-best-evaluation*)
+        :teacher-dagger-behavior-state
+          (teacher-dagger-behavior-state-copy)
+        :behavioral-locality-state
+          (behavioral-locality-state-copy)))
+
+(defun official-guided-state-path ()
+  "Return the lightweight runtime-state journal path for the active run."
+  (and *checkpoint-directory*
+       (checkpoint-path *checkpoint-directory*
+                        ".official-guided-state.lisp")))
+
+(defun persist-official-guided-runtime-state ()
+  "Atomically persist stream cursors after completed official-guided operations."
+  (when (and (official-guided-mode-p) *checkpoint-directory*)
+    (let* ((destination (official-guided-state-path))
+           (temporary
+             (make-pathname
+              :name ".official-guided-state"
+              :type "tmp"
+              :defaults destination)))
+      (ensure-directories-exist destination)
+      (unwind-protect
+           (progn
+             (with-open-file (stream temporary
+                                     :direction :output
+                                     :if-exists :supersede
+                                     :if-does-not-exist :create)
+               (with-standard-io-syntax
+                 (let ((*print-circle* t)
+                       (*print-readably* t)
+                       (*print-pretty* nil))
+                   (write (official-guided-runtime-state) :stream stream))))
+             (uiop:rename-file-overwriting-target temporary destination))
+        (when (probe-file temporary)
+          (delete-file temporary))))))
+
+(defun read-official-guided-runtime-state (&optional directory)
+  "Read the runtime journal from DIRECTORY or the active checkpoint directory."
+  (let ((path
+          (if directory
+              (checkpoint-path directory ".official-guided-state.lisp")
+              (official-guided-state-path))))
+    (when (and path (probe-file path))
+      (with-open-file (stream path :direction :input)
+        (with-standard-io-syntax
+          (read stream))))))
+
+(defun restore-official-guided-runtime-state (metadata best-team-path)
+  "Restore metadata, preferring a matching output or source-sibling journal."
+  (let* ((metadata-state (getf metadata :official-guided-seed-streams))
+         (metadata-version
+           (or (getf metadata :official-guided-incumbent-version) 0))
+         (checkpoint-filename
+           (file-namestring (pathname best-team-path)))
+         (output-journal (read-official-guided-runtime-state))
+         (source-journal
+           (read-official-guided-runtime-state
+            (uiop:pathname-directory-pathname
+             (pathname best-team-path))))
+         (journal
+           (cond
+             ((and output-journal
+                   (eq (getf output-journal :fitness-protocol)
+                       (current-official-racing-protocol))
+                   (string=
+                    (getf output-journal :checkpoint-filename "")
+                    checkpoint-filename))
+              output-journal)
+             ((and source-journal
+                   (eq (getf source-journal :fitness-protocol)
+                       (current-official-racing-protocol))
+                   (string=
+                    (getf source-journal :checkpoint-filename "")
+                    checkpoint-filename))
+              source-journal)))
+         (journal-matches-p
+           (not (null journal)))
+         (journal-version
+           (and journal-matches-p
+                (getf journal :incumbent-version 0)))
+         (chosen-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :seed-streams)
+               metadata-state))
+         (behavioral-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :behavioral-locality-state)
+               (getf metadata :behavioral-locality-state)))
+         (dagger-behavior-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+                (getf journal :teacher-dagger-behavior-state)
+                (getf metadata :teacher-dagger-behavior-state)))
+         (grouped-selection-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :grouped-selection-state)
+               (getf metadata :grouped-selection-state)))
+         (official-admission-state
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :official-admission-state)
+               (getf metadata :official-admission-state))))
+    (when chosen-state
+      (restore-official-guided-seed-streams chosen-state))
+    (setf *official-guided-incumbent-version*
+          (if (and journal-matches-p
+                   (>= journal-version metadata-version))
+              journal-version
+              metadata-version)
+          *official-guided-best-evaluation*
+          (copy-tree
+           (if (and journal-matches-p
+                    (>= journal-version metadata-version))
+               (getf journal :best-evaluation)
+               (getf metadata :official-guided-best-evaluation))))
+    (when behavioral-state
+      (restore-behavioral-locality-state behavioral-state))
+    (when (and (eq *current-search-mode* :official-guided)
+               dagger-behavior-state)
+      (restore-teacher-dagger-behavior-state dagger-behavior-state))
+    (when (eq *current-search-mode* :official-online)
+      (restore-active-specialist-state
+       (if (and journal-matches-p
+                (>= journal-version metadata-version))
+           (getf journal :active-specialist-state)
+           (getf metadata :active-specialist-state))))
+    (when (and *grouped-selection-enabled* grouped-selection-state)
+      (restore-grouped-selection-state grouped-selection-state))
+    (when (and *official-admission-enabled* official-admission-state)
+      (restore-official-admission-state official-admission-state))
+    (values chosen-state journal-matches-p)))
+
+(defun official-guided-teacher-mixing-rate ()
+  "Return the next mixed-rollout teacher probability from prior disagreement."
+  (if (null *last-dagger-diagnostics*)
+      0.50d0
+      (let ((rate
+              (coerce
+               (getf *last-dagger-diagnostics* :disagreement-rate 1.0d0)
+               'double-float)))
+        (loop for (threshold . teacher-rate)
+                in +official-guided-teacher-mixing-rates+
+              when (>= rate threshold)
+                do (return teacher-rate)
+              finally (return 0.10d0)))))
+
+(defun official-guided-teacher-controls-p
+       (episode-seed timestep teacher-rate)
+  "Deterministically choose the actual controller without consuming a stream."
+  (let* ((mixed
+           (official-guided-mix64
+            (+ episode-seed
+               (* 1000003 (1+ timestep))
+               (* 9176 (or *current-search-seed* 0)))))
+         (unit
+           (/ (coerce (logand mixed +official-guided-seed-payload-mask+)
+                      'double-float)
+              (coerce (1+ +official-guided-seed-payload-mask+)
+                      'double-float))))
+    (< unit teacher-rate)))
+
+(defun official-guided-sample-variance (values)
+  "Return unbiased sample variance for VALUES, or zero for fewer than two."
+  (if (< (length values) 2)
+      0.0d0
+      (let ((mean (arithmetic-mean values)))
+        (/ (loop for value in values
+                 for delta = (- (coerce value 'double-float) mean)
+                 sum (* delta delta) into total
+                 finally (return (coerce total 'double-float)))
+           (coerce (1- (length values)) 'double-float)))))
+
+(defun official-guided-standard-error (values)
+  "Return the standard error for numeric VALUES."
+  (if (null values)
+      0.0d0
+      (sqrt (/ (official-guided-sample-variance values)
+               (coerce (length values) 'double-float)))))
+
+(defun official-guided-correlation (left right)
+  "Return sample correlation for equally sized paired lists, or NIL if undefined."
+  (unless (= (length left) (length right))
+    (error "Paired score lengths differ: ~D and ~D."
+           (length left) (length right)))
+  (if (< (length left) 2)
+      nil
+      (let* ((left-mean (arithmetic-mean left))
+             (right-mean (arithmetic-mean right))
+             (cross
+               (loop for x in left
+                     for y in right
+                     sum (* (- (coerce x 'double-float) left-mean)
+                            (- (coerce y 'double-float) right-mean))
+                       into total
+                     finally (return (coerce total 'double-float))))
+             (denominator
+               (sqrt
+                (* (loop for x in left
+                         sum (expt (- (coerce x 'double-float) left-mean) 2))
+                   (loop for y in right
+                         sum (expt (- (coerce y 'double-float) right-mean) 2))))))
+        (and (plusp denominator) (/ cross denominator)))))
+
+(defun official-guided-comparison-statistics
+       (candidate-returns incumbent-returns)
+  "Return paired mean, SE, correlation, and paired/unpaired sample variances."
+  (unless (= (length candidate-returns) (length incumbent-returns))
+    (error "Official paired evaluation lengths differ: ~D and ~D."
+           (length candidate-returns) (length incumbent-returns)))
+  (let* ((differences (mapcar #'- candidate-returns incumbent-returns))
+         (paired-variance (official-guided-sample-variance differences))
+         (unpaired-variance
+           (+ (official-guided-sample-variance candidate-returns)
+              (official-guided-sample-variance incumbent-returns))))
+    (values (arithmetic-mean differences)
+            (official-guided-standard-error differences)
+            (official-guided-correlation candidate-returns incumbent-returns)
+            paired-variance
+            unpaired-variance
+            differences)))
+
+(defun official-guided-quantile (values probability)
+  "Return the linearly interpolated quantile of non-empty numeric VALUES."
+  (unless values
+    (error "Cannot compute a quantile of an empty return list."))
+  (unless (<= 0.0d0 probability 1.0d0)
+    (error "Quantile probability must be in [0,1], got ~S." probability))
+  (let* ((sorted (sort (mapcar (lambda (value)
+                                 (coerce value 'double-float))
+                               values)
+                       #'<))
+         (position (* probability (1- (length sorted))))
+         (lower (floor position))
+         (upper (ceiling position))
+         (weight (- position lower)))
+    (+ (* (- 1.0d0 weight) (nth lower sorted))
+       (* weight (nth upper sorted)))))
+
+(defun official-guided-lower-cvar
+       (values &optional (fraction +official-guided-tail-fraction+))
+  "Return the mean of the worst FRACTION of non-empty VALUES."
+  (unless values
+    (error "Cannot compute CVaR of an empty return list."))
+  (unless (and (plusp fraction) (<= fraction 1.0d0))
+    (error "CVaR fraction must be in (0,1], got ~S." fraction))
+  (let* ((sorted (sort (mapcar (lambda (value)
+                                 (coerce value 'double-float))
+                               values)
+                       #'<))
+         (count (max 1 (ceiling (* fraction (length sorted))))))
+    (arithmetic-mean (subseq sorted 0 count))))
+
+(defun official-guided-tail-statistics (returns horizon)
+  "Return reproducible distribution and catastrophic-tail metrics."
+  (unless (and (integerp horizon) (plusp horizon))
+    (error "Tail statistics require a positive horizon, got ~S." horizon))
+  (let* ((threshold (* horizon
+                       +official-guided-catastrophic-return-per-step+))
+         (catastrophic-count
+           (count-if (lambda (value) (<= value threshold)) returns)))
+    (list :horizon horizon
+          :median (official-guided-quantile returns 0.5d0)
+          :q05 (official-guided-quantile returns 0.05d0)
+          :q10 (official-guided-quantile returns 0.10d0)
+          :q25 (official-guided-quantile returns 0.25d0)
+          :cvar-10 (official-guided-lower-cvar returns)
+          :catastrophic-threshold (coerce threshold 'double-float)
+          :catastrophic-count catastrophic-count
+          :catastrophic-rate
+            (/ catastrophic-count (coerce (length returns) 'double-float)))))
+
+(defun make-official-guided-evaluation-record
+       (&key stage imitation-score seeds candidate-returns incumbent-returns
+             accepted horizon)
+  "Build the structured official-guided fitness/evaluation record."
+  (multiple-value-bind
+        (paired-mean paired-se correlation paired-variance unpaired-variance
+         differences)
+      (official-guided-comparison-statistics
+       candidate-returns incumbent-returns)
+    (append
+     (list :protocol (current-official-racing-protocol)
+          :stage stage
+          :accepted (not (null accepted))
+          :imitation-score imitation-score
+          :official-returns (copy-list candidate-returns)
+          :incumbent-returns (copy-list incumbent-returns)
+          :official-mean (arithmetic-mean candidate-returns)
+          :official-std (sqrt (official-guided-sample-variance candidate-returns))
+          :official-se (official-guided-standard-error candidate-returns)
+          :incumbent-mean (arithmetic-mean incumbent-returns)
+          :evaluated-seeds (copy-list seeds)
+          :episode-count (length seeds)
+          :paired-differences differences
+          :paired-mean paired-mean
+          :paired-se paired-se
+          :same-seed-correlation correlation
+          :paired-variance paired-variance
+           :unpaired-variance unpaired-variance)
+     (when horizon
+       (list :horizon horizon
+             :official-tail
+               (official-guided-tail-statistics candidate-returns horizon)
+             :incumbent-tail
+               (official-guided-tail-statistics incumbent-returns horizon))))))
+
+(defun make-official-guided-parent-child-evaluation-record
+       (child-returns parent-returns seeds behavioral-locality)
+  "Return a causal paired record for one mutated child and its direct parent."
+  (append
+   (make-official-guided-evaluation-record
+    :stage :parent-child-racing
+    :imitation-score nil
+    :seeds seeds
+    :candidate-returns child-returns
+    :incumbent-returns parent-returns
+    :accepted nil)
+   (list :behavioral-locality (copy-tree behavioral-locality))))
+
+(defun official-guided-continue-p (candidate-returns incumbent-returns)
+  "Return true unless paired evidence already establishes futility."
+  (multiple-value-bind (mean se)
+      (official-guided-comparison-statistics
+       candidate-returns incumbent-returns)
+    (let ((margin (* +official-guided-comparison-standard-errors+ se)))
+      ;; Exact ties are uncertainty, not evidence of futility.  This matters
+      ;; when two policies share the 100-step behavior but differ on the final
+      ;; 30/50/100 multi-horizon deployment objective.
+      (values (>= (+ mean margin) 0.0d0) mean margin))))
+
+(defun official-guided-promote-p (candidate-returns incumbent-returns)
+  "Promote only after a positive paired uncertainty margin."
+  (multiple-value-bind (mean se)
+      (official-guided-comparison-statistics
+       candidate-returns incumbent-returns)
+    (let ((margin (* +official-guided-comparison-standard-errors+ se)))
+      (values (> mean margin) mean margin))))
+
+(defun official-guided-promotion-stage-name (episode-count)
+  "Return the frozen stage name associated with EPISODE-COUNT."
+  (ecase episode-count
+    (12 :promotion-stage-1)
+    (40 :promotion-stage-2)
+    (100 :promotion-stage-3)
+    (1000 :promotion-stage-4)))
+
+(defun official-guided-environment-for-horizon (environment-name horizon)
+  "Replace the final numeric CAGE2 horizon in ENVIRONMENT-NAME."
+  (let* ((suffix "-100-v0")
+         (position (search suffix environment-name :from-end t)))
+    (unless (and position
+                 (= (+ position (length suffix))
+                    (length environment-name)))
+      (error "Cannot derive a CAGE2 audit horizon from ~S."
+             environment-name))
+    (format nil "~A-~D-v0" (subseq environment-name 0 position) horizon)))
+
+(defun official-guided-sum-return-lists (return-lists)
+  "Sum aligned per-seed returns across multiple horizons."
+  (unless return-lists
+    (error "Cannot aggregate an empty list of horizon returns."))
+  (let ((lengths (mapcar #'length return-lists)))
+    (unless (apply #'= lengths)
+      (error "Multi-horizon return lengths differ: ~S." lengths)))
+  (apply #'mapcar #'+ return-lists))
+
+(defun official-guided-tail-aware-promote-p
+       (aggregate-candidate aggregate-incumbent
+        long-candidate long-incumbent long-horizon)
+  "Require robust aggregate and long-horizon gains without tail regression."
+  (multiple-value-bind (aggregate-mean aggregate-se)
+      (official-guided-comparison-statistics
+       aggregate-candidate aggregate-incumbent)
+    (multiple-value-bind (long-mean long-se)
+        (official-guided-comparison-statistics
+         long-candidate long-incumbent)
+      (let* ((aggregate-margin
+               (* +official-guided-final-promotion-standard-errors+
+                  aggregate-se))
+             (long-margin
+               (* +official-guided-final-promotion-standard-errors+
+                  long-se))
+             (candidate-tail
+               (official-guided-tail-statistics
+                long-candidate long-horizon))
+             (incumbent-tail
+               (official-guided-tail-statistics
+                long-incumbent long-horizon))
+             (aggregate-pass (> aggregate-mean aggregate-margin))
+             (long-pass (> long-mean long-margin))
+             (cvar-pass
+               (>= (getf candidate-tail :cvar-10)
+                   (getf incumbent-tail :cvar-10)))
+             (catastrophic-pass
+               (<= (getf candidate-tail :catastrophic-count)
+                   (getf incumbent-tail :catastrophic-count)))
+             (accepted
+               (and aggregate-pass long-pass cvar-pass catastrophic-pass))
+             (audit
+               (list :protocol :tail-aware-multi-horizon-v1
+                     :accepted accepted
+                     :aggregate-paired-mean aggregate-mean
+                     :aggregate-paired-se aggregate-se
+                     :aggregate-margin aggregate-margin
+                     :aggregate-pass aggregate-pass
+                     :long-horizon long-horizon
+                     :long-paired-mean long-mean
+                     :long-paired-se long-se
+                     :long-margin long-margin
+                     :long-pass long-pass
+                     :cvar-pass cvar-pass
+                     :catastrophic-pass catastrophic-pass
+                     :candidate-tail candidate-tail
+                     :incumbent-tail incumbent-tail)))
+        (values accepted aggregate-mean aggregate-margin audit)))))

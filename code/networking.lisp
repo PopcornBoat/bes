@@ -1,0 +1,1158 @@
+(in-package :cl-tpg)
+
+(defvar *server-threads* nil
+  "List of threads spawned by START-SERVER.")
+
+(defvar *server-socket* nil
+  "The TCP server socket, stored so STOP-SERVER can stop it.")
+
+(defvar *server-running* nil
+  "When NIL, server loops will exit.")
+
+(defvar *cached-island-id* nil
+  "Last successfully resolved island ID, avoiding repeated route discovery.")
+
+(defvar *operation-state-lock*
+  (bt:make-lock "BES operation state")
+  "Serializes search/validation lifecycle transitions across request threads.")
+
+(defun node-operation-busy-p ()
+  "Return true while a search is active or validation is running."
+  (bt:with-lock-held (*operation-state-lock*)
+    (or *search-active* *validation-running*)))
+
+(defun begin-search-operation ()
+  "Atomically claim this node for a search and enable its run loop."
+  (bt:with-lock-held (*operation-state-lock*)
+    (unless (or *search-active* *validation-running*)
+      (setf *search-active* t
+            *running* t
+            *last-search-failure* nil
+            *last-telemetry-error* nil)
+      t)))
+
+(defun finish-search-operation ()
+  "Mark the search worker as completely stopped."
+  ;; An official/reference evaluator is a child of this search operation.  Do
+  ;; not leave it consuming the simulator after its owning search is stopped or
+  ;; crashes.  MAIN is loaded after this file, hence the guarded late binding.
+  (when (fboundp 'reset-online-candidate-evaluation-state)
+    (reset-online-candidate-evaluation-state))
+  (bt:with-lock-held (*operation-state-lock*)
+    (setf *running* nil
+          *search-active* nil)))
+
+(defun begin-validation-operation ()
+  "Atomically claim this node for validation without enabling search loops."
+  (bt:with-lock-held (*operation-state-lock*)
+    (unless (or *search-active* *validation-running*)
+      (setf *validation-running* t)
+      t)))
+
+(defun finish-validation-operation ()
+  "Release this node after validation finishes."
+  (bt:with-lock-held (*operation-state-lock*)
+    (setf *validation-running* nil)))
+
+(defun request-search-stop ()
+  "Request search cancellation while keeping the node busy until worker exit.
+
+Return :REQUESTED, :ALREADY-REQUESTED, or :NO-SEARCH."
+  (bt:with-lock-held (*operation-state-lock*)
+    (cond
+      ((not *search-active*) :no-search)
+      ((not *running*) :already-requested)
+      (t
+       (setf *running* nil)
+       :requested))))
+
+(defparameter *telemetry-ip* "127.0.0.1"
+  "IP address of the Emacs client receiving telemetry.")
+
+(defparameter *server-port* 8080
+  "TCP command and UDP telemetry port for this BES server.")
+
+(defparameter *heartbeat-interval* 100
+  "The amount of time to wait between sending heartbeats (in seconds).")
+
+(defparameter *islands*
+  '((:local . 0)               ;; current local machine / island 0
+    ("10.100.202.42" . 1)      ;; ds-cmlm-02
+    ("10.100.202.43" . 2)      ;; ds-cmlm-03
+    ("10.100.202.44" . 3)      ;; ds-cmlm-04
+    ("10.100.202.46" . 4)      ;; ds-cmlm-06
+    ("10.100.202.47" . 5)      ;; ds-cmlm-07
+    ("10.100.202.48" . 6)      ;; ds-cmlm-08
+    ("10.100.202.49" . 7)      ;; ds-cmlm-09
+    ("10.100.202.51" . 8)      ;; ds-cmlm-11
+    ("10.100.202.52" . 9)      ;; ds-cmlm-12
+    ("10.100.202.54" . 10)     ;; ds-cmlm-14
+    ("10.100.202.55" . 11)     ;; ds-cmlm-15
+    ("10.100.202.56" . 12)     ;; ds-cmlm-16
+    ("10.100.202.57" . 13)     ;; ds-cmlm-17
+    ("10.100.202.58" . 14)     ;; ds-cmlm-18
+    ("10.100.202.59" . 15))    ;; ds-cmlm-19
+  "The mapping between island location and island ID.
+The special key :LOCAL always resolves dynamically to the current machine IP.")
+
+(defparameter *topology*
+  '((1 . (2 5 6 11))
+    (2 . (1 3 7 12))
+    (3 . (2 4 8 13))
+    (4 . (3 5 9 14))
+    (5 . (1 4 10 15))
+    (6 . (1 7 10 11))
+    (7 . (2 6 8 12))
+    (8 . (3 7 9 13))
+    (9 . (4 8 10 14))
+    (10 . (5 6 9 15))
+    (11 . (1 6 12 15))
+    (12 . (2 7 11 13))
+    (13 . (3 12 8 14))
+    (14 . (4 9 13 15))
+    (15 . (5 10 11 14)))
+  "This is a 3x5 toroidal grid. Each island has 4 adjacent neighbours wrapping around if necessary.")
+
+(defun note-telemetry-error (condition)
+  "Record CONDITION locally without allowing observability to stop a search."
+  (setf *last-telemetry-error*
+        (list :generation *generation*
+              :timestamp (get-universal-time)
+              :condition-type (type-of condition)
+              :message (princ-to-string condition)))
+  (format *error-output*
+          "~&[BES TELEMETRY WARNING] generation=~D: ~A~%"
+          *generation*
+          condition)
+  (force-output *error-output*)
+  nil)
+
+(defun notify-telemetry (msg)
+  "Best-effort UDP telemetry; failures are recorded but never stop learning."
+  (handler-case
+      (let ((socket
+              (usocket:socket-connect
+               *telemetry-ip* *server-port* :protocol :datagram)))
+        (unwind-protect
+             (usocket:socket-send socket msg (length msg))
+          (usocket:socket-close socket)))
+    (error (condition)
+      (note-telemetry-error condition))))
+
+(defun capture-search-backtrace ()
+  "Capture the current stack while an unhandled search error is still active."
+  #+sbcl
+  (with-output-to-string (stream)
+    (sb-debug:print-backtrace :stream stream :count 100))
+  #-sbcl
+  "Backtrace capture is unavailable on this Lisp implementation.")
+
+(defun record-search-failure (label condition backtrace)
+  "Persist an unhandled search CONDITION for post-mortem inspection."
+  (setf *last-search-failure*
+        (list :label label
+              :generation *generation*
+              :timestamp (get-universal-time)
+              :condition-type (type-of condition)
+              :message (princ-to-string condition)
+              :backtrace backtrace))
+  (format *error-output*
+          "~&[BES SEARCH FAILURE] ~A generation=~D: ~A~%~A~%"
+          label *generation* condition backtrace)
+  (force-output *error-output*)
+  (when *checkpoint-directory*
+    (handler-case
+        (let ((path
+                (merge-pathnames
+                 "search-errors.log"
+                 (uiop:ensure-directory-pathname
+                  (pathname *checkpoint-directory*)))))
+          (ensure-directories-exist path)
+          (with-open-file
+              (stream path
+                      :direction :output
+                      :if-exists :append
+                      :if-does-not-exist :create)
+            (format stream "~&~S~%" *last-search-failure*)
+            (force-output stream)))
+      (error (log-condition)
+        (format *error-output*
+                "~&[BES SEARCH FAILURE] Could not write diagnostic log: ~A~%"
+                log-condition)
+        (force-output *error-output*))))
+  *last-search-failure*)
+
+(defun call-with-recorded-search-failure (label thunk)
+  "Call THUNK, preserving any unhandled error and its pre-unwind backtrace."
+  (let ((captured-backtrace nil))
+    (handler-case
+        (handler-bind
+            ((error
+               (lambda (condition)
+                 (declare (ignore condition))
+                 (unless captured-backtrace
+                   (setf captured-backtrace
+                         (capture-search-backtrace))))))
+          (funcall thunk))
+      (error (condition)
+        (record-search-failure label condition captured-backtrace)
+        (emit-error
+         (format nil "~A crashed: ~A" label condition))
+        nil))))
+			 
+(defun emit-fitness-scores
+       (island-id
+        generation-best
+        historical-best
+        population-mean
+        population-median
+        population-worst
+        generation
+        &key online-fitness-episodes team-count learner-count
+          instruction-count max-team-size max-program-size elapsed-seconds)
+  "Send generation-level and population-level fitness statistics
+to the telemetry client."
+  (let ((payload
+          (prin1-to-string
+           `(:type :fitness
+             :generation-best
+             ,(format nil "~,4F" generation-best)
+
+             :historical-best
+             ,(format nil "~,4F" historical-best)
+
+             :population-mean
+             ,(format nil "~,4F" population-mean)
+
+             :population-median
+             ,(format nil "~,4F" population-median)
+
+             :population-worst
+             ,(format nil "~,4F" population-worst)
+
+             :online-fitness-episodes
+             ,online-fitness-episodes
+
+             :team-count ,team-count
+             :learner-count ,learner-count
+             :instruction-count ,instruction-count
+             :max-team-size ,max-team-size
+             :max-program-size ,max-program-size
+             :elapsed-seconds ,elapsed-seconds
+
+             :from
+             ,island-id
+
+             :generation
+             ,generation
+
+             :ts
+             ,(get-universal-time)))))
+    (notify-telemetry payload)))
+
+(defun telemetry-island-id ()
+  "Return the island ID for telemetry, or :UNKNOWN if discovery fails."
+  (handler-case
+      (or (who-am-i) :unknown)
+    (error (condition)
+      (note-telemetry-error condition)
+      :unknown)))
+
+(defun emit-heartbeat ()
+  "On a regular interval *heartbeat-interval*, send a heartbeat message
+   to the telemetry client and additionally send CPU and memory usage."
+  (let* ((island-id (telemetry-island-id))
+	 (payload (prin1-to-string
+		  `(:type :heartbeat
+		    :from ,island-id
+		    :ts ,(get-universal-time)
+		    :cpu ,(get-cpu-usage)
+		    :memory ,(get-memory-usage)))))
+    (notify-telemetry payload)))
+			  
+(defun get-local-ip ()
+  "By getting our local IP, we know who we are and who our adjacent neighbours are."
+  (let ((socket (usocket:socket-connect "8.8.8.8" 53 :protocol :datagram)))
+    (unwind-protect
+	 (format nil "~{~A~^.~}" (coerce (usocket:get-local-address socket) 'list))
+      (usocket:socket-close socket))))
+
+(defun resolve-island-ip (entry)
+  "Return the current IP address represented by an island ENTRY.
+
+For island 0, whose address is stored as :LOCAL, dynamically call
+GET-LOCAL-IP every time. Other islands use their fixed configured IP."
+  (let ((ip-spec (car entry)))
+    (if (eq ip-spec :local)
+        (get-local-ip)
+        ip-spec)))
+
+
+(defun lookup-island-id-by-ip (ipaddr)
+  "Look up the island ID corresponding to IPADDR.
+
+Fixed island addresses take precedence over the dynamic :LOCAL entry.
+If no fixed address matches, island 0 is resolved against the current local
+IP so an address change does not break its identity."
+  (or (loop for (ip-spec . id) in *islands*
+            when (and (stringp ip-spec)
+                      (string= ipaddr ip-spec))
+              do (return id))
+      (let ((local-entry (assoc :local *islands*)))
+        (when (and local-entry
+                   (string= ipaddr (resolve-island-ip local-entry)))
+          (cdr local-entry)))))
+
+
+(defun lookup-island-ip-by-id (id)
+  "Look up the current IP address of island ID.
+
+Island 0 always returns the current value of GET-LOCAL-IP. Other islands
+return their fixed configured addresses."
+  (let ((entry (rassoc id *islands* :test #'equal)))
+    (when entry
+      (resolve-island-ip entry))))
+
+(defun emit-error (message)
+  "An error has occurred, notify the telemetry client."
+  (let* ((island-id (telemetry-island-id))
+	 (payload (prin1-to-string
+		   `(:type :error
+		     :from ,island-id
+		     :ts ,(get-universal-time)
+		     :msg ,message))))
+    (notify-telemetry payload)))
+
+(defun emit-message (message)
+  "Sends a message to the telemetry client log."
+  (let* ((island-id (telemetry-island-id))
+	 (payload (prin1-to-string
+		   `(:type :message
+		     :from ,island-id
+		     :ts ,(get-universal-time)
+		     :msg ,message))))
+    (notify-telemetry payload)))
+
+(defun send-migrant-over-socket (island-id root-team)
+  "Sends a TEAM to island ISLAND-ID through a TCP socket.
+   Notifies the telemetry client that a migrant was sent over UDP."
+  (let ((receiver-ip-address (lookup-island-ip-by-id island-id))
+	(sender-id (who-am-i))
+	(serialized-team (serialize-team root-team)))
+    (bt:make-thread
+     (lambda ()
+       (handler-case
+	   (progn
+	     (usocket:with-client-socket (socket stream receiver-ip-address *server-port* :timeout 30)
+	       (prin1 `(:type :migrant
+			:from ,sender-id
+			:ts ,(get-universal-time)
+			:team ,serialized-team)
+		      stream)
+	       (finish-output stream))
+	     ;; Notify the telemetry client over UDP that a migrant was sent.
+	     (emit-message (format nil "Migrant was sent to island ~A.~%" island-id)))
+	 (error (e)
+	   (emit-error (format nil "Failed to send migrant to ~A: ~A~%" island-id e)))))
+     :name (format nil "migrant-sender-to~A" island-id))))
+
+(defun receive-migrant-over-socket (msg)
+  (when *running*
+    (let* ((from-id (getf msg :from))
+	   (root-team (deserialize-team (getf msg :team) (make-hash-table :test 'equal)))
+	   ;; Visited map ensures we only push each unique team to the buffer once.
+	   (visited (make-hash-table :test 'eq)))
+      (labels ((process-migrant (tm)
+		 (unless (gethash tm visited)
+		   (setf (gethash tm visited) t)
+
+		   (if (eq tm root-team)
+		       (push-root-team tm)
+		       (push-internal-team tm))
+
+		   ;; Recurse through learners to find internal teams
+		   (dolist (learner (team-learners tm))
+		     (let ((action (action-action (learner-action learner))))
+		       (when (team-p action)
+			 (process-migrant action)))))))
+	(process-migrant root-team)
+	(emit-message (format nil "Migrant received from island ~A.~%" from-id))))))
+
+(defun get-neighbour-ids (island-id)
+  "Returns the island IDs that this island ID is connected to."
+  (cdr (assoc island-id *topology* :test #'equal)))
+
+(defun set-global-parameters (population-size
+                              num-observations num-actions
+                              init-num-learners max-num-learners
+                              p-add p-del p-mut p-act p-swap
+                              gap init-program-size max-program-size
+                              p-add-instr p-del-instr p-swap-instrs
+                              p-mut-constant p-mut-constant-sign
+                              migration-interval
+                              batch-size
+                              online-fitness-episodes
+                               &key checkpoint-directory
+                                    hamming-space-enabled
+                                    hamming-dataset-name
+                                    (decoy-order-mode :fixed)
+                                    (cage2-opening-mode :fixed)
+                                    (recurrent-policy-enabled nil)
+                                    (teacher-forcing-rollout-mode :dagger)
+                                    (teacher-backend :model)
+                                    (instruction-set-profile :full)
+                                    (instruction-mutation-mode :legacy)
+                                    (effective-aware-mutation-enabled nil)
+                                    (read-only-register-profile :disabled))
+  "Set the hyperparameters according to the TCP request."
+
+  (setf *population-size* population-size)
+  (setf *num-observations* num-observations)
+  (setf *num-actions* num-actions)
+
+  (setf *init-num-learners* init-num-learners)
+  (setf *max-num-learners*
+        (case max-num-learners
+          (:inf +inf+)
+          (otherwise max-num-learners)))
+
+  (setf *p-add* p-add)
+  (setf *p-del* p-del)
+  (setf *p-mut* p-mut)
+  (setf *p-act* p-act)
+  (setf *p-swap* p-swap)
+
+  (setf *gap* gap)
+
+  (setf *init-program-size* init-program-size)
+  (setf *max-program-size*
+        (case max-program-size
+          (:inf +inf+)
+          (otherwise max-program-size)))
+
+  (setf *p-add-instr* p-add-instr)
+  (setf *p-del-instr* p-del-instr)
+  (setf *p-swap-instrs* p-swap-instrs)
+  (setf *p-mut-constant* p-mut-constant)
+  (setf *p-mut-constant-sign* p-mut-constant-sign)
+
+  (setf *migration-interval* migration-interval)
+  (setf *batch-size* batch-size)
+
+  (setf *configured-online-fitness-episodes* online-fitness-episodes
+        *online-fitness-episodes* online-fitness-episodes)
+
+  ;; These values are copied from the pre-run menu request. Later menu changes
+  ;; affect only the next operation, never an active training/validation run.
+  (setf *hamming-space-enabled* (not (null hamming-space-enabled))
+        *hamming-dataset-name* hamming-dataset-name
+        *recurrent-policy-enabled* (not (null recurrent-policy-enabled)))
+
+  (unless (valid-decoy-order-mode-p decoy-order-mode)
+    (error "Decoy order mode must be :FIXED or :EVOLVED, got ~S."
+           decoy-order-mode))
+  (setf *decoy-order-mode* decoy-order-mode)
+
+  (unless (valid-cage2-opening-mode-p cage2-opening-mode)
+    (error "CAGE2 opening mode must be :FIXED or :POLICY, got ~S."
+           cage2-opening-mode))
+  (setf *cage2-opening-mode* cage2-opening-mode)
+
+  (unless (valid-teacher-forcing-rollout-mode-p
+           teacher-forcing-rollout-mode)
+    (error "Teacher-forcing rollout mode must be :DAGGER or :TEACHER, got ~S."
+           teacher-forcing-rollout-mode))
+  (setf *teacher-forcing-rollout-mode* teacher-forcing-rollout-mode)
+
+  (unless (valid-teacher-backend-p teacher-backend)
+    (error "Teacher backend must be :MODEL or :HEURISTIC, got ~S."
+           teacher-backend))
+  (setf *teacher-backend* teacher-backend)
+
+  (unless (valid-instruction-set-profile-p instruction-set-profile)
+    (error "Instruction-set profile must be :FULL, :REDUCED, or :REDUCED-EQ, got ~S."
+           instruction-set-profile))
+  (setf *instruction-set-profile* instruction-set-profile)
+
+  (unless (valid-read-only-register-profile-p read-only-register-profile)
+    (error "Read-only-register profile must be :DISABLED or :CAGE2-CATEGORICAL-V1, got ~S."
+           read-only-register-profile))
+  (setf *read-only-register-profile* read-only-register-profile)
+
+  (unless (valid-instruction-mutation-mode-p instruction-mutation-mode)
+    (error "Instruction mutation mode must be :LEGACY or :FIELD-LOCAL, got ~S."
+           instruction-mutation-mode))
+  (setf *instruction-mutation-mode* instruction-mutation-mode
+        *effective-aware-mutation-enabled*
+          (not (null effective-aware-mutation-enabled)))
+
+  (setf *checkpoint-directory* checkpoint-directory))
+
+(defun valid-search-parameters-p (mode gym-environment-name dataset-name
+				  num-observations num-actions
+				  population-size init-num-learners
+				  max-num-learners p-add
+				  p-del p-mut p-act p-swap
+				  gap init-program-size max-program-size
+				  p-add-instr p-del-instr p-swap-instrs
+				  p-mut-constant p-mut-constant-sign
+				  migration-interval batch-size seed
+                                  hamming-space-enabled hamming-dataset-name
+                                  decoy-order-mode cage2-opening-mode
+                                  recurrent-policy-enabled
+                                  teacher-forcing-rollout-mode
+                                  teacher-backend
+                                  instruction-set-profile
+                                  &optional
+                                  (instruction-mutation-mode :legacy)
+                                  (effective-aware-mutation-enabled nil)
+                                  (read-only-register-profile :disabled))
+  "Returns T if the search parameters are valid. NIL otherwise."
+       ;; 1. Check the supported search modes.
+  (and (or (eq mode :online)
+		   (eq mode :offline)
+           (eq mode :teacher-forcing)
+           (eq mode :official-guided)
+           (eq mode :official-online))
+       ;; 2. Online and teacher modes use an environment; offline uses data.
+       (case mode
+	 (:online (and gym-environment-name
+		       (not (eq gym-environment-name :none))
+		       (eq dataset-name :none)))
+         (:teacher-forcing
+          (and gym-environment-name
+               (not (eq gym-environment-name :none))
+               (eq dataset-name :none)
+               (cl-gym:cage2-environment-p gym-environment-name)
+               (or (search "b_line" gym-environment-name)
+                   (search "meander" gym-environment-name))
+               (eq decoy-order-mode :fixed)))
+         (:official-guided
+          (and gym-environment-name
+               (not (eq gym-environment-name :none))
+               (eq dataset-name :none)
+               (cl-gym:cage2-environment-p gym-environment-name)
+               (let ((name (string-downcase gym-environment-name)))
+                 (or (search "b_line" name)
+                     (search "meander" name)))
+               (integerp num-observations)
+               (integerp num-actions)
+               (= num-observations +cage2-scan-observation-size+)
+               (= num-actions +num-semantic-36-actions+)
+               (eq decoy-order-mode :fixed)
+               (eq cage2-opening-mode :fixed)
+               (eq teacher-forcing-rollout-mode :dagger)
+               (valid-teacher-backend-p teacher-backend)
+               (not recurrent-policy-enabled)
+               (not hamming-space-enabled)))
+         (:official-online
+          (and gym-environment-name
+               (eq dataset-name :none)
+               (cl-gym:cage2-environment-p gym-environment-name)
+               (let ((name (string-downcase gym-environment-name)))
+                 (or (search "b_line" name) (search "meander" name)))
+               (eql num-observations +cage2-scan-observation-size+)
+               (eql num-actions +num-semantic-36-actions+)
+               (eq decoy-order-mode :fixed)
+               (eq cage2-opening-mode :fixed)
+               (eq teacher-backend :heuristic)
+               (not recurrent-policy-enabled)
+               (not hamming-space-enabled)))
+	 (:offline (and dataset-name
+			(not (eq dataset-name :none))
+			(eq gym-environment-name :none))))
+       (or (not hamming-space-enabled)
+           (and hamming-dataset-name
+                (not (eq hamming-dataset-name :none))
+                (integerp num-observations)
+                (valid-cage2-policy-observation-size-p num-observations)
+                (integerp num-actions)
+                (cage2-semantic-action-count-p num-actions)
+                (or (eq mode :offline)
+                    (cl-gym:cage2-environment-p gym-environment-name))))
+       ;; Recurrent CAGE2 modes preserve complete episode order. Offline mode
+       ;; validates episode metadata after loading the selected ranked dataset.
+       (or (not recurrent-policy-enabled)
+           (case mode
+             (:offline
+              (and (integerp num-observations)
+                   (valid-cage2-policy-observation-size-p num-observations)
+                   (integerp num-actions)
+                   (= num-actions +num-semantic-targets+)))
+             ((:online :teacher-forcing)
+              (cl-gym:cage2-environment-p gym-environment-name))
+             (otherwise nil)))
+       (valid-decoy-order-mode-p decoy-order-mode)
+       (valid-cage2-opening-mode-p cage2-opening-mode)
+       (valid-teacher-forcing-rollout-mode-p
+        teacher-forcing-rollout-mode)
+       (valid-teacher-backend-p teacher-backend)
+       (valid-instruction-set-profile-p instruction-set-profile)
+       (valid-read-only-register-profile-p read-only-register-profile)
+       (valid-instruction-mutation-mode-p instruction-mutation-mode)
+       (or (not (and (member mode '(:teacher-forcing :official-guided)
+                                    :test #'eq)
+                     (eq teacher-backend :heuristic)))
+           (and (stringp gym-environment-name)
+                (let ((name (string-downcase gym-environment-name)))
+                  (or (search "b_line" name)
+                      (search "meander" name)))))
+       ;; The semantic bridge transports all 142 values. BES may expose either
+       ;; the complete vector or only its 62-value raw-plus-scan prefix.
+       (or (not (and (stringp gym-environment-name)
+                     (search "Cage2" gym-environment-name)))
+           (and (integerp num-observations)
+                (integerp num-actions)
+                (valid-cage2-policy-observation-size-p num-observations)
+                (cage2-semantic-action-count-p num-actions)
+                (or (/= num-actions +num-semantic-36-actions+)
+                    (and (= num-observations
+                            +cage2-scan-observation-size+)
+                         (let ((name
+                                 (string-downcase gym-environment-name)))
+                           (or (search "b_line" name)
+                               (search "meander" name)))))))))
+
+(defun who-am-i ()
+  "Returns the island ID of the currently running server."
+  (or *cached-island-id*
+      (let* ((ip-address (get-local-ip))
+             (island-id (lookup-island-id-by-ip ip-address)))
+        (unless island-id
+          (error "Local IP ~A is not mapped to an island." ip-address))
+        (setf *cached-island-id* island-id))))
+
+(defun handle-start-search (msg)
+  "Validate a start-search request, configure globals, and begin searching."
+  (when (node-operation-busy-p)
+    (emit-error "This node is already running or stopping a search, or running validation.")
+    (return-from handle-start-search))
+
+  (let ((mode (getf msg :mode))
+        (gym-environment-name (getf msg :gym-environment-name))
+        (checkpoint-directory (getf msg :checkpoint-directory))
+        (dataset-name (getf msg :dataset-name))
+        (num-observations (getf msg :num-observations))
+        (num-actions (getf msg :num-actions))
+        (population-size (getf msg :population-size))
+        (init-num-learners (getf msg :init-num-learners))
+        (max-num-learners (getf msg :max-num-learners))
+        (p-add (getf msg :p-add))
+        (p-del (getf msg :p-del))
+        (p-mut (getf msg :p-mut))
+        (p-act (getf msg :p-act))
+        (p-swap (getf msg :p-swap))
+        (gap (getf msg :gap))
+        (init-program-size (getf msg :init-program-size))
+        (max-program-size (getf msg :max-program-size))
+        (p-add-instr (getf msg :p-add-instr))
+        (p-del-instr (getf msg :p-del-instr))
+        (p-swap-instrs (getf msg :p-swap-instrs))
+        (p-mut-constant (getf msg :p-mut-constant))
+        (p-mut-constant-sign (getf msg :p-mut-constant-sign))
+        (migration-interval (getf msg :migration-interval))
+        (batch-size (getf msg :batch-size))
+        (online-fitness-episodes
+          (or (getf msg :online-fitness-episodes) 1))
+        (hamming-space-enabled
+          (eq (getf msg :hamming-space-enabled :disabled) :enabled))
+        (hamming-dataset-name
+          (getf msg :hamming-dataset-name :none))
+        (decoy-order-mode
+          (getf msg :decoy-order-mode :fixed))
+        (cage2-opening-mode
+          (getf msg :cage2-opening-mode :fixed))
+        (recurrent-policy-enabled
+          (eq (getf msg :recurrent-policy-enabled :disabled) :enabled))
+        (teacher-forcing-rollout-mode
+          (getf msg :teacher-forcing-rollout-mode :dagger))
+        (teacher-backend
+          (getf msg :teacher-backend :model))
+        (instruction-set-profile
+          (getf msg :instruction-set-profile :full))
+        (instruction-mutation-mode
+          (getf msg :instruction-mutation-mode :legacy))
+        (effective-aware-mutation-enabled
+          (eq (getf msg :effective-aware-mutation-enabled :disabled)
+              :enabled))
+        (read-only-register-profile
+          (getf msg :read-only-register-profile :disabled))
+        (seed (getf msg :seed)))
+
+    (format t "~S~%" msg)
+
+    (when (or (eq max-num-learners :inf)
+              (eq max-program-size :inf))
+      (emit-error
+       "Training requires finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
+      (return-from handle-start-search))
+
+    (emit-message
+     (format nil
+             "PARAM DEBUG: mode=~A profile=~A env=~A dataset=~A obs=~A actions=~A operators=~A ror=~A instruction-mutation=~A effective-aware=~A decoy-order=~A opening=~A memory=~A teacher-rollout=~A teacher-backend=~A pop=~A init-learners=~A max-learners=~A gap=~A migration=~A batch=~A fitness-eps=~A hamming=~A hamming-dataset=~A checkpoint-dir=~A seed=~A"
+             mode +live-search-profile+ gym-environment-name dataset-name
+             num-observations num-actions instruction-set-profile
+             read-only-register-profile instruction-mutation-mode
+             effective-aware-mutation-enabled decoy-order-mode
+             cage2-opening-mode
+             (if recurrent-policy-enabled :recurrent :stateless)
+             teacher-forcing-rollout-mode teacher-backend population-size
+             init-num-learners max-num-learners gap migration-interval
+             batch-size online-fitness-episodes hamming-space-enabled
+             hamming-dataset-name checkpoint-directory seed))
+
+    (emit-message
+     (format nil
+             "MUTATION PARAM DEBUG: p-add=~A p-del=~A p-mut=~A p-act=~A p-swap=~A init-prog=~A max-prog=~A p-add-instr=~A p-del-instr=~A p-swap-instrs=~A p-mut-constant=~A p-mut-constant-sign=~A"
+             p-add
+             p-del
+             p-mut
+             p-act
+             p-swap
+             init-program-size
+             max-program-size
+             p-add-instr
+             p-del-instr
+             p-swap-instrs
+             p-mut-constant
+             p-mut-constant-sign))
+
+    (if (valid-search-parameters-p
+         mode gym-environment-name dataset-name
+         num-observations num-actions population-size
+         init-num-learners max-num-learners
+         p-add p-del p-mut p-act p-swap
+         gap init-program-size max-program-size
+         p-add-instr p-del-instr p-swap-instrs
+         p-mut-constant p-mut-constant-sign
+         migration-interval batch-size seed
+         hamming-space-enabled hamming-dataset-name
+         decoy-order-mode cage2-opening-mode
+         recurrent-policy-enabled teacher-forcing-rollout-mode
+         teacher-backend instruction-set-profile
+         instruction-mutation-mode effective-aware-mutation-enabled
+         read-only-register-profile)
+
+        (progn
+          (unless (begin-search-operation)
+            (emit-error "This node became busy before the search could start.")
+            (return-from handle-start-search))
+
+          (set-global-parameters
+           population-size num-observations num-actions
+           init-num-learners max-num-learners
+           p-add p-del p-mut p-act p-swap
+           gap init-program-size max-program-size
+           p-add-instr p-del-instr p-swap-instrs
+           p-mut-constant p-mut-constant-sign
+           migration-interval batch-size online-fitness-episodes
+           :checkpoint-directory checkpoint-directory
+           :hamming-space-enabled hamming-space-enabled
+           :hamming-dataset-name hamming-dataset-name
+           :decoy-order-mode decoy-order-mode
+           :cage2-opening-mode cage2-opening-mode
+           :recurrent-policy-enabled recurrent-policy-enabled
+           :teacher-forcing-rollout-mode teacher-forcing-rollout-mode
+           :teacher-backend teacher-backend
+           :instruction-set-profile instruction-set-profile
+           :instruction-mutation-mode instruction-mutation-mode
+           :effective-aware-mutation-enabled
+             effective-aware-mutation-enabled
+           :read-only-register-profile read-only-register-profile)
+
+          (push
+           (bt:make-thread
+            (lambda ()
+              (unwind-protect
+                   (call-with-recorded-search-failure
+                    "Search"
+                    (lambda ()
+                      (progn
+                         (emit-message
+                          (format nil
+                                  "Search started on island ~A"
+                                  (telemetry-island-id)))
+
+                         (when *checkpoint-directory*
+                           (emit-message
+                            (format nil
+                                    "Checkpoint directory: ~A"
+                                    *checkpoint-directory*)))
+
+                         (setf lparallel:*kernel*
+                               (make-kernel *num-threads*))
+
+                         (run-search
+                          mode
+                          gym-environment-name
+                          dataset-name
+                          seed))))
+
+                (when lparallel:*kernel*
+                  (ignore-errors
+                    (lparallel:end-kernel))
+                  (setf lparallel:*kernel* nil))
+
+                (finish-search-operation)
+                (emit-message
+                 (format nil
+                         "Search stopped on island ~A"
+                         (telemetry-island-id)))))
+            :name "search-thread")
+           *server-threads*))
+
+        (emit-error
+         "The search parameters provided are invalid."))))
+
+(defun handle-resume-search (msg)
+  "Warm-start a search from a saved best-team file."
+  (when (node-operation-busy-p)
+    (emit-error "This node is already running or stopping a search, or running validation.")
+    (return-from handle-resume-search))
+
+  (let ((mode (getf msg :mode))
+        (gym-environment-name (getf msg :gym-environment-name))
+        (dataset-name (getf msg :dataset-name))
+        (best-team-path (getf msg :best-team-path))
+        (checkpoint-directory (getf msg :checkpoint-directory))
+        (num-observations (getf msg :num-observations))
+        (num-actions (getf msg :num-actions))
+        (population-size (getf msg :population-size))
+        (init-num-learners (getf msg :init-num-learners))
+        (max-num-learners (getf msg :max-num-learners))
+        (p-add (getf msg :p-add))
+        (p-del (getf msg :p-del))
+        (p-mut (getf msg :p-mut))
+        (p-act (getf msg :p-act))
+        (p-swap (getf msg :p-swap))
+        (gap (getf msg :gap))
+        (init-program-size (getf msg :init-program-size))
+        (max-program-size (getf msg :max-program-size))
+        (p-add-instr (getf msg :p-add-instr))
+        (p-del-instr (getf msg :p-del-instr))
+        (p-swap-instrs (getf msg :p-swap-instrs))
+        (p-mut-constant (getf msg :p-mut-constant))
+        (p-mut-constant-sign (getf msg :p-mut-constant-sign))
+        (migration-interval (getf msg :migration-interval))
+        (batch-size (getf msg :batch-size))
+        (online-fitness-episodes
+          (or (getf msg :online-fitness-episodes) 1))
+        (hamming-space-enabled
+          (eq (getf msg :hamming-space-enabled :disabled) :enabled))
+        (hamming-dataset-name
+          (getf msg :hamming-dataset-name :none))
+        (decoy-order-mode
+          (getf msg :decoy-order-mode :fixed))
+        (cage2-opening-mode
+          (getf msg :cage2-opening-mode :fixed))
+        (recurrent-policy-enabled
+          (eq (getf msg :recurrent-policy-enabled :disabled) :enabled))
+        (teacher-forcing-rollout-mode
+          (getf msg :teacher-forcing-rollout-mode :dagger))
+        (teacher-backend
+          (getf msg :teacher-backend :model))
+        (instruction-set-profile
+          (getf msg :instruction-set-profile :full))
+        (instruction-mutation-mode
+          (getf msg :instruction-mutation-mode :legacy))
+        (effective-aware-mutation-enabled
+          (eq (getf msg :effective-aware-mutation-enabled :disabled)
+              :enabled))
+        (read-only-register-profile
+          (getf msg :read-only-register-profile :disabled))
+        (seed (getf msg :seed)))
+
+    (format t "~S~%" msg)
+
+    (unless best-team-path
+      (emit-error "No best-team-path provided for resume-search.")
+      (return-from handle-resume-search))
+
+    (when (or (eq max-num-learners :inf)
+              (eq max-program-size :inf))
+      (emit-error
+       "Training requires finite maximum learner and program sizes; unbounded growth can exhaust memory and freeze the Lisp process.")
+      (return-from handle-resume-search))
+
+    (unless checkpoint-directory
+      (setf checkpoint-directory
+            (namestring
+             (make-pathname
+              :directory
+              (pathname-directory
+               (pathname best-team-path))))))
+
+    (if (valid-search-parameters-p
+         mode gym-environment-name dataset-name
+         num-observations num-actions population-size
+         init-num-learners max-num-learners
+         p-add p-del p-mut p-act p-swap
+         gap init-program-size max-program-size
+         p-add-instr p-del-instr p-swap-instrs
+         p-mut-constant p-mut-constant-sign
+         migration-interval batch-size seed
+         hamming-space-enabled hamming-dataset-name
+         decoy-order-mode cage2-opening-mode
+         recurrent-policy-enabled teacher-forcing-rollout-mode
+         teacher-backend instruction-set-profile
+         instruction-mutation-mode effective-aware-mutation-enabled
+         read-only-register-profile)
+
+        (progn
+          (unless (begin-search-operation)
+            (emit-error "This node became busy before the resumed search could start.")
+            (return-from handle-resume-search))
+
+          (set-global-parameters
+           population-size num-observations num-actions
+           init-num-learners max-num-learners
+           p-add p-del p-mut p-act p-swap
+           gap init-program-size max-program-size
+           p-add-instr p-del-instr p-swap-instrs
+           p-mut-constant p-mut-constant-sign
+           migration-interval batch-size online-fitness-episodes
+           :checkpoint-directory checkpoint-directory
+           :hamming-space-enabled hamming-space-enabled
+           :hamming-dataset-name hamming-dataset-name
+           :decoy-order-mode decoy-order-mode
+           :cage2-opening-mode cage2-opening-mode
+           :recurrent-policy-enabled recurrent-policy-enabled
+           :teacher-forcing-rollout-mode teacher-forcing-rollout-mode
+           :teacher-backend teacher-backend
+           :instruction-set-profile instruction-set-profile
+           :instruction-mutation-mode instruction-mutation-mode
+           :effective-aware-mutation-enabled
+             effective-aware-mutation-enabled
+           :read-only-register-profile read-only-register-profile)
+
+          (push
+           (bt:make-thread
+            (lambda ()
+              (unwind-protect
+                   (call-with-recorded-search-failure
+                    "Warm-start resume"
+                    (lambda ()
+                      (progn
+                         (emit-message
+                          (format nil
+                                  "Warm-start resume started on island ~A from best team: ~A"
+                                  (telemetry-island-id)
+                                  best-team-path))
+
+                         (emit-message
+                          (format nil
+                                  "Checkpoint directory: ~A"
+                                  *checkpoint-directory*))
+
+                         (setf lparallel:*kernel*
+                               (make-kernel *num-threads*))
+
+                         (run-search-from-best-team
+                          mode
+                          gym-environment-name
+                          dataset-name
+                          seed
+                          best-team-path))))
+
+                (when lparallel:*kernel*
+                  (ignore-errors
+                    (lparallel:end-kernel))
+                  (setf lparallel:*kernel* nil))
+
+                (finish-search-operation)
+                (emit-message
+                 (format nil
+                         "Search stopped on island ~A"
+                         (telemetry-island-id)))))
+            :name "warm-start-resume-thread")
+           *server-threads*))
+
+        (emit-error
+         "The resume-search parameters provided are invalid."))))
+
+(defun handle-stop-search ()
+  "Request cancellation; the search worker reports when it has actually exited."
+  (case (request-search-stop)
+    (:requested
+     (emit-message
+      (format nil "Search stop requested on island ~A" (who-am-i))))
+    (:already-requested
+     (emit-message
+      (format nil "Search stop already requested on island ~A" (who-am-i))))
+    (:no-search
+     (emit-error "There is no active search on this node to stop."))))
+				   
+(defun start-server ()
+  "Start the server for this island."
+  (when *server-running*
+    (format t "Server is already running.~%")
+    (return-from start-server))
+  (setf *server-running* t)
+  (setf *server-threads* nil)
+  (let* ((ip-address (get-local-ip))
+	 (island-id (lookup-island-id-by-ip ip-address))
+	 (neighbour-ids (get-neighbour-ids island-id)))
+    (format t "Server started on ~A:~D.~%" ip-address *server-port*)
+    (format t "This is island ~A.~%" island-id)
+    (when neighbour-ids
+      (format t "My neighbours are: ~{~A~^, ~}~%" neighbour-ids) 
+      (format t "Their IPs are: ~{~A~^, ~}~%" (mapcar #'lookup-island-ip-by-id neighbour-ids)))
+
+    ;; Start the heartbeat thread over UDP
+    (push (bt:make-thread
+	   (lambda ()
+	     (loop
+	       do (emit-heartbeat)
+	       do (sleep *heartbeat-interval*)))
+	   :name "heartbeat")
+	  *server-threads*)
+    
+    ;; Start listening for commands over TCP
+    (push (bt:make-thread
+	   (lambda ()
+	     (usocket:with-server-socket (server (usocket:socket-listen "0.0.0.0" *server-port*))
+	       (loop
+		 (let ((client-socket (usocket:socket-accept server)))
+		   (bt:make-thread
+		    (lambda ()
+		      (usocket:with-connected-socket (client client-socket)
+			(let* ((stream (usocket:socket-stream client))
+			       (msg (read stream nil :eof)))
+			  (unless (eq msg :eof)
+			    ;; Dispatch according to the request received
+			    (ecase (getf msg :type)
+			      (:migrant (receive-migrant-over-socket msg))
+            (:validate-best-team (handle-validate-best-team msg))
+ 
+			      (:start-search (handle-start-search msg))
+				  (:resume-search (handle-resume-search msg))
+			      (:stop-search (handle-stop-search)))))))
+		    :name (format nil "search-handler-~A" (get-universal-time)))))))
+	   :name "tcp-listener")
+	  *server-threads*)))
+
+(defun stop-server ()
+  "Shut down the server gracefully."
+  (setf *server-running* nil)
+  (setf *running* nil)
+
+  ;; Close the TCP listener
+  (when *server-socket*
+    (ignore-errors (usocket:socket-close *server-socket*))
+    (setf *server-socket* nil))
+
+  ;; Give threads a moment to notice then close threads.
+  (sleep 1)
+  (dolist (thread *server-threads*)
+    (when (bt:thread-alive-p thread)
+      (bt:destroy-thread thread)))
+
+  (setf *server-threads* nil)
+  (finish-search-operation)
+  (finish-validation-operation)
+  (format t "Server stopped.~%"))
+  
+
+
+(defun handle-validate-best-team (msg)
+  "Run validation for a saved best team."
+  (when (node-operation-busy-p)
+    (emit-error "Cannot validate while a search is running or stopping, or another validation is active.")
+    (return-from handle-validate-best-team))
+
+  (let ((best-team-path (getf msg :best-team-path))
+        (environment (getf msg :environment))
+        (mode (getf msg :validation-mode))
+        (red-agent-name (getf msg :red-agent-name))
+        (episodes (getf msg :episodes))
+        (num-observations
+          (getf msg :num-observations +cage2-scan-observation-size+))
+        (decoy-order-mode
+          (getf msg :decoy-order-mode :fixed))
+        (cage2-opening-mode
+          (getf msg :cage2-opening-mode :fixed))
+        (recurrent-policy-enabled
+          (eq (getf msg :recurrent-policy-enabled :disabled) :enabled))
+        (teacher-backend
+          (getf msg :teacher-backend :model))
+        (hamming-space-enabled
+          (eq (getf msg :hamming-space-enabled :disabled) :enabled))
+        (hamming-dataset-name
+          (getf msg :hamming-dataset-name :none)))
+
+    (unless best-team-path
+      (emit-error "No best-team-path provided for validation.")
+      (return-from handle-validate-best-team))
+
+    (when (and hamming-space-enabled
+               (or (not (eq environment :cage2))
+                   (eq hamming-dataset-name :none)))
+      (emit-error
+       "Hamming validation requires CAGE2 and a semantic reference dataset.")
+      (return-from handle-validate-best-team))
+
+    (when (and recurrent-policy-enabled
+               (not (eq environment :cage2)))
+      (emit-error "Recurrent-register validation is currently supported only for CAGE2.")
+      (return-from handle-validate-best-team))
+
+    (when (and (eq environment :cage2)
+               (not (valid-cage2-policy-observation-size-p num-observations)))
+      (emit-error
+       (format nil "CAGE2 validation observations must be ~D or ~D, got ~S."
+               +cage2-scan-observation-size+
+               +cage2-observation-size+
+               num-observations))
+      (return-from handle-validate-best-team))
+
+    (unless (valid-decoy-order-mode-p decoy-order-mode)
+      (emit-error "Decoy order mode must be FIXED or EVOLVED.")
+      (return-from handle-validate-best-team))
+
+    (unless (valid-cage2-opening-mode-p cage2-opening-mode)
+      (emit-error "CAGE2 opening mode must be FIXED or POLICY.")
+      (return-from handle-validate-best-team))
+
+    (unless (valid-teacher-backend-p teacher-backend)
+      (emit-error "Teacher backend must be MODEL or HEURISTIC.")
+      (return-from handle-validate-best-team))
+
+    (unless (begin-validation-operation)
+      (emit-error "This node became busy before validation could start.")
+      (return-from handle-validate-best-team))
+
+    (setf *hamming-space-enabled* hamming-space-enabled
+          *hamming-dataset-name* hamming-dataset-name
+          *recurrent-policy-enabled* recurrent-policy-enabled
+          *teacher-backend* teacher-backend)
+    (when (eq environment :cage2)
+      (setf *num-observations* num-observations
+            *decoy-order-mode* decoy-order-mode
+            *cage2-opening-mode* cage2-opening-mode))
+
+    (push
+     (bt:make-thread
+      (lambda ()
+        (let ((track-hamming-p
+                (and hamming-space-enabled
+                     (eq environment :cage2))))
+          (when track-hamming-p
+            (begin-hamming-validation-coverage))
+          (unwind-protect
+               (handler-case
+                   (progn
+                     (validate-best-team best-team-path
+                                         environment
+                                         mode
+                                         :red-agent-name red-agent-name
+                                         :episodes episodes)
+                     (when track-hamming-p
+                       (emit-hamming-validation-coverage)))
+                 (error (c)
+                   (emit-error
+                    (format nil "Validation crashed: ~A" c))))
+            (when track-hamming-p
+              (end-hamming-validation-coverage))
+            (finish-validation-operation))))
+      :name "validation-thread")
+     *server-threads*)))

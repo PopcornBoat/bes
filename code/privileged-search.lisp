@@ -1,0 +1,583 @@
+(in-package :cl-tpg)
+
+;; Offline analysis may inspect simulator internals. Every policy invocation
+;; below still receives the original Controller's 62-dimensional observation.
+(defparameter +privileged-search-protocol+ :controller-aligned-privileged-search-v3)
+
+(defun brute-append-record (path record)
+  (with-open-file (stream path :direction :output :if-exists :append
+                              :if-does-not-exist :create)
+    (let ((*print-readably* t) (*print-pretty* nil))
+      (write record :stream stream)
+      (terpri stream)
+      (finish-output stream))))
+
+(defun brute-episode (env controller team environment seed work-log
+                      &rest options)
+  (let ((episode (apply #'official-pilot-run-episode
+                        env controller team environment seed options)))
+    (brute-append-record
+     work-log (list :seed seed :return (getf episode :return)
+                    :completed-transitions (length (getf episode :steps))
+                    :intervention-step (getf episode :intervention-step)
+                    :intervention-pair (getf episode :intervention-pair)))
+    episode))
+
+(defun brute-verify-observer (observed plain)
+  "Detect changes introduced by diagnostic observation."
+  (unless (= (getf observed :return) (getf plain :return))
+    (error "Privileged observer changed episode return."))
+  (unless (= (length (getf observed :steps)) (length (getf plain :steps)))
+    (error "Privileged observer changed episode length."))
+  (loop for a across (getf observed :steps)
+        for b across (getf plain :steps)
+        do (dolist (key '(:state-digest :policy-observation :controller-before
+                          :incumbent-concrete :actual-concrete :reward
+                          :next-observation :controller-after))
+             (unless (equalp (getf a key) (getf b key))
+               (error "Privileged observer changed ~A at step ~D."
+                      key (getf a :step)))))
+  t)
+
+(defun brute-restore-controller (controller state)
+  (replace (cage2-controller-scan-state controller) (getf state :scan))
+  (setf (cage2-controller-decoy-mask controller) (getf state :decoy-mask)
+        (cage2-controller-step controller) (getf state :step)))
+
+(defun brute-executable-p (controller event pair)
+  (brute-restore-controller controller (getf event :controller-before))
+  (let ((decision (cage2-controller-resolve-pair-ranking controller (list pair))))
+    (and (equal pair (official-pilot-pair decision))
+         (not (cage2-controller-decision-fallback-p decision))
+         (/= (getf event :incumbent-concrete)
+             (cage2-controller-decision-concrete-action decision)))))
+
+(defun brute-resolve-team (team controller event)
+  "Resolve the complete TPG ranking from an immutable Controller context."
+  (brute-restore-controller controller (getf event :controller-before))
+  (let* ((ranking (execute-team-semantic-ranked
+                   team (getf event :policy-observation)))
+         (decision (cage2-controller-resolve-ranking controller ranking)))
+    (values decision ranking)))
+
+(defun brute-credit-key (context concrete)
+  "Separate frozen parent/continuation/environment identities and full prefixes."
+  (let ((event (getf context :event)))
+    (list (getf context :identity) (getf context :seed)
+          (getf context :prefix) (getf event :step)
+          (getf event :state-digest) (getf event :controller-before)
+          (getf event :policy-observation) concrete)))
+
+(defun brute-credit-statistics (rows)
+  "Treat unmeasured actions as unknown and average known effects within seed."
+  (let ((seeds (make-hash-table :test #'eql)) (known 0) (unknown 0))
+    (dolist (row rows)
+      (if (eq (getf row :status) :unknown)
+          (incf unknown)
+          (progn
+            (incf known)
+            (push (getf row :delta) (gethash (getf row :seed) seeds)))))
+    (let ((means (loop for values being the hash-values of seeds
+                       collect (arithmetic-mean values))))
+      (list :known known :unknown unknown :seed-count (length means)
+            :mean (and means (arithmetic-mean means))
+            :se (and (> (length means) 1) (sample-standard-error means))
+            :effects rows))))
+
+(defun brute-index-action-evidence (records baselines identity)
+  "Index official measurements by what the simulator actually executed."
+  (let ((contexts (make-hash-table :test #'equal))
+        (cache (make-hash-table :test #'equalp)) (ordered nil))
+    (dolist (record records)
+      (let* ((seed (getf record :seed))
+             (event (getf record :event))
+             (step (getf event :step))
+             (context
+               (or (gethash (list seed step) contexts)
+                   (let* ((episode (cdr (assoc seed baselines)))
+                          (new (list :identity identity :seed seed :event event
+                                     :prefix
+                                       (loop for row across (getf episode :steps)
+                                             repeat step collect (getf row :actual-concrete)))))
+                     (unless episode (error "Missing source episode for action evidence."))
+                     (setf (gethash (list seed step) contexts) new)
+                     (push new ordered)
+                     new)))
+             (concrete (getf (getf record :intervention) :actual-concrete))
+             (key (brute-credit-key context concrete)))
+        (multiple-value-bind (previous present) (gethash key cache)
+          (when (and present (/= previous (getf record :delta)))
+            (error "Conflicting returns for the same frozen concrete intervention.")))
+        (setf (gethash key cache) (getf record :delta))))
+    (values (nreverse ordered) cache)))
+
+(defun brute-candidate-effect-evidence (parent child controller contexts cache)
+  "Credit the resolved child action, including fallback and global Decoy choice."
+  (brute-credit-statistics
+   (loop for context in contexts
+         for event = (getf context :event)
+         for before = (brute-resolve-team parent controller event)
+         for after = (brute-resolve-team child controller event)
+         for old = (cage2-controller-decision-concrete-action before)
+         for new = (cage2-controller-decision-concrete-action after)
+         collect
+         (progn
+           (unless (= old (getf event :incumbent-concrete))
+             (error "The frozen source Controller decision no longer matches."))
+           (multiple-value-bind (delta present)
+               (if (= old new) (values 0.0d0 t)
+                   (gethash (brute-credit-key context new) cache))
+             (list :seed (getf context :seed) :step (getf event :step)
+                   :before-concrete old :after-concrete new
+                   :after-pair (official-pilot-pair after)
+                   :status (if (= old new) :unchanged (if present :measured :unknown))
+                   :delta (and present delta)))))))
+
+(defun brute-gate-matches-p (predicates observation)
+  (every (lambda (predicate)
+           (= (aref observation (first predicate))
+              (aref (active-read-only-register-values) (second predicate))))
+         predicates))
+
+(defun brute-gate-evidence (predicates records pair)
+  "Average intervention deltas within seeds before comparing seed means."
+  (let ((by-seed (make-hash-table :test #'eql)))
+    (dolist (record records)
+      (when (and (equal pair (getf record :pair))
+                 (brute-gate-matches-p
+                  predicates (getf (getf record :event) :policy-observation)))
+        (push (getf record :delta) (gethash (getf record :seed) by-seed))))
+    (let* ((means (loop for values being the hash-values of by-seed
+                        collect (arithmetic-mean values)))
+           (count (length means))
+           (mean (if means (arithmetic-mean means) 0.0d0))
+           (se (if (> count 1) (sample-standard-error means) 0.0d0)))
+      (list :predicates predicates :seed-count count
+            :positive-seeds (count-if #'plusp means)
+            :negative-seeds (count-if #'minusp means)
+            :mean mean :se se :score (- mean se)))))
+
+(defun brute-predicate-variants (probe background &optional records pair)
+  "Select up to three behaviorally distinct gates using signed official evidence.
+
+The evidence unit is an episode seed, not adjacent observation rows.
+A gate needs positive evidence across at least two discovery seeds.
+Only the existing 62 current-input features can occur in a gate."
+  (let* ((pair-records (remove-if-not (lambda (row) (equal pair (getf row :pair)))
+                                       records))
+         (values (active-read-only-register-values))
+         (atoms
+           (loop for value across probe for index from 0
+                 for ror = (position value values :test #'=)
+                 when ror collect (list index ror)))
+         (gates
+           (append (mapcar #'list atoms)
+                   (loop for tail on atoms append
+                         (loop for other in (rest tail)
+                               collect (list (first tail) other)))))
+         (ranked
+           (stable-sort
+            (loop for gate in gates
+                  for evidence = (brute-gate-evidence gate pair-records pair)
+                  when (and (>= (getf evidence :seed-count) 2)
+                            (plusp (getf evidence :score))
+                            (>= (/ (getf evidence :positive-seeds)
+                                   (getf evidence :seed-count)) 0.6d0))
+                    collect evidence)
+            #'> :key (lambda (row) (getf row :score))))
+         (seen (make-hash-table :test #'equal)) (selected nil))
+    (dolist (row ranked (nreverse selected))
+      (let* ((gate (getf row :predicates))
+             (signature
+               (loop for observation in background
+                     collect (brute-gate-matches-p gate observation))))
+        (unless (gethash signature seen)
+          (setf (gethash signature seen) t)
+          (push gate selected)
+          (when (= (length selected) 3) (return (nreverse selected))))))))
+
+(defun brute-episode-safety (episode)
+  "Privileged safety diagnostics are available only to the training evaluator."
+  (let ((metrics
+          (coerce
+           (py4cl2:pycall "_bes_protected_host_metrics"
+                          (map 'list (lambda (row) (getf row :privileged-after))
+                               (getf episode :steps))
+                          "Op_Server0")
+           'list)))
+    (list :host "Op_Server0" :seed (getf episode :seed) :loss (first metrics)
+          :controlled-steps (second metrics) :maximum-control-streak (third metrics))))
+
+(defun brute-safety-regressions (baselines candidates)
+  "Reject any paired increase in Op_Server0 loss or Red control duration."
+  (unless (= (length baselines) (length candidates))
+    (error "Protected-host comparisons require exactly paired episode metrics."))
+  (loop for baseline in baselines for candidate in candidates for index from 0
+        do (unless (eql (getf baseline :seed) (getf candidate :seed))
+             (error "Protected-host comparison seed mismatch."))
+        append
+        (loop for key in '(:loss :controlled-steps :maximum-control-streak)
+              when (> (getf candidate key) (+ (getf baseline key) 1.0d-8))
+                collect (list :seed (getf baseline :seed) :seed-index index :metric key
+                              :baseline (getf baseline key)
+                              :candidate (getf candidate key)))))
+
+(defun brute-save-policy (team score path metadata environment)
+  (write-best-team-checkpoint
+   team score path :gym-environment-name environment
+   :generation (getf metadata :generation) :online-fitness-episodes 1
+   :search-seed (getf metadata :search-seed)
+   :fitness-evaluation-protocol +privileged-search-protocol+
+   :action-agreement-signature (getf metadata :action-agreement-signature)
+   :num-observations 62 :decoy-order-mode :fixed :cage2-opening-mode :fixed
+   :recurrent-policy-enabled nil
+   :teacher-backend (getf metadata :teacher-backend :heuristic)
+   :instruction-set-profile *instruction-set-profile*
+   :read-only-register-profile *read-only-register-profile*
+   :terminal-action-format :target-response-36))
+
+(defun brute-canonicalize-ids (root)
+  "Give diagnostics stable graph identities across checkpoint reloads."
+  (let ((seen (make-hash-table :test #'eq)) (next 0))
+    (labels ((walk (team)
+               (unless (gethash team seen)
+                 (setf (gethash team seen) t)
+                 (let ((index (incf next)))
+                   (setf (team-id team) (format nil "SEARCH-TEAM-~D" index))
+                   (loop for learner in (team-learners team) for position from 0
+                         do (setf (learner-id learner)
+                                  (format nil "SEARCH-LEARNER-~D-~D" index position))
+                            (when (eq (action-type (learner-action learner)) :reference)
+                              (walk (action-action (learner-action learner)))))))))
+      (walk root)))
+  root)
+
+(defun brute-path-bids (team observation)
+  "Report actual bid competition on each team of the preferred path."
+  (multiple-value-bind (ranking path terminal)
+      (execute-team-semantic-ranked team observation)
+    (declare (ignore ranking terminal))
+    (mapcar
+     (lambda (current)
+       (list :team (team-id current)
+             :learners
+             (stable-sort
+              (loop for learner in (team-learners current)
+                    for act = (learner-action learner)
+                    collect
+                    (list :learner (learner-id learner)
+                          :bid (bid learner observation)
+                          :action
+                          (if (eq (action-type act) :reference)
+                              (list :team (team-id (action-action act)))
+                              (semantic-action-category-pair
+                               (make-semantic-action-from-terminal
+                                (action-action act) nil)))))
+              #'> :key (lambda (entry) (getf entry :bid)))))
+     path)))
+
+(defun brute-round (checkpoint directory environment seeds steps actions
+                     max-branches max-candidates top-opportunities prior-evidence)
+  (let* ((source (multiple-value-list (load-best-team checkpoint)))
+         (team (brute-canonicalize-ids (first source))) (metadata (third source))
+         (env (cl-gym::make environment))
+         (controller (make-cage2-controller
+                      :decoy-order-profile
+                      (cage2-heuristic-controller-profile environment)))
+         (observer (lambda (env) (py4cl2:pycall "_bes_privileged_state" env)))
+         (work-log (merge-pathnames "completed-rollouts.sexp" directory))
+         (baselines nil) (records nil) (background nil) (trials 0)
+         (best-path checkpoint) (best-mean nil) (variants nil)
+         (baseline-safety nil) (effect-contexts nil) (action-cache nil))
+    (unless (and (= (getf metadata :num-observations) 62)
+                 (eq (getf metadata :terminal-action-format) :target-response-36)
+                 (not (getf metadata :recurrent-policy-enabled)))
+      (error "Brute search requires a stateless Semantic-36 / 62-input checkpoint."))
+    (setf *instruction-set-profile* (getf metadata :instruction-set-profile)
+          *read-only-register-profile* (getf metadata :read-only-register-profile))
+    (unless (and (member :eq (active-instruction-opcodes))
+                 (plusp (active-read-only-register-count)))
+      (error "Conditional synthesis requires EQ and a read-only constant bank."))
+    (ensure-directories-exist (merge-pathnames "placeholder" directory))
+    (cl-gym::configure-cage2-controller-option-orders env controller)
+    (unwind-protect
+         (progn
+           (dolist (seed seeds)
+             (let* ((baseline
+                      (brute-episode env controller team environment seed work-log
+                                     :observer observer))
+                    (plain
+                      (brute-episode env controller team environment seed work-log)))
+               (brute-verify-observer baseline plain)
+               (push (cons seed baseline) baselines)
+               (push (brute-episode-safety baseline) baseline-safety)
+               (write-readable-object-atomically
+                baseline (merge-pathnames (format nil "baseline-~D.sexp" seed)
+                                          directory))
+               (loop for state across (getf baseline :steps)
+                     do (push (getf state :policy-observation) background))))
+           (setf baselines (nreverse baselines)
+                 baseline-safety (nreverse baseline-safety)
+                 best-mean (arithmetic-mean
+                            (mapcar (lambda (entry)
+                                      (getf (cdr entry) :return)) baselines)))
+           (let ((parent-mean best-mean))
+             (block enumerate
+               (dolist (entry baselines)
+                 (let* ((seed (car entry)) (baseline (cdr entry))
+                        (trace (getf baseline :steps)))
+                   (dolist (step steps)
+                     (when (< step (length trace))
+                       (let ((event (aref trace step)))
+                         (dolist (index actions)
+                           (let ((pair (semantic-36-index-pair index)))
+                             (when (brute-executable-p controller event pair)
+                               (when (>= trials max-branches)
+                                 (return-from enumerate))
+                               (incf trials)
+                               (let* ((path
+                                        (merge-pathnames
+                                         (format nil "trial-~D-~D-~D.sexp"
+                                                 seed step index) directory))
+                                      (prior (and prior-evidence
+                                                  (merge-pathnames
+                                                   (file-namestring path)
+                                                   (uiop:ensure-directory-pathname prior-evidence))))
+                                      (cached (or (probe-file path)
+                                                  (and prior (probe-file prior))))
+                                      (record
+                                        (if cached
+                                            (let ((result (rare-failure-read-form cached)))
+                                              (official-pilot-assert-prefix
+                                               (getf result :event) event step)
+                                              (unless (= (getf result :baseline-return)
+                                                         (getf baseline :return))
+                                                (error "Cached baseline return changed."))
+                                              result)
+                                            (let* ((branch
+                                                     (brute-episode
+                                                      env controller team environment
+                                                      seed work-log :observer observer
+                                                      :intervention-step step
+                                                      :intervention-pair pair
+                                                      :expected-prefix trace))
+                                                   (delta (- (getf branch :return)
+                                                             (getf baseline :return)))
+                                                   (result
+                                                     (list :seed seed :step step
+                                                           :action-index index :pair pair
+                                                           :delta delta
+                                                           :baseline-return
+                                                           (getf baseline :return)
+                                                           :branch-return
+                                                           (getf branch :return)
+                                                           :event event
+                                                           :path-bids
+                                                           (brute-path-bids
+                                                            team (getf event
+                                                                       :policy-observation))
+                                                           :intervention
+                                                           (aref (getf branch :steps)
+                                                                 step))))
+                                              (when (plusp delta)
+                                                (write-readable-object-atomically
+                                                 branch
+                                                 (merge-pathnames
+                                                  (format nil "positive-~D-~D-~D.sexp"
+                                                          seed step index) directory)))
+                                              (write-readable-object-atomically result path)
+                                              result))))
+                                 (push record records)
+                                 (format t "~&TRIAL ~D seed=~D step=~D action=~D delta=~,4F~%"
+                                         trials seed step index (getf record :delta))
+                                 (finish-output)))))))))))
+             (setf records (stable-sort records #'> :key (lambda (r) (getf r :delta))))
+             (with-open-file (out (merge-pathnames "interventions.tsv" directory)
+                                  :direction :output :if-exists :supersede)
+               (format out "seed~Cstep~Caction~Cdelta~Cbaseline~Cbranch~%" #\Tab #\Tab #\Tab #\Tab #\Tab)
+               (dolist (record records)
+                 (format out "~D~C~D~C~D~C~,6F~C~,6F~C~,6F~%"
+                         (getf record :seed) #\Tab (getf record :step) #\Tab
+                         (getf record :action-index) #\Tab (getf record :delta) #\Tab
+                         (getf record :baseline-return) #\Tab (getf record :branch-return))))
+
+             (write-readable-object-atomically
+              (list :protocol +privileged-search-protocol+ :source checkpoint
+                    :baseline-mean parent-mean :trials trials :opportunities records)
+              (merge-pathnames "opportunities.sexp" directory))
+             (multiple-value-setq (effect-contexts action-cache)
+               (brute-index-action-evidence
+                records baselines
+                (list (incubation-file-sha256 checkpoint)
+                      (incubation-file-sha256 checkpoint)
+                      (or (uiop:getenv "BRUTE_ENV_SIGNATURE") environment))))
+             (let ((candidate-count 0) (opportunity-count 0)
+                   (seen (make-hash-table :test #'equal))
+                   (nominated-states (make-hash-table :test #'equalp))
+                   (gate-cache (make-hash-table :test #'equalp)))
+               (dolist (record records)
+                 (when (and (plusp (getf record :delta))
+                            (< opportunity-count top-opportunities)
+                            (not (gethash (getf (getf record :event) :policy-observation)
+                                          nominated-states)))
+                   (let* ((event (getf record :event))
+                          (probe (getf event :policy-observation))
+                          (pair (getf record :pair))
+                          (gates
+                            (multiple-value-bind (cached present)
+                                (gethash (list probe pair) gate-cache)
+                              (if present cached
+                                  (setf (gethash (list probe pair) gate-cache)
+                                        (brute-predicate-variants
+                                         probe background records pair)))))
+                          (opportunity-generated 0))
+                     (when gates
+                       (incf opportunity-count)
+                       (setf (gethash probe nominated-states) t))
+                     (format t "~&GATES seed=~D step=~D action=~S evidence-gates=~D~%"
+                             (getf record :seed) (getf record :step) pair (length gates))
+                     (dolist (margin '(250.0d0 1000.0d0))
+                       (dolist (insertion '(:terminal :root))
+                         (dolist (gate gates)
+                           (let ((key (list pair gate insertion margin)))
+                             (when (and (< candidate-count max-candidates)
+                                        (< opportunity-generated
+                                           (ceiling max-candidates top-opportunities))
+                                        (not (gethash key seen)))
+                               (setf (gethash key seen) t)
+                               (incf candidate-count)
+                               (incf opportunity-generated)
+                               (let* ((id (format nil "candidate-~D" candidate-count))
+                                      (spec (list :id id :probe probe :target (first pair)
+                                                  :response (second pair) :predicates gate
+                                                  :nomination-evidence (brute-gate-evidence gate records pair)
+                                                  :nomination-seed (getf record :seed)
+                                                  :nomination-step (getf record :step)
+                                                  :margin margin :insertion insertion
+                                                  :terminal (getf event :terminal-team)))
+                                      (path (merge-pathnames
+                                             (format nil "~A.lisp" id) directory))
+                                      (result-path (merge-pathnames
+                                                    (format nil "~A-result.sexp" id)
+                                                    directory))
+                                      (child (incubation-child team spec))
+                                      (aligned-evidence
+                                        (and child
+                                             (brute-candidate-effect-evidence
+                                              team child controller effect-contexts action-cache)))
+                                      (outcome
+                                        (cond
+                                          ((probe-file result-path)
+                                           (rare-failure-read-form result-path))
+                                          ((null child)
+                                           (list :id id :spec spec :status :team-limit))
+                                          ((not (equal pair (incubation-policy-pair child probe)))
+                                           (list :id id :spec spec :status :inactive))
+                                          (t
+                                           (let* ((episodes
+                                                    (loop for seed in seeds
+                                                          collect
+                                                           (brute-episode
+                                                            env controller child environment
+                                                            seed work-log :observer observer)))
+                                                  (returns (mapcar (lambda (e) (getf e :return))
+                                                                   episodes))
+                                                  (safety (mapcar #'brute-episode-safety episodes))
+                                                  (violations (brute-safety-regressions
+                                                               baseline-safety safety))
+                                                  (mean (arithmetic-mean returns))
+                                                  (collateral
+                                                    (loop for obs in background
+                                                          count (not
+                                                           (equal
+                                                            (incubation-policy-pair team obs)
+                                                            (incubation-policy-pair child obs))))))
+                                             (brute-save-policy child mean path metadata environment)
+                                             ;; Reload and replay: the standalone genotype must
+                                             ;; reproduce the same discovered return.
+                                             (let ((loaded (load-best-team path)))
+                                               (loop for seed in seeds for expected in returns
+                                                     for actual =
+                                                       (getf (brute-episode
+                                                              env controller loaded environment
+                                                              seed work-log) :return)
+                                                     unless (= actual expected)
+                                                       do (error "Saved candidate replay differs.")))
+                                             (loop for episode in episodes
+                                                   for metrics in safety
+                                                   for original in baseline-safety
+                                                   when (brute-safety-regressions
+                                                         (list original) (list metrics))
+                                                     do (write-readable-object-atomically
+                                                         episode
+                                                         (merge-pathnames
+                                                          (format nil "~A-unsafe-seed-~D.sexp"
+                                                                  id (getf episode :seed))
+                                                          directory)))
+                                             (list :id id :spec spec
+                                                   :status (if violations :unsafe :evaluated)
+                                                   :controller-aligned-evidence aligned-evidence
+                                                   :safety safety :safety-violations violations
+                                                   :checkpoint (namestring path)
+                                                   :returns returns :mean mean
+                                                   :delta (- mean parent-mean)
+                                                   :changed-background collateral
+                                                   :background-count (length background)))))))
+                                 (write-readable-object-atomically outcome result-path)
+                                 (push outcome variants)
+                                 (when (and (eq (getf outcome :status) :evaluated)
+                                            (getf outcome :mean)
+                                            (> (getf outcome :mean) best-mean))
+                                   (setf best-mean (getf outcome :mean)
+                                         best-path (getf outcome :checkpoint)))
+                                 (format t "~&CANDIDATE ~A status=~A delta=~A~%"
+                                         id (getf outcome :status) (getf outcome :delta))
+                                 (finish-output)))))))))))
+             (let ((summary (list :source checkpoint :source-mean parent-mean
+                                  :best-path best-path :best-mean best-mean
+                                  :improved (> best-mean parent-mean)
+                                  :baseline-safety baseline-safety :seeds seeds
+                                  :trials trials :candidates (nreverse variants))))
+               (write-readable-object-atomically summary
+                                        (merge-pathnames "round-summary.sexp" directory))
+               summary)))
+      (py4cl2:pymethod env "close"))))
+
+(defun run-privileged-brute-search
+       (&key checkpoint output environment seeds steps actions rounds
+             max-branches max-candidates top-opportunities prior-evidence)
+  (let* ((*num-observations* 62) (*num-actions* 36)
+         (*factored-actions-enabled* t) (*terminal-action-format* :target-response-36)
+         (*instruction-set-profile* :reduced-eq)
+         (*read-only-register-profile* :cage2-categorical-v1)
+         (*decoy-order-mode* :fixed) (*cage2-opening-mode* :fixed)
+         (*recurrent-policy-enabled* nil) (*hamming-space-enabled* nil)
+         (*random-state* (sb-ext:seed-random-state 153))
+         (directory (uiop:ensure-directory-pathname output))
+         (current checkpoint) (summaries nil))
+    (py4cl2:pyexec (uiop:read-file-string
+                   (merge-pathnames "scripts/privileged-state.py"
+                                    (asdf:system-source-directory :cl-tpg))))
+    (loop for round from 1 to rounds
+          for round-directory =
+            (merge-pathnames (format nil "round-~D/" round) directory)
+          for completed = (merge-pathnames "round-summary.sexp" round-directory)
+          for summary =
+            (if (probe-file completed) (rare-failure-read-form completed)
+                (brute-round current round-directory environment seeds steps actions
+                             max-branches max-candidates top-opportunities
+                             (and (= round 1) prior-evidence)))
+          do (push summary summaries)
+             (setf current (getf summary :best-path))
+             (format t "~&ROUND ~D source=~A best=~A improved=~A~%"
+                     round (getf summary :source-mean) (getf summary :best-mean)
+                     (getf summary :improved))
+             (finish-output)
+          unless (getf summary :improved) do (return))
+    (write-readable-object-atomically
+     (list :protocol +privileged-search-protocol+ :source checkpoint
+           :search-seeds seeds :best-path current
+           :rounds (nreverse summaries)
+           :evidence :fixed-seed-discovery-only)
+     (merge-pathnames "search-summary.sexp" directory))
+    (format t "~&done~%")))

@@ -1,0 +1,74 @@
+{
+  "id": "e0-6-2-0-7_defender-7-2-0-6",
+  "total": -56.6674,
+  "delta_vs_champion": 0.1149,
+  "table": {
+    "Defender": [
+      7,
+      2,
+      0,
+      6
+    ],
+    "Enterprise0": [
+      6,
+      2,
+      0,
+      7
+    ],
+    "Enterprise1": [
+      1
+    ],
+    "Enterprise2": [
+      1
+    ],
+    "Op_Server0": [
+      2,
+      7,
+      0,
+      6
+    ],
+    "User0": [],
+    "User1": [
+      0,
+      6,
+      3,
+      5
+    ],
+    "User2": [
+      1,
+      6,
+      0,
+      4
+    ],
+    "User3": [
+      7,
+      4
+    ],
+    "User4": [
+      7
+    ]
+  },
+  "official_transitions": 540000,
+  "mean_by_cell": {
+    "30-B_lineAgent": -3.8909,
+    "30-RedMeanderAgent": -5.4586,
+    "30-SleepAgent": 0.0,
+    "50-B_lineAgent": -7.0414,
+    "50-RedMeanderAgent": -8.6887,
+    "50-SleepAgent": 0.0,
+    "100-B_lineAgent": -14.9884,
+    "100-RedMeanderAgent": -16.5994,
+    "100-SleepAgent": 0.0
+  },
+  "cvar10_100": {
+    "100-B_lineAgent": -23.522,
+    "100-RedMeanderAgent": -24.965,
+    "100-SleepAgent": 0.0
+  },
+  "below_minus100": {
+    "100-B_lineAgent": 0,
+    "100-RedMeanderAgent": 0,
+    "100-SleepAgent": 0
+  },
+  "interaction_root153": -0.1453
+}

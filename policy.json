@@ -1,0 +1,90 @@
+{
+  "id": "e0-6-2-0-7_defender-7-2-0-6",
+  "table": {
+    "Defender": [
+      7,
+      2,
+      0,
+      6
+    ],
+    "Enterprise0": [
+      6,
+      2,
+      0,
+      7
+    ],
+    "Enterprise1": [
+      1
+    ],
+    "Enterprise2": [
+      1
+    ],
+    "Op_Server0": [
+      2,
+      7,
+      0,
+      6
+    ],
+    "User0": [],
+    "User1": [
+      0,
+      6,
+      3,
+      5
+    ],
+    "User2": [
+      1,
+      6,
+      0,
+      4
+    ],
+    "User3": [
+      7,
+      4
+    ],
+    "User4": [
+      7
+    ]
+  },
+  "changes": {
+    "Defender": [
+      7,
+      2,
+      0,
+      6
+    ],
+    "Enterprise0": [
+      6,
+      2,
+      0,
+      7
+    ]
+  },
+  "controller_sha256": "bfc961d623290bfd9030bb7c6323ef098582baaf5af74e3a01d3193650a87936",
+  "cyborg_commit": "26ce1c1253fa9e2e73f25e6a7f2da32860c11257",
+  "version": "2.1",
+  "official_script_sha256": "e4980dea8f1243ffda44bbae92521fc79ce89e74183623cce4d21715b940d51c",
+  "input_sha256": {
+    "router": {
+      "file": "router.lisp",
+      "sha256": "8864b37e6b3a80536cf2246df508182a3adc849e16cfb37e2e143bd3da87c834"
+    },
+    "b_line": {
+      "file": "b_line.lisp",
+      "sha256": "e8e613c3ea319e393be263ae6d0b3e0c6705c3c2e58111a3618496306b5e201f"
+    },
+    "meander": {
+      "file": "meander_native_compiled.lisp",
+      "sha256": "71f28f0c044808bbbdee834dc4d84da22a5d0c732db5d0e7d635ac6c3774c047"
+    }
+  },
+  "seed_root": 153,
+  "fixed_opening": [
+    51,
+    116,
+    55
+  ],
+  "decoy_resolution": "ranked-decoy-hosts",
+  "single_e0_score": -56.7877,
+  "single_defender_score": -56.9897
+}
