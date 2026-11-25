@@ -1,5 +1,7 @@
 # BES/TPG Research Extension
 
+See the [validated BES pipeline](docs/validated-pipeline.md) for the flowchart, measured improvements and checkpoint handoffs from offline learning to extreme optimization.
+
 ## About
 
 This repository is a research-oriented fork of **cl-tpg**, developed for autonomous cyber defence research.
